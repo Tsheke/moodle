@@ -27,6 +27,7 @@ $string['addmorechoices'] = 'Add more choices';
 $string['allowupdate'] = 'Allow choice to be updated';
 $string['allowmultiple'] = 'Allow more than one choice to be selected';
 $string['answered'] = 'Answered';
+$string['cannotsubmit'] = 'Sorry, there was a problem submitting your choice. Please try again.';
 $string['completionsubmit'] = 'Show as complete when user makes a choice';
 $string['displayhorizontal'] = 'Display horizontally';
 $string['displaymode'] = 'Display mode for the options';
@@ -54,7 +55,7 @@ You can fill in any number of these. If you leave some of the options blank, the
 $string['limitanswers_help'] = 'This option allows you to limit the number of participants that can select each choice option. When the limit is reached then no-one else can select that option.
 
 If limits are disabled then any number of participants can select each of the options.';
-$string['choice:readresponses'] = 'Read responses';
+$string['choice:readresponses'] = 'View responses';
 $string['choicesaved'] = 'Your choice has been saved';
 $string['choicetext'] = 'Choice text';
 $string['chooseaction'] = 'Choose an action ...';

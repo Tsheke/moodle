@@ -98,6 +98,10 @@ class behat_forms extends behat_base {
      * @return void
      */
     protected function expand_all_fields() {
+        // Expand only if JS mode, else not needed.
+        if (!$this->running_javascript()) {
+            return;
+        }
 
         // We already know that we waited for the DOM and the JS to be loaded, even the editor
         // so, we will use the reduced timeout as it is a common task and we should save time.
@@ -211,9 +215,59 @@ class behat_forms extends behat_base {
 
         // Checks if the provided value matches the current field value.
         if ($formfield->matches($value)) {
-            $fieldvalue = $formfield->get_value();
             throw new ExpectationException(
                 'The \'' . $field . '\' value matches \'' . $value . '\' and it should not match it' ,
+                $this->getSession()
+            );
+        }
+    }
+
+    /**
+     * Checks, the field matches the value.
+     *
+     * @Then /^the field with xpath "(?P<xpath_string>(?:[^"]|\\")*)" matches value "(?P<field_value_string>(?:[^"]|\\")*)"$/
+     * @throws ExpectationException
+     * @throws ElementNotFoundException Thrown by behat_base::find
+     * @param string $fieldxpath
+     * @param string $value
+     * @return void
+     */
+    public function the_field_with_xpath_matches_value($fieldxpath, $value) {
+
+        // Get the field.
+        $fieldnode = $this->find('xpath', $fieldxpath);
+        $formfield = behat_field_manager::get_form_field($fieldnode, $this->getSession());
+
+        // Checks if the provided value matches the current field value.
+        if (!$formfield->matches($value)) {
+            $fieldvalue = $formfield->get_value();
+            throw new ExpectationException(
+                'The \'' . $fieldxpath . '\' value is \'' . $fieldvalue . '\', \'' . $value . '\' expected' ,
+                $this->getSession()
+            );
+        }
+    }
+
+    /**
+     * Checks, the field does not match the value.
+     *
+     * @Then /^the field with xpath "(?P<xpath_string>(?:[^"]|\\")*)" does not match value "(?P<field_value_string>(?:[^"]|\\")*)"$/
+     * @throws ExpectationException
+     * @throws ElementNotFoundException Thrown by behat_base::find
+     * @param string $fieldxpath
+     * @param string $value
+     * @return void
+     */
+    public function the_field_with_xpath_does_not_match_value($fieldxpath, $value) {
+
+        // Get the field.
+        $fieldnode = $this->find('xpath', $fieldxpath);
+        $formfield = behat_field_manager::get_form_field($fieldnode, $this->getSession());
+
+        // Checks if the provided value matches the current field value.
+        if ($formfield->matches($value)) {
+            throw new ExpectationException(
+                'The \'' . $fieldxpath . '\' value matches \'' . $value . '\' and it should not match it' ,
                 $this->getSession()
             );
         }
@@ -363,6 +417,33 @@ class behat_forms extends behat_base {
         // guess the type properly as it is a select tag.
         $field = behat_field_manager::get_form_field_from_label($fieldlocator, $this);
         $field->set_value($value);
+    }
+
+    /**
+     * Select a value from single select and redirect.
+     *
+     * @Given /^I select "(?P<singleselect_option_string>(?:[^"]|\\")*)" from the "(?P<singleselect_name_string>(?:[^"]|\\")*)" singleselect$/
+     */
+    public function i_select_from_the_singleselect($option, $singleselect) {
+        $actions = array(
+            new Given('I set the field "' . $this->escape($singleselect) . '" to "' . $this->escape($option) . '"'),
+        );
+
+        if (!$this->running_javascript()) {
+            // Press button in the specified select container.
+            $containerxpath = "//div[" .
+                "(contains(concat(' ', normalize-space(@class), ' '), ' singleselect ') " .
+                    "or contains(concat(' ', normalize-space(@class), ' '), ' urlselect ')".
+                ") and (
+                .//label[contains(normalize-space(string(.)), '" . $singleselect . "')] " .
+                    "or .//select[(./@name='" . $singleselect . "' or ./@id='". $singleselect . "')]" .
+                ")]";
+
+            $actions[] = new Given('I click on "' . get_string('go') . '" "button" in the "' . $containerxpath .
+                '" "xpath_element"');
+        }
+
+        return $actions;
     }
 
 }

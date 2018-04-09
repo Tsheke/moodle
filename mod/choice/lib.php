@@ -236,28 +236,55 @@ function choice_prepare_options($choice, $user, $coursemodule, $allresponses) {
 }
 
 /**
- * @global object
- * @param int $formanswer
- * @param object $choice
- * @param int $userid
- * @param object $course Course object
- * @param object $cm
+ * Process user submitted answers for a choice,
+ * and either updating them or saving new answers.
+ *
+ * @param int $formanswer users submitted answers.
+ * @param object $choice the selected choice.
+ * @param int $userid user identifier.
+ * @param object $course current course.
+ * @param object $cm course context.
+ * @return void
  */
 function choice_user_submit_response($formanswer, $choice, $userid, $course, $cm) {
     global $DB, $CFG;
     require_once($CFG->libdir.'/completionlib.php');
 
+    $continueurl = new moodle_url('/mod/choice/view.php', array('id' => $cm->id));
+
     if (empty($formanswer)) {
-        print_error('atleastoneoption', 'choice');
+        print_error('atleastoneoption', 'choice', $continueurl);
     }
 
     if (is_array($formanswer)) {
         if (!$choice->allowmultiple) {
-            print_error('multiplenotallowederror', 'choice');
+            print_error('multiplenotallowederror', 'choice', $continueurl);
         }
         $formanswers = $formanswer;
     } else {
         $formanswers = array($formanswer);
+    }
+
+    $options = $DB->get_records('choice_options', array('choiceid' => $choice->id), '', 'id');
+    foreach ($formanswers as $key => $val) {
+        if (!isset($options[$val])) {
+            print_error('cannotsubmit', 'choice', $continueurl);
+        }
+    }
+    // Start lock to prevent synchronous access to the same data
+    // before it's updated, if using limits.
+    if ($choice->limitanswers) {
+        $timeout = 10;
+        $locktype = 'mod_choice_choice_user_submit_response';
+        // Limiting access to this choice.
+        $resouce = 'choiceid:' . $choice->id;
+        $lockfactory = \core\lock\lock_config::get_lock_factory($locktype);
+
+        // Opening the lock.
+        $choicelock = $lockfactory->get_lock($resouce, $timeout);
+        if (!$choicelock) {
+            print_error('cannotsubmit', 'choice', $continueurl);
+        }
     }
 
     $current = $DB->get_records('choice_answers', array('choiceid' => $choice->id, 'userid' => $userid));
@@ -305,7 +332,7 @@ function choice_user_submit_response($formanswer, $choice, $userid, $course, $cm
             }
         }
         foreach ($countanswers as $opt => $count) {
-            if ($count > $choice->maxanswers[$opt]) {
+            if ($count >= $choice->maxanswers[$opt]) {
                 $choicesexceeded = true;
                 break;
             }
@@ -316,7 +343,7 @@ function choice_user_submit_response($formanswer, $choice, $userid, $course, $cm
     if (!($choice->limitanswers && $choicesexceeded)) {
         $answersnapshots = array();
         if ($current) {
-
+            // Update an existing answer.
             $existingchoices = array();
             foreach ($current as $c) {
                 if (in_array($c->optionid, $formanswers)) {
@@ -341,25 +368,10 @@ function choice_user_submit_response($formanswer, $choice, $userid, $course, $cm
                 }
             }
 
-            $eventdata = array();
-            $eventdata['context'] = $context;
-            $eventdata['objectid'] = $choice->id;
-            $eventdata['userid'] = $userid;
-            $eventdata['courseid'] = $course->id;
-            $eventdata['other'] = array();
-            $eventdata['other']['choiceid'] = $choice->id;
-            $eventdata['other']['optionid'] = $formanswer;
-
-            $event = \mod_choice\event\answer_updated::create($eventdata);
-            $event->add_record_snapshot('course', $course);
-            $event->add_record_snapshot('course_modules', $cm);
-            $event->add_record_snapshot('choice', $choice);
-            foreach ($answersnapshots as $record) {
-                $event->add_record_snapshot('choice_answers', $record);
-            }
-            $event->trigger();
+            // Initialised as true, meaning we updated the answer.
+            $answerupdated = true;
         } else {
-
+            // Add new answer.
             foreach ($formanswers as $answer) {
                 $newanswer = new stdClass();
                 $newanswer->choiceid = $choice->id;
@@ -376,30 +388,49 @@ function choice_user_submit_response($formanswer, $choice, $userid, $course, $cm
                 $completion->update_state($cm, COMPLETION_COMPLETE);
             }
 
-            $eventdata = array();
-            $eventdata['context'] = $context;
-            $eventdata['objectid'] = $choice->id;
-            $eventdata['userid'] = $userid;
-            $eventdata['courseid'] = $course->id;
-            $eventdata['other'] = array();
-            $eventdata['other']['choiceid'] = $choice->id;
-            $eventdata['other']['optionid'] = $formanswers;
-
-            $event = \mod_choice\event\answer_submitted::create($eventdata);
-            $event->add_record_snapshot('course', $course);
-            $event->add_record_snapshot('course_modules', $cm);
-            $event->add_record_snapshot('choice', $choice);
-            foreach ($answersnapshots as $record) {
-                $event->add_record_snapshot('choice_answers', $record);
-            }
-            $event->trigger();
+            // Initalised as false, meaning we submitted a new answer.
+            $answerupdated = false;
         }
     } else {
         // Check to see if current choice already selected - if not display error.
         $currentids = array_keys($current);
+
         if (array_diff($currentids, $formanswers) || array_diff($formanswers, $currentids) ) {
-            print_error('choicefull', 'choice');
+            // Release lock before error.
+            $choicelock->release();
+            print_error('choicefull', 'choice', $continueurl);
         }
+    }
+
+    // Release lock.
+    if (isset($choicelock)) {
+        $choicelock->release();
+    }
+
+    // Now record completed event.
+    if (isset($answerupdated)) {
+        $eventdata = array();
+        $eventdata['context'] = $context;
+        $eventdata['objectid'] = $choice->id;
+        $eventdata['userid'] = $userid;
+        $eventdata['courseid'] = $course->id;
+        $eventdata['other'] = array();
+        $eventdata['other']['choiceid'] = $choice->id;
+
+        if ($answerupdated) {
+            $eventdata['other']['optionid'] = $formanswer;
+            $event = \mod_choice\event\answer_updated::create($eventdata);
+        } else {
+            $eventdata['other']['optionid'] = $formanswers;
+            $event = \mod_choice\event\answer_submitted::create($eventdata);
+        }
+        $event->add_record_snapshot('course', $course);
+        $event->add_record_snapshot('course_modules', $cm);
+        $event->add_record_snapshot('choice', $choice);
+        foreach ($answersnapshots as $record) {
+            $event->add_record_snapshot('choice_answers', $record);
+        }
+        $event->trigger();
     }
 }
 
@@ -812,4 +843,35 @@ function choice_get_completion_state($course, $cm, $userid, $type) {
 function choice_page_type_list($pagetype, $parentcontext, $currentcontext) {
     $module_pagetype = array('mod-choice-*'=>get_string('page-mod-choice-x', 'choice'));
     return $module_pagetype;
+}
+
+/**
+ * Check if a choice is available for the current user.
+ *
+ * @param  stdClass  $choice            choice record
+ * @return array                       status (available or not and possible warnings)
+ */
+function choice_get_availability_status($choice) {
+    global $DB, $USER;
+    $available = true;
+    $warnings = array();
+
+    if ($choice->timeclose != 0) {
+        $timenow = time();
+
+        if ($choice->timeopen > $timenow) {
+            $available = false;
+            $warnings['notopenyet'] = userdate($choice->timeopen);
+        } else if ($timenow > $choice->timeclose) {
+            $available = false;
+            $warnings['expired'] = userdate($choice->timeclose);
+        }
+    }
+    if (!$choice->allowupdate && $DB->get_records('choice_answers', array('choiceid' => $choice->id, 'userid' => $USER->id))) {
+        $available = false;
+        $warnings['choicesaved'] = '';
+    }
+
+    // Choice is available.
+    return array($available, $warnings);
 }
