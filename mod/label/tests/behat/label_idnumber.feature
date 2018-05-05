@@ -30,13 +30,13 @@ Feature: set label idnumber
     And I log out
     And I log in as "student"
     And I am on "Test" course homepage
-    And I should see "Label with idnumber set"
+    And I should see "Label with ID number set"
     And I log out
     And I log in as "teacher"
     And I am on "Test" course homepage
     And I turn editing mode on
-    And I open "Label with idnumber set" actions menu
-    And I click on "Edit settings" "link" in the "Label with idnumber set" activity
+    And I open "Label with ID number set" actions menu
+    And I click on "Edit settings" "link" in the "Label with ID number set" activity
     And I expand all fieldsets
     And the "ID number" input box should contain "C1LABEL1"
     And I log out
