@@ -3,7 +3,7 @@
 Feature: set label idnumber
   In order to set label idnumber
   As a teacher
-  I should create label activity
+  I should create label activity and set an ID Number
 
   @javascript
   Scenario: label ID number input box should be shown.
@@ -26,7 +26,7 @@ Feature: set label idnumber
       | ID number | C1LABEL1 |
     Then "Label with ID number set" activity should be visible
     And I turn editing mode off
-    And "Swanky label" activity should be visible
+    And "Label with ID number set" activity should be visible
     And I log out
     And I log in as "student"
     And I am on "Test" course homepage
