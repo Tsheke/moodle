@@ -1015,7 +1015,7 @@ $string['idnumbergroup_help'] = 'The ID number of a group is only used when matc
 $string['idnumbergrouping'] = 'Grouping ID number';
 $string['idnumbergrouping_help'] = 'The ID number of a grouping is only used when matching the grouping against external systems and is not displayed anywhere on the site. If the grouping has an official code name it may be entered, otherwise the field can be left blank.';
 $string['idnumbermod'] = 'ID number';
-$string['idnumbermod_help'] = 'Setting an ID number provides a way of identifying the activity for grade calculation purposes. If the activity is not included in any grade calculation then the ID number field may be left blank.
+$string['idnumbermod_help'] = 'Setting an ID number provides a way of identifying the activity for grade calculation or custom report purposes . If the activity is not included in any grade calculation or custom report then the ID number field may be left blank.
 
 The ID number can also be set in the gradebook, though it can only be edited on the activity settings page.';
 $string['idnumbertaken'] = 'This ID number is already taken';
