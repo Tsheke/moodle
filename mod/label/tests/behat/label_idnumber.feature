@@ -3,7 +3,7 @@
 Feature: set label idnumber
   In order to set label idnumber
   As a teacher
-  I should create label activity and set an ID Number
+  I should create label activity and set an ID number
 
   @javascript
   Scenario: label ID number input box should be shown.
@@ -38,5 +38,5 @@ Feature: set label idnumber
     And I open "Label with ID number set" actions menu
     And I click on "Edit settings" "link" in the "Label with ID number set" activity
     And I expand all fieldsets
-    And the "ID number" input box should contain "C1LABEL1"
+    And the field "ID number" matches value "C1LABEL1"
     And I log out
