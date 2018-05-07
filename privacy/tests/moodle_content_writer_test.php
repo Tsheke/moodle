@@ -340,7 +340,7 @@ class moodle_content_writer_test extends advanced_testcase {
             'component' => 'core_privacy',
             'filearea' => 'tests',
             'itemid' => 0,
-            'path' => '/',
+            'path' => '/sub/',
             'name' => 'b.txt',
             'content' => 'Test file 1',
         ];
@@ -389,7 +389,7 @@ class moodle_content_writer_test extends advanced_testcase {
                 'filename'  => $file->name,
             ];
 
-            $file->namepath = $file->path . $file->name;
+            $file->namepath = '/' . $file->filearea . '/' . ($file->itemid ?: '') . $file->path . $file->name;
             $file->storedfile = $fs->create_file_from_string($record, $file->content);
         }
 
@@ -401,14 +401,14 @@ class moodle_content_writer_test extends advanced_testcase {
 
         $firstfiles = array_slice($files, 0, 2);
         foreach ($firstfiles as $file) {
-            $contextpath = $this->get_context_path($context, [get_string('files')], $file->namepath);
+            $contextpath = $this->get_context_path($context, ['_files'], $file->namepath);
             $this->assertTrue($fileroot->hasChild($contextpath));
             $this->assertEquals($file->content, $fileroot->getChild($contextpath)->getContent());
         }
 
         $otherfiles = array_slice($files, 2);
         foreach ($otherfiles as $file) {
-            $contextpath = $this->get_context_path($context, [get_string('files')], $file->namepath);
+            $contextpath = $this->get_context_path($context, ['_files'], $file->namepath);
             $this->assertFalse($fileroot->hasChild($contextpath));
         }
     }
@@ -417,20 +417,22 @@ class moodle_content_writer_test extends advanced_testcase {
      * Exporting a single stored_file should cause that file to be output in the files directory.
      *
      * @dataProvider    export_file_provider
+     * @param   string  $filearea File area
+     * @param   int     $itemid Item ID
      * @param   string  $filepath File path
      * @param   string  $filename File name
      * @param   string  $content Content
      */
-    public function test_export_file($filepath, $filename, $content) {
+    public function test_export_file($filearea, $itemid, $filepath, $filename, $content) {
         $this->resetAfterTest();
         $context = \context_system::instance();
-        $filenamepath = $filepath . $filename;
+        $filenamepath = '/' . $filearea . '/' . ($itemid ?: '') . $filepath . $filename;
 
         $filerecord = array(
             'contextid' => $context->id,
             'component' => 'core_privacy',
-            'filearea'  => 'tests',
-            'itemid'    => 0,
+            'filearea'  => $filearea,
+            'itemid'    => $itemid,
             'filepath'  => $filepath,
             'filename'  => $filename,
         );
@@ -444,7 +446,7 @@ class moodle_content_writer_test extends advanced_testcase {
 
         $fileroot = $this->fetch_exported_content($writer);
 
-        $contextpath = $this->get_context_path($context, [get_string('files')], $filenamepath);
+        $contextpath = $this->get_context_path($context, ['_files'], $filenamepath);
         $this->assertTrue($fileroot->hasChild($contextpath));
         $this->assertEquals($content, $fileroot->getChild($contextpath)->getContent());
     }
@@ -457,36 +459,50 @@ class moodle_content_writer_test extends advanced_testcase {
     public function export_file_provider() {
         return [
             'basic' => [
+                'intro',
+                0,
                 '/',
                 'testfile.txt',
                 'An example file content',
             ],
             'longpath' => [
+                'attachments',
+                '12',
                 '/path/within/a/path/within/a/path/',
                 'testfile.txt',
                 'An example file content',
             ],
             'pathwithspaces' => [
+                'intro',
+                0,
                 '/path with/some spaces/',
                 'testfile.txt',
                 'An example file content',
             ],
             'filewithspaces' => [
+                'submission_attachments',
+                1,
                 '/path with/some spaces/',
                 'test file.txt',
                 'An example file content',
             ],
             'image' => [
+                'intro',
+                0,
                 '/',
                 'logo.png',
                 file_get_contents(__DIR__ . '/fixtures/logo.png'),
             ],
             'UTF8' => [
+                'submission_content',
+                2,
                 '/Žluťoučký/',
                 'koníček.txt',
                 'koníček',
             ],
             'EUC-JP' => [
+                'intro',
+                0,
                 '/言語設定/',
                 '言語設定.txt',
                 '言語設定',
@@ -781,6 +797,123 @@ class moodle_content_writer_test extends advanced_testcase {
     }
 
     /**
+     * Test that exported data is human readable.
+     *
+     * @dataProvider unescaped_unicode_export_provider
+     * @param string $text
+     */
+    public function test_export_data_unescaped_unicode($text) {
+        $context = \context_system::instance();
+        $subcontext = [];
+        $data = (object) ['key' => $text];
+
+        $writer = $this->get_writer_instance()
+                ->set_context($context)
+                ->export_data($subcontext, $data);
+
+        $fileroot = $this->fetch_exported_content($writer);
+
+        $contextpath = $this->get_context_path($context, $subcontext, 'data.json');
+
+        $json = $fileroot->getChild($contextpath)->getContent();
+        $this->assertRegExp("/$text/", $json);
+
+        $expanded = json_decode($json);
+        $this->assertEquals($data, $expanded);
+    }
+
+    /**
+     * Test that exported metadata is human readable.
+     *
+     * @dataProvider unescaped_unicode_export_provider
+     * @param string $text
+     */
+    public function test_export_metadata_unescaped_unicode($text) {
+        $context = \context_system::instance();
+        $subcontext = ['a', 'b', 'c'];
+
+        $writer = $this->get_writer_instance()
+                ->set_context($context)
+                ->export_metadata($subcontext, $text, $text, $text);
+
+        $fileroot = $this->fetch_exported_content($writer);
+
+        $contextpath = $this->get_context_path($context, $subcontext, 'metadata.json');
+
+        $json = $fileroot->getChild($contextpath)->getContent();
+        $this->assertRegExp("/$text.*$text.*$text/", $json);
+
+        $expanded = json_decode($json);
+        $this->assertTrue(isset($expanded->$text));
+        $this->assertEquals($text, $expanded->$text->value);
+        $this->assertEquals($text, $expanded->$text->description);
+    }
+
+    /**
+     * Test that exported related data is human readable.
+     *
+     * @dataProvider unescaped_unicode_export_provider
+     * @param string $text
+     */
+    public function test_export_related_data_unescaped_unicode($text) {
+        $context = \context_system::instance();
+        $subcontext = [];
+        $data = (object) ['key' => $text];
+
+        $writer = $this->get_writer_instance()
+                ->set_context($context)
+                ->export_related_data($subcontext, 'name', $data);
+
+        $fileroot = $this->fetch_exported_content($writer);
+
+        $contextpath = $this->get_context_path($context, $subcontext, 'name.json');
+
+        $json = $fileroot->getChild($contextpath)->getContent();
+        $this->assertRegExp("/$text/", $json);
+
+        $expanded = json_decode($json);
+        $this->assertEquals($data, $expanded);
+    }
+
+    /**
+     * Test that exported user preference is human readable.
+     *
+     * @dataProvider unescaped_unicode_export_provider
+     * @param string $text
+     */
+    public function test_export_user_preference_unescaped_unicode($text) {
+        $context = \context_system::instance();
+        $component = 'core_privacy';
+
+        $writer = $this->get_writer_instance()
+                ->set_context($context)
+                ->export_user_preference($component, $text, $text, $text);
+
+        $fileroot = $this->fetch_exported_content($writer);
+
+        $contextpath = $this->get_context_path($context, [get_string('userpreferences')], "{$component}.json");
+
+        $json = $fileroot->getChild($contextpath)->getContent();
+        $this->assertRegExp("/$text.*$text.*$text/", $json);
+
+        $expanded = json_decode($json);
+        $this->assertTrue(isset($expanded->$text));
+        $this->assertEquals($text, $expanded->$text->value);
+        $this->assertEquals($text, $expanded->$text->description);
+    }
+
+    /**
+     * Provider for various user preferences.
+     *
+     * @return array
+     */
+    public function unescaped_unicode_export_provider() {
+        return [
+            'Unicode' => ['ةكءيٓ‌پچژکگیٹڈڑہھےâîûğŞAaÇÖáǽ你好!'],
+        ];
+    }
+
+    /**
      * Get a fresh content writer.
      *
      * @return  moodle_content_writer
@@ -834,5 +967,52 @@ class moodle_content_writer_test extends advanced_testcase {
             $rcm->setAccessible(true);
             return $rcm->invoke($writer, $subcontext, $name);
         }
+    }
+
+    /**
+     * Test correct rewriting of @@PLUGINFILE@@ in the exported contents.
+     *
+     * @dataProvider rewrite_pluginfile_urls_provider
+     * @param string $filearea The filearea within that component.
+     * @param int $itemid Which item those files belong to.
+     * @param string $input Raw text as stored in the database.
+     * @param string $expectedoutput Expected output of URL rewriting.
+     */
+    public function test_rewrite_pluginfile_urls($filearea, $itemid, $input, $expectedoutput) {
+
+        $writer = $this->get_writer_instance();
+        $writer->set_context(\context_system::instance());
+
+        $realoutput = $writer->rewrite_pluginfile_urls([], 'core_test', $filearea, $itemid, $input);
+
+        $this->assertEquals($expectedoutput, $realoutput);
+    }
+
+    /**
+     * Provides testable sample data for {@link self::test_rewrite_pluginfile_urls()}.
+     *
+     * @return array
+     */
+    public function rewrite_pluginfile_urls_provider() {
+        return [
+            'zeroitemid' => [
+                'intro',
+                0,
+                '<p><img src="@@PLUGINFILE@@/hello.gif" /></p>',
+                '<p><img src="_files/intro/hello.gif" /></p>',
+            ],
+            'nonzeroitemid' => [
+                'submission_content',
+                34,
+                '<p><img src="@@PLUGINFILE@@/first.png" alt="First" /></p>',
+                '<p><img src="_files/submission_content/34/first.png" alt="First" /></p>',
+            ],
+            'withfilepath' => [
+                'post_content',
+                9889,
+                '<a href="@@PLUGINFILE@@/embedded/docs/muhehe.exe">Click here!</a>',
+                '<a href="_files/post_content/9889/embedded/docs/muhehe.exe">Click here!</a>',
+            ],
+        ];
     }
 }
