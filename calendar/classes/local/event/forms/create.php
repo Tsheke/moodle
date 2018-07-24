@@ -98,6 +98,10 @@ class create extends \moodleform {
         $mform->setType('description', PARAM_RAW);
         $mform->setAdvanced('description');
 
+        $mform->addElement('text', 'location', get_string('location', 'moodle'), 'size="50"');
+        $mform->setType('location', PARAM_RAW_TRIMMED);
+        $mform->setAdvanced('location');
+
         // Add the variety of elements allowed for selecting event duration.
         $this->add_event_duration_elements($mform);
 
@@ -119,10 +123,9 @@ class create extends \moodleform {
         global $DB, $CFG;
 
         $errors = parent::validation($data, $files);
-        $coursekey = isset($data['groupcourseid']) ? 'groupcourseid' : 'courseid';
         $eventtypes = calendar_get_all_allowed_types();
         $eventtype = isset($data['eventtype']) ? $data['eventtype'] : null;
-
+        $coursekey = ($eventtype == 'group') ? 'groupcourseid' : 'courseid';
         if (empty($eventtype) || !isset($eventtypes[$eventtype])) {
             $errors['eventtype'] = get_string('invalideventtype', 'calendar');
         }
