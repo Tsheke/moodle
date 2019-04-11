@@ -515,6 +515,17 @@ define('COURSE_DISPLAY_SINGLEPAGE', 0);
 define('COURSE_DISPLAY_MULTIPAGE', 1);
 
 /**
+ * Course visibility settings: hide, show a course
+ */
+define('COURSE_VISIBILITY_HIDE', 0);
+define('COURSE_VISIBILITY_SHOW', 1);
+
+/**
+ * Course visibility settings: prevent access of anyone without permission to see hidden course
+ */
+define('COURSE_VISIBILITY_NOTAVAILABLE', 2);
+
+/**
  * Authentication constant: String used in password field when password is not stored.
  */
 define('AUTH_PASSWORD_NOT_CACHED', 'not cached');
@@ -2820,7 +2831,7 @@ function require_login($courseorid = null, $autologinguest = true, $cm = null, $
         print_maintenance_message();
     }
 
-    // Make sure the course itself is not hidden.
+    // Make sure the course itself is not hidden nor set unavailable to students.
     if ($course->id == SITEID) {
         // Frontpage can not be hidden.
     } else {
@@ -2838,6 +2849,20 @@ function require_login($courseorid = null, $autologinguest = true, $cm = null, $
                 // the navigation will mess up when trying to find it.
                 navigation_node::override_active_url(new moodle_url('/'));
                 notice(get_string('coursehidden'), $CFG->wwwroot .'/');
+            } else {
+                // Prevent students access if course visibility is set to 'not available'.
+                $coursenotavailable = ($course->visible == COURSE_VISIBILITY_NOTAVAILABLE);
+                if ($coursenotavailable && !has_capability('moodle/course:viewhiddencourses', $coursecontext)) {
+                    if ($preventredirect) {
+                        throw new require_login_exception(get_string('courseavailablenot'));
+                    }
+                    $PAGE->set_context(null);
+                    navigation_node::override_active_url(new moodle_url('/'));
+                    // After notice, continues to search url beacause we wants to display the course info box.
+                    // Teacher can temporary write an unavailability announcement for students in the course description.
+                    $coursesearchurl = '/course/search.php?search='.urlencode($course->{'shortname'});
+                    notice(get_string('courseavailablenot'), $CFG->wwwroot .$coursesearchurl);
+                }
             }
         }
     }
