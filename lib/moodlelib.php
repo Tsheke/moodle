@@ -511,6 +511,16 @@ define('COURSE_DISPLAY_SINGLEPAGE', 0);
 define('COURSE_DISPLAY_MULTIPAGE', 1);
 
 /**
+ * Course visibility settings: hide, show a course.
+ */
+define('COURSE_VISIBILITY_HIDE', 0);
+define('COURSE_VISIBILITY_SHOW', 1);
+/**
+ * Course visibility settings: prevent access of anyone without permission to see hidden course.
+ */
+define('COURSE_VISIBILITY_RESTRICT', 2);
+
+/**
  * Authentication constant: String used in password field when password is not stored.
  */
 define('AUTH_PASSWORD_NOT_CACHED', 'not cached');
@@ -2867,18 +2877,20 @@ function require_login($courseorid = null, $autologinguest = true, $cm = null, $
         print_maintenance_message();
     }
 
-    // Make sure the course itself is not hidden.
+    // Make sure the course itself is not hidden and access is not restricted.
     if ($course->id == SITEID) {
         // Frontpage can not be hidden.
     } else {
         if (is_role_switched($course->id)) {
             // When switching roles ignore the hidden flag - user had to be in course to do the switch.
         } else {
-            if (!$course->visible and !has_capability('moodle/course:viewhiddencourses', $coursecontext)) {
+            $visibilityrestrict = ($course->visible == COURSE_VISIBILITY_RESTRICT); // Check for restricted access.
+            if ((!$course->visible or $visibilityrestrict) and !has_capability('moodle/course:viewhiddencourses', $coursecontext)) {
                 // Originally there was also test of parent category visibility, BUT is was very slow in complex queries
                 // involving "my courses" now it is also possible to simply hide all courses user is not enrolled in :-).
                 if ($preventredirect) {
-                    throw new require_login_exception('Course is hidden');
+                    $exceptionmsg = $visibilityrestrict ? 'Course access is restricted' : 'Course is hidden';
+                    throw new require_login_exception($exceptionmsg);
                 }
                 $PAGE->set_context(null);
                 // We need to override the navigation URL as the course won't have been added to the navigation and thus
