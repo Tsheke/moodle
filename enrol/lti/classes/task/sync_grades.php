@@ -70,7 +70,8 @@ class sync_grades extends \core\task\scheduled_task {
         }
 
         // Get all the enabled tools.
-        if ($tools = \enrol_lti\helper::get_lti_tools(array('status' => ENROL_INSTANCE_ENABLED, 'gradesync' => 1))) {
+        if ($tools = \enrol_lti\helper::get_lti_tools(array('status' => ENROL_INSTANCE_ENABLED, 'gradesync' => 1,
+            'ltiversion' => 'LTI-1p0/LTI-2p0'))) {
             foreach ($tools as $tool) {
                 mtrace("Starting - Grade sync for shared tool '$tool->id' for the course '$tool->courseid'.");
 
@@ -100,7 +101,7 @@ class sync_grades extends \core\task\scheduled_task {
                         }
 
                         // Need a valid context to continue.
-                        if (!$context = \context::instance_by_id($tool->contextid)) {
+                        if (!$context = \context::instance_by_id($tool->contextid, IGNORE_MISSING)) {
                             mtrace("Failed - Invalid contextid '$tool->contextid' for the tool '$tool->id'.");
                             continue;
                         }

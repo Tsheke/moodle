@@ -2,7 +2,7 @@
 /**
  * Copyright 2012-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @author   Michael Slusarz <slusarz@horde.org>
@@ -26,7 +26,12 @@ class Horde_Crypt_Blowfish_Openssl extends Horde_Crypt_Blowfish_Base
      */
     public static function supported()
     {
-        return extension_loaded('openssl');
+        if (extension_loaded('openssl')) {
+            $ciphers = openssl_get_cipher_methods();
+            return  in_array('bf-ecb', $ciphers) && in_array('bf-cbc', $ciphers);
+        }
+
+        return false;
     }
 
     /**

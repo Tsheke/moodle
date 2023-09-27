@@ -15,7 +15,7 @@
  *
  * Copyright 2011-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @author   Michael Slusarz <slusarz@horde.org>
@@ -28,6 +28,7 @@ class Horde_Stream_Filter_Crc32 extends php_user_filter
     /**
      * @see stream_filter_register()
      */
+    #[ReturnTypeWillChange]
     public function onCreate()
     {
         $this->params->crc32 = 0;
@@ -38,6 +39,7 @@ class Horde_Stream_Filter_Crc32 extends php_user_filter
     /**
      * @see stream_filter_register()
      */
+    #[ReturnTypeWillChange]
     public function filter($in, $out, &$consumed, $closing)
     {
         while ($bucket = stream_bucket_make_writeable($in)) {

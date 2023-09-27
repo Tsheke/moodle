@@ -30,7 +30,7 @@ $string['auth_data_mapping'] = 'Data mapping';
 $string['authenticationoptions'] = 'Authentication options';
 $string['auth_fieldlock'] = 'Lock value';
 $string['auth_fieldlockfield'] = 'Lock value ({$a})';
-$string['auth_fieldlock_expl'] = '<p><b>Lock value:</b> If enabled, will prevent Moodle users and admins from editing the field directly. Use this option if you are maintaining this data in the external auth system. </p>';
+$string['auth_fieldlock_expl'] = '<p>Lock value: If enabled, users will not be able to edit the field. Use this option if you are maintaining this data in the external auth system. </p>';
 $string['auth_fieldlocks'] = 'Lock user fields';
 $string['auth_fieldlocks_help'] = '<p>You can lock user data fields. This is useful for sites where the user data is maintained by the administrators manually by editing user records or uploading using the \'Upload users\' facility. If you are locking fields that are required by Moodle, make sure that you provide that data when creating user accounts or the accounts will be unusable.</p><p>Consider setting the lock mode to \'Unlocked if empty\' to avoid this problem.</p>';
 $string['auth_fieldmapping'] = 'Data mapping ({$a})';
@@ -41,6 +41,8 @@ $string['auth_changepasswordurl_expl'] = 'Specify the url to send users who have
 $string['auth_changingemailaddress'] = 'You have requested a change of email address, from {$a->oldemail} to {$a->newemail}. For security reasons, we are sending you an email message at the new address to confirm that it belongs to you. Your email address will be updated as soon as you open the URL sent to you in that message.';
 $string['authinstructions'] = 'Leave this blank for the default login instructions to be displayed on the login page. If you want to provide custom login instructions, enter them here.';
 $string['auth_invalidnewemailkey'] = 'Error: if you are trying to confirm a change of email address, you may have made a mistake in copying the URL we sent you by email. Please copy the address and try again.';
+$string['auth_loginrecaptcha'] = 'Enable reCAPTCHA for login';
+$string['auth_loginrecaptcha_desc'] = 'Add a visual/audio confirmation form element to the login page. This reduces the risk of unwarranted login attempts. See <a target="_blank" href="https://www.google.com/recaptcha">Google reCAPTCHA</a> for more details. ';
 $string['auth_multiplehosts'] = 'Multiple hosts OR addresses can be specified (eg host1.com;host2.com;host3.com) or (eg xxx.xxx.xxx.xxx;xxx.xxx.xxx.xxx)';
 $string['auth_notconfigured'] = 'The authentication method {$a} is not configured.';
 $string['auth_outofnewemailupdateattempts'] = 'You have run out of allowed attempts to update your email address. Your update request has been cancelled.';
@@ -51,7 +53,7 @@ $string['auth_remove_keep'] = 'Keep internal';
 $string['auth_remove_suspend'] = 'Suspend internal';
 $string['auth_remove_user'] = 'Specify what to do with internal user account during mass synchronisation when user was removed from external source. Only suspended users are automatically restored if they reappear in the external source.';
 $string['auth_remove_user_key'] = 'Removed ext user';
-$string['auth_sync_suspended']  = 'When enabled, the suspended attribute will be used to update the local user account\'s suspension status.';
+$string['auth_sync_suspended']  = 'If enabled, the suspended attribute will be used to update the local user account\'s suspension status.';
 $string['auth_sync_suspended_key'] = 'Synchronise local user suspension status';
 $string['auth_sync_script'] = 'User account synchronisation';
 $string['auth_updatelocal'] = 'Update local';
@@ -75,20 +77,18 @@ $string['emailnowexists'] = 'The email address you tried to assign to your profi
 $string['emailupdate'] = 'Email address update';
 $string['emailupdatemessage'] = 'Dear {$a->fullname},
 
-You have requested a change of your email address for your user account at {$a->site}. Please open the following URL in your browser in order to confirm this change.
+You have requested a change of your email address for your account on {$a->site}. To confirm this change, please go to the following web address:
 
-If you have any questions please contact support on: {$a->supportemail}
+{$a->url}
 
-{$a->url}';
+{$a->supportemail}';
 $string['emailupdatesuccess'] = 'Email address of user <em>{$a->fullname}</em> was successfully updated to <em>{$a->email}</em>.';
 $string['emailupdatetitle'] = 'Confirmation of email update at {$a->site}';
-$string['enterthenumbersyouhear'] = 'Enter the numbers you hear';
-$string['enterthewordsabove'] = 'Enter the words above';
 $string['errormaxconsecutiveidentchars'] = 'Passwords must have at most {$a} consecutive identical characters.';
 $string['errorminpassworddigits'] = 'Passwords must have at least {$a} digit(s).';
 $string['errorminpasswordlength'] = 'Passwords must be at least {$a} characters long.';
 $string['errorminpasswordlower'] = 'Passwords must have at least {$a} lower case letter(s).';
-$string['errorminpasswordnonalphanum'] = 'Passwords must have at least {$a} non-alphanumeric character(s) such as as *, -, or #.';
+$string['errorminpasswordnonalphanum'] = 'The password must have at least {$a} special character(s) such as *, -, or #.';
 $string['errorpasswordreused'] = 'This password has been used before, and is not permitted to be reused';
 $string['errorminpasswordupper'] = 'Passwords must have at least {$a} upper case letter(s).';
 $string['errorpasswordupdate'] = 'Error updating password, password not changed';
@@ -100,9 +100,6 @@ $string['forcechangepasswordfirst_help'] = 'Force users to change password on th
 $string['forcechangepassword_help'] = 'Force users to change password on their next login to Moodle.';
 $string['forgottenpassword'] = 'If you enter a URL here, it will be used as the lost password recovery page for this site. This is intended for sites where passwords are handled entirely outside of Moodle. Leave this blank to use the default password recovery.';
 $string['forgottenpasswordurl'] = 'Forgotten password URL';
-$string['getanaudiocaptcha'] = 'Get an audio CAPTCHA';
-$string['getanimagecaptcha'] = 'Get an image CAPTCHA';
-$string['getanothercaptcha'] = 'Get another CAPTCHA';
 $string['getrecaptchaapi'] = 'To use reCAPTCHA you must get an API key from <a href=\'https://www.google.com/recaptcha/admin\'>https://www.google.com/recaptcha/admin</a>';
 $string['guestloginbutton'] = 'Guest login button';
 $string['changepassword'] = 'Change password URL';
@@ -114,7 +111,7 @@ $string['infilefield'] = 'Field required in file';
 $string['informminpassworddigits'] = 'at least {$a} digit(s)';
 $string['informminpasswordlength'] = 'at least {$a} characters';
 $string['informminpasswordlower'] = 'at least {$a} lower case letter(s)';
-$string['informminpasswordnonalphanum'] = 'at least {$a} non-alphanumeric character(s) such as as *, -, or #';
+$string['informminpasswordnonalphanum'] = 'at least {$a} special character(s) such as *, -, or #';
 $string['informminpasswordreuselimit'] = 'Passwords can be reused after {$a} changes';
 $string['informminpasswordupper'] = 'at least {$a} upper case letter(s)';
 $string['informpasswordpolicy'] = 'The password must have {$a}';
@@ -142,8 +139,8 @@ $string['privacy:metadata:userpref:createpassword'] = 'Indicates that a password
 $string['privacy:metadata:userpref:forcepasswordchange'] = 'Indicates whether the user should change their password upon logging in';
 $string['privacy:metadata:userpref:loginfailedcount'] = 'The number of times the user failed to log in';
 $string['privacy:metadata:userpref:loginfailedcountsincesuccess'] = 'The number of times the user failed to login since their last successful login';
-$string['privacy:metadata:userpref:loginfailedlast'] = 'The date at which the last failed login attempt was recorded';
-$string['privacy:metadata:userpref:loginlockout'] = 'Indicates whether the user\'s account is locked due to failed login attempts, and the date at which the account entered the lockout state';
+$string['privacy:metadata:userpref:loginfailedlast'] = 'The date when the last failed login attempt was recorded';
+$string['privacy:metadata:userpref:loginlockout'] = 'Whether the user\'s account is locked due to failed login attempts, and the date when the account was locked';
 $string['privacy:metadata:userpref:loginlockoutignored'] = 'Indicates that a user\'s account should never be subject to lockouts';
 $string['privacy:metadata:userpref:loginlockoutsecret'] = 'When locked, the secret the user must use for unlocking their account';
 $string['potentialidps'] = 'Log in using your account on:';

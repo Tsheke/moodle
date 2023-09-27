@@ -2,7 +2,7 @@
 /**
  * Copyright 2010-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @author   
@@ -27,7 +27,7 @@ class Horde_Exception_PermissionDenied extends Horde_Exception
      *
      * @see Horde_Exception::__construct()
      *
-     * @param mixed $message           The exception message, a PEAR_Error
+     * @param string|Exception $message           The exception message, a PEAR_Error
      *                                 object, or an Exception object.
      * @param integer $code            A numeric error code.
      */

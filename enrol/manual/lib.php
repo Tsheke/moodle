@@ -127,18 +127,13 @@ class enrol_manual_plugin extends enrol_plugin {
      */
     public function add_default_instance($course) {
         $expirynotify = $this->get_config('expirynotify', 0);
-        if ($expirynotify == 2) {
-            $expirynotify = 1;
-            $notifyall = 1;
-        } else {
-            $notifyall = 0;
-        }
+
         $fields = array(
             'status'          => $this->get_config('status'),
             'roleid'          => $this->get_config('roleid', 0),
             'enrolperiod'     => $this->get_config('enrolperiod', 0),
             'expirynotify'    => $expirynotify,
-            'notifyall'       => $notifyall,
+            'notifyall'       => $expirynotify == 2 ? 1 : 0,
             'expirythreshold' => $this->get_config('expirythreshold', 86400),
         );
         return $this->add_instance($course, $fields);
@@ -178,6 +173,9 @@ class enrol_manual_plugin extends enrol_plugin {
                 }
             }
         }
+
+        $data->notifyall = $data->expirynotify == 2 ? 1 : 0;
+
         return parent::update_instance($instance, $data);
     }
 
@@ -197,14 +195,14 @@ class enrol_manual_plugin extends enrol_plugin {
         global $CFG, $PAGE;
         require_once($CFG->dirroot.'/cohort/lib.php');
 
+        static $called = false;
+
         $instance = null;
-        $instances = array();
         foreach ($manager->get_enrolment_instances() as $tempinstance) {
             if ($tempinstance->enrol == 'manual') {
                 if ($instance === null) {
                     $instance = $tempinstance;
                 }
-                $instances[] = array('id' => $tempinstance->id, 'name' => $this->get_instance_name($tempinstance));
             }
         }
         if (empty($instance)) {
@@ -218,11 +216,16 @@ class enrol_manual_plugin extends enrol_plugin {
 
         $button = new enrol_user_button($link, get_string('enrolusers', 'enrol_manual'), 'get');
         $button->class .= ' enrol_manual_plugin';
+        $button->type = single_button::BUTTON_PRIMARY;
 
         $context = context_course::instance($instance->courseid);
         $arguments = array('contextid' => $context->id);
 
-        $PAGE->requires->js_call_amd('enrol_manual/quickenrolment', 'init', array($arguments));
+        if (!$called) {
+            $called = true;
+            // Calling the following more than once will cause unexpected results.
+            $PAGE->requires->js_call_amd('enrol_manual/quickenrolment', 'init', array($arguments));
+        }
 
         return $button;
     }
@@ -502,6 +505,7 @@ class enrol_manual_plugin extends enrol_plugin {
      * @param int $timeend 0 means forever
      * @param int $status default to ENROL_USER_ACTIVE for new enrolments, no change by default in updates
      * @param bool $recovergrades restore grade history
+     * @return int The number of enrolled cohort users
      */
     public function enrol_cohort(stdClass $instance, $cohortid, $roleid = null, $timestart = 0, $timeend = 0, $status = null, $recovergrades = null) {
         global $DB;
@@ -514,6 +518,7 @@ class enrol_manual_plugin extends enrol_plugin {
         foreach ($members as $userid) {
             $this->enrol_user($instance, $userid, $roleid, $timestart, $timeend, $status, $recovergrades);
         }
+        return count($members);
     }
 
     /**
@@ -639,6 +644,15 @@ class enrol_manual_plugin extends enrol_plugin {
         $errors = array_merge($errors, $typeerrors);
 
         return $errors;
+    }
+
+    /**
+     * Check if enrolment plugin is supported in csv course upload.
+     *
+     * @return bool
+     */
+    public function is_csv_upload_supported(): bool {
+        return true;
     }
 
 }

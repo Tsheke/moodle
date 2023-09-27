@@ -46,9 +46,10 @@ class testable_core_search extends \core_search\manager {
      * Auto enables global search.
      *
      * @param  \core_search\engine|bool $searchengine
+     * @param bool $ignored Second param just to make this compatible with base class
      * @return testable_core_search
      */
-    public static function instance($searchengine = false) {
+    public static function instance($searchengine = false, bool $ignored = false) {
 
         // One per request, this should be purged during testing.
         if (self::$instance !== null) {
@@ -117,5 +118,18 @@ class testable_core_search extends \core_search\manager {
      */
     public static function fake_current_time($faketime = 0.0) {
         static::$phpunitfaketime = $faketime;
+    }
+
+    /**
+     * Makes build_limitcourseids method public for testing.
+     *
+     * @param \stdClass $formdata Submitted search form data.
+     *
+     * @return array|bool
+     */
+    public function build_limitcourseids(\stdClass $formdata) {
+        $limitcourseids = parent::build_limitcourseids($formdata);
+
+        return $limitcourseids;
     }
 }

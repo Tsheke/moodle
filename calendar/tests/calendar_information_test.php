@@ -14,13 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Unit tests for calendar_information.
- *
- * @package    core_calendar
- * @copyright  2017 Andrew Nicols <andrew@nicols.co.uk>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace core_calendar;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -33,7 +27,7 @@ require_once(__DIR__ . '/helpers.php');
  * @copyright  2017 Andrew Nicols <andrew@nicols.co.uk>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class calendar_information_testcase extends advanced_testcase {
+class calendar_information_test extends \advanced_testcase {
 
     /**
      * Helper to mock a course and category structure.
@@ -293,7 +287,7 @@ class calendar_information_testcase extends advanced_testcase {
         $generator = $this->getDataGenerator();
         $user = $generator->create_user();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $course->id);
 
@@ -329,7 +323,7 @@ class calendar_information_testcase extends advanced_testcase {
         $generator = $this->getDataGenerator();
         $user = $generator->create_user();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $course->id);
 
@@ -378,7 +372,7 @@ class calendar_information_testcase extends advanced_testcase {
         $generator = $this->getDataGenerator();
         $user = $generator->create_user();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $generator->enrol_user($user->id, $course->id);
 
         $this->setUser($user);
@@ -419,7 +413,7 @@ class calendar_information_testcase extends advanced_testcase {
         $generator = $this->getDataGenerator();
         $user = $generator->create_user();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $generator->enrol_user($user->id, $course->id);
 
         $this->setUser($user);
@@ -503,7 +497,7 @@ class calendar_information_testcase extends advanced_testcase {
         $generator = $this->getDataGenerator();
         $user = $generator->create_user();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $course->id);
 
@@ -540,7 +534,7 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['A.2'];
-        $category = \coursecat::get($coursea->category);
+        $category = \core_course_category::get($coursea->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -576,7 +570,7 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['A.2'];
-        $category = \coursecat::get($coursea->category);
+        $category = \core_course_category::get($coursea->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -622,7 +616,7 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['A.2'];
-        $category = \coursecat::get($coursea->category);
+        $category = \core_course_category::get($coursea->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -669,7 +663,7 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['A.2'];
-        $category = \coursecat::get($coursea->category);
+        $category = \core_course_category::get($coursea->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -705,7 +699,7 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['A.2'];
-        $category = \coursecat::get($coursea->category);
+        $category = \core_course_category::get($coursea->category);
         $wrongcategory = $categories['B1'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -739,8 +733,8 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['B.1'];
-        $categorya = \coursecat::get($coursea->category);
-        $categoryb = \coursecat::get($courseb->category);
+        $categorya = \core_course_category::get($coursea->category);
+        $categoryb = \core_course_category::get($courseb->category);
         $wrongcategory = $categories['C'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -776,8 +770,8 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['B.1'];
-        $categorya = \coursecat::get($coursea->category);
-        $categoryb = \coursecat::get($courseb->category);
+        $categorya = \core_course_category::get($coursea->category);
+        $categoryb = \core_course_category::get($courseb->category);
         $wrongcategory = $categories['C'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -823,8 +817,8 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['B.1'];
-        $categorya = \coursecat::get($coursea->category);
-        $categoryb = \coursecat::get($courseb->category);
+        $categorya = \core_course_category::get($coursea->category);
+        $categoryb = \core_course_category::get($courseb->category);
         $wrongcategory = $categories['C'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -871,8 +865,8 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['B.1'];
-        $categorya = \coursecat::get($coursea->category);
-        $categoryb = \coursecat::get($courseb->category);
+        $categorya = \core_course_category::get($coursea->category);
+        $categoryb = \core_course_category::get($courseb->category);
         $wrongcategory = $categories['C'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -912,8 +906,8 @@ class calendar_information_testcase extends advanced_testcase {
         $user = $generator->create_user();
         $coursea = $courses['A.1'];
         $courseb = $courses['B.1'];
-        $categorya = \coursecat::get($coursea->category);
-        $categoryb = \coursecat::get($courseb->category);
+        $categorya = \core_course_category::get($coursea->category);
+        $categoryb = \core_course_category::get($courseb->category);
         $wrongcategory = $categories['C'];
         $generator->enrol_user($user->id, $coursea->id);
         $generator->enrol_user($user->id, $courseb->id);
@@ -971,7 +965,7 @@ class calendar_information_testcase extends advanced_testcase {
 
         $generator = $this->getDataGenerator();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $this->setAdminUser();
         $generator->enrol_user($USER->id, $course->id);
 
@@ -1002,7 +996,7 @@ class calendar_information_testcase extends advanced_testcase {
 
         $generator = $this->getDataGenerator();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $wrongcategory = $categories['B1'];
         $this->setAdminUser();
         $generator->enrol_user($USER->id, $course->id);
@@ -1049,7 +1043,7 @@ class calendar_information_testcase extends advanced_testcase {
 
         $generator = $this->getDataGenerator();
         $course = $courses['A1.1'];
-        $category = \coursecat::get($course->category);
+        $category = \core_course_category::get($course->category);
         $wrongcategory = $categories['B1'];
         $this->setAdminUser();
         $generator->enrol_user($USER->id, $course->id);

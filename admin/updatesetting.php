@@ -34,8 +34,7 @@ $type    = required_param('type', PARAM_PLUGIN);
 $PAGE->set_url('/admin/updatesetting.php');
 $PAGE->set_context(context_system::instance());
 
-require_login();
-require_capability('moodle/site:config', context_system::instance());
+require_admin();
 require_sesskey();
 
 $plugintypeclass = "\\core\\plugininfo\\{$type}";
@@ -51,11 +50,13 @@ if (!array_key_exists($plugin, $plugins)) {
 
 switch ($action) {
     case 'disable':
-        $plugins[$plugin]->set_enabled(false);
+        $class = \core_plugin_manager::resolve_plugininfo_class($type);
+        $class::enable_plugin($plugin, false);
         break;
 
     case 'enable':
-        $plugins[$plugin]->set_enabled(true);
+        $class = \core_plugin_manager::resolve_plugininfo_class($type);
+        $class::enable_plugin($plugin, true);
         break;
 
     case 'up':

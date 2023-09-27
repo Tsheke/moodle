@@ -293,15 +293,22 @@ class mod_feedback_complete_form extends moodleform {
      */
     public function add_form_element($item, $element, $addrequiredrule = true, $setdefaultvalue = true) {
         global $OUTPUT;
-        // Add element to the form.
-        if (is_array($element)) {
-            if ($this->is_frozen() && $element[0] === 'text') {
-                // Convert 'text' element to 'static' when freezing for better display.
-                $element = ['static', $element[1], $element[2]];
+
+        if (is_array($element) && $element[0] == 'group') {
+            // For groups, use the mforms addGroup API.
+            // $element looks like: ['group', $groupinputname, $name, $objects, $separator, $appendname],
+            $element = $this->_form->addGroup($element[3], $element[1], $element[2], $element[4], $element[5]);
+        } else {
+            // Add non-group element to the form.
+            if (is_array($element)) {
+                if ($this->is_frozen() && $element[0] === 'text') {
+                    // Convert 'text' element to 'static' when freezing for better display.
+                    $element = ['static', $element[1], $element[2]];
+                }
+                $element = call_user_func_array(array($this->_form, 'createElement'), $element);
             }
-            $element = call_user_func_array(array($this->_form, 'createElement'), $element);
+            $element = $this->_form->addElement($element);
         }
-        $element = $this->_form->addElement($element);
 
         // Prepend standard CSS classes to the element classes.
         $attributes = $element->getAttributes();
@@ -316,7 +323,7 @@ class mod_feedback_complete_form extends moodleform {
 
         // Set default value.
         if ($setdefaultvalue && ($tmpvalue = $this->get_item_value($item))) {
-            $this->_form->setDefault($element->getName(), $tmpvalue);
+            $this->_form->setDefault($element->getName(), s($tmpvalue));
         }
 
         // Freeze if needed.
@@ -392,8 +399,8 @@ class mod_feedback_complete_form extends moodleform {
      */
     protected function add_item_label($item, $element) {
         if (strlen($item->label) && ($this->mode == self::MODE_EDIT || $this->mode == self::MODE_VIEW_TEMPLATE)) {
-            $name = $element->getLabel();
-            $name = '('.format_string($item->label).') '.$name;
+            $name = get_string('nameandlabelformat', 'mod_feedback',
+                (object)['label' => format_string($item->label), 'name' => $element->getLabel()]);
             $element->setLabel($name);
         }
     }
@@ -442,8 +449,6 @@ class mod_feedback_complete_form extends moodleform {
         global $OUTPUT;
         $menu = new action_menu();
         $menu->set_owner_selector('#' . $this->guess_element_id($item, $element));
-        $menu->set_constraint('.feedback_form');
-        $menu->set_alignment(action_menu::TR, action_menu::BR);
         $menu->set_menu_trigger(get_string('edit'));
         $menu->prioritise = true;
 

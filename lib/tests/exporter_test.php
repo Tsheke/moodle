@@ -15,15 +15,20 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Exporter class tests.
+ * Exporter testcase.
  *
  * @package    core
  * @copyright  2015 Damyon Wiese
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-global $CFG;
+namespace core;
+
+use core_external\external_format_value;
+use core_external\external_multiple_structure;
+use core_external\external_settings;
+use core_external\external_single_structure;
+use core_external\external_value;
 
 /**
  * Exporter testcase.
@@ -32,22 +37,23 @@ global $CFG;
  * @copyright  2015 Damyon Wiese
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class core_exporter_testcase extends advanced_testcase {
+class exporter_test extends \advanced_testcase {
 
     protected $validrelated = null;
     protected $invalidrelated = null;
     protected $validdata = null;
     protected $invaliddata = null;
 
-    public function setUp() {
-        $s = new stdClass();
+    public function setUp(): void {
+        $s = new \stdClass();
         $this->validrelated = array(
             'simplestdClass' => $s,
             'arrayofstdClass' => array($s, $s),
             'context' => null,
             'aint' => 5,
             'astring' => 'valid string',
-            'abool' => false
+            'abool' => false,
+            'ints' => []
         );
         $this->invalidrelated = array(
             'simplestdClass' => 'a string',
@@ -55,7 +61,8 @@ class core_exporter_testcase extends advanced_testcase {
             'context' => null,
             'aint' => false,
             'astring' => 4,
-            'abool' => 'not a boolean'
+            'abool' => 'not a boolean',
+            'ints' => null
         );
 
         $this->validdata = array('stringA' => 'A string', 'stringAformat' => FORMAT_HTML, 'intB' => 4);
@@ -66,21 +73,21 @@ class core_exporter_testcase extends advanced_testcase {
     public function test_get_read_structure() {
         $structure = core_testable_exporter::get_read_structure();
 
-        $this->assertInstanceOf('external_single_structure', $structure);
-        $this->assertInstanceOf('external_value', $structure->keys['stringA']);
-        $this->assertInstanceOf('external_format_value', $structure->keys['stringAformat']);
-        $this->assertInstanceOf('external_value', $structure->keys['intB']);
-        $this->assertInstanceOf('external_value', $structure->keys['otherstring']);
-        $this->assertInstanceOf('external_multiple_structure', $structure->keys['otherstrings']);
+        $this->assertInstanceOf(external_single_structure::class, $structure);
+        $this->assertInstanceOf(external_value::class, $structure->keys['stringA']);
+        $this->assertInstanceOf(external_format_value::class, $structure->keys['stringAformat']);
+        $this->assertInstanceOf(external_value::class, $structure->keys['intB']);
+        $this->assertInstanceOf(external_value::class, $structure->keys['otherstring']);
+        $this->assertInstanceOf(external_multiple_structure::class, $structure->keys['otherstrings']);
     }
 
     public function test_get_create_structure() {
         $structure = core_testable_exporter::get_create_structure();
 
-        $this->assertInstanceOf('external_single_structure', $structure);
-        $this->assertInstanceOf('external_value', $structure->keys['stringA']);
-        $this->assertInstanceOf('external_format_value', $structure->keys['stringAformat']);
-        $this->assertInstanceOf('external_value', $structure->keys['intB']);
+        $this->assertInstanceOf(external_single_structure::class, $structure);
+        $this->assertInstanceOf(external_value::class, $structure->keys['stringA']);
+        $this->assertInstanceOf(external_format_value::class, $structure->keys['stringAformat']);
+        $this->assertInstanceOf(external_value::class, $structure->keys['intB']);
         $this->assertArrayNotHasKey('otherstring', $structure->keys);
         $this->assertArrayNotHasKey('otherstrings', $structure->keys);
     }
@@ -88,34 +95,47 @@ class core_exporter_testcase extends advanced_testcase {
     public function test_get_update_structure() {
         $structure = core_testable_exporter::get_update_structure();
 
-        $this->assertInstanceOf('external_single_structure', $structure);
-        $this->assertInstanceOf('external_value', $structure->keys['stringA']);
-        $this->assertInstanceOf('external_format_value', $structure->keys['stringAformat']);
-        $this->assertInstanceOf('external_value', $structure->keys['intB']);
+        $this->assertInstanceOf(external_single_structure::class, $structure);
+        $this->assertInstanceOf(external_value::class, $structure->keys['stringA']);
+        $this->assertInstanceOf(external_format_value::class, $structure->keys['stringAformat']);
+        $this->assertInstanceOf(external_value::class, $structure->keys['intB']);
         $this->assertArrayNotHasKey('otherstring', $structure->keys);
         $this->assertArrayNotHasKey('otherstrings', $structure->keys);
     }
 
-    /**
-     * @expectedException coding_exception
-     */
     public function test_invalid_data() {
         global $PAGE;
         $exporter = new core_testable_exporter($this->invaliddata, $this->validrelated);
         $output = $PAGE->get_renderer('core');
 
+        // The exception message is a bit misleading, it actually indicates an expected property wasn't found.
+        $this->expectException(\coding_exception::class);
+        $this->expectExceptionMessage('Unexpected property stringAformat');
         $result = $exporter->export($output);
     }
 
-    /**
-     * @expectedException coding_exception
-     */
     public function test_invalid_related() {
-        global $PAGE;
+        $this->expectException(\coding_exception::class);
+        $this->expectExceptionMessage('Exporter class is missing required related data: (core\core_testable_exporter) ' .
+            'simplestdClass => stdClass');
         $exporter = new core_testable_exporter($this->validdata, $this->invalidrelated);
-        $output = $PAGE->get_renderer('core');
+    }
 
-        $result = $exporter->export($output);
+    public function test_invalid_related_all_cases() {
+        global $PAGE;
+
+        foreach ($this->invalidrelated as $key => $value) {
+            $data = $this->validrelated;
+            $data[$key] = $value;
+
+            try {
+                $exporter = new core_testable_exporter($this->validdata, $data);
+                $output = $PAGE->get_renderer('core');
+                $result = $exporter->export($output);
+            } catch (\coding_exception $e) {
+                $this->assertNotFalse(strpos($e->getMessage(), $key));
+            }
+        }
     }
 
     public function test_valid_data_and_related() {
@@ -132,14 +152,14 @@ class core_exporter_testcase extends advanced_testcase {
 
         $this->resetAfterTest();
         $course = $this->getDataGenerator()->create_course();
-        $syscontext = context_system::instance();
-        $coursecontext = context_course::instance($course->id);
+        $syscontext = \context_system::instance();
+        $coursecontext = \context_course::instance($course->id);
 
         external_settings::get_instance()->set_filter(true);
         filter_set_global_state('urltolink', TEXTFILTER_OFF);
         filter_set_local_state('urltolink', $coursecontext->id, TEXTFILTER_ON);
         set_config('formats', FORMAT_MARKDOWN, 'filter_urltolink');
-        filter_manager::reset_caches();
+        \filter_manager::reset_caches();
 
         $data = [
             'stringA' => '__Watch out:__ https://moodle.org @@PLUGINFILE@@/test.pdf',
@@ -153,7 +173,7 @@ class core_exporter_testcase extends advanced_testcase {
         $result = $exporter->export($output);
 
         $youtube = 'https://moodle.org';
-        $fileurl = (new moodle_url('/webservice/pluginfile.php/' . $syscontext->id . '/test/area/9/test.pdf'))->out(false);
+        $fileurl = (new \moodle_url('/webservice/pluginfile.php/' . $syscontext->id . '/test/area/9/test.pdf'))->out(false);
         $expected = "<p><strong>Watch out:</strong> $youtube $fileurl</p>\n";
         $this->assertEquals($expected, $result->stringA);
         $this->assertEquals(FORMAT_HTML, $result->stringAformat);
@@ -162,7 +182,7 @@ class core_exporter_testcase extends advanced_testcase {
         $exporter = new core_testable_exporter($data, ['context' => $coursecontext] + $this->validrelated);
         $result = $exporter->export($output);
         $youtube = '<a href="https://moodle.org" class="_blanktarget">https://moodle.org</a>';
-        $fileurl = (new moodle_url('/webservice/pluginfile.php/' . $coursecontext->id . '/test/area/9/test.pdf'))->out(false);
+        $fileurl = (new \moodle_url('/webservice/pluginfile.php/' . $coursecontext->id . '/test/area/9/test.pdf'))->out(false);
         $expected = "<p><strong>Watch out:</strong> $youtube <a href=\"$fileurl\" class=\"_blanktarget\">$fileurl</a></p>\n";
         $this->assertEquals($expected, $result->stringA);
         $this->assertEquals(FORMAT_HTML, $result->stringAformat);
@@ -179,6 +199,8 @@ class core_exporter_testcase extends advanced_testcase {
         $this->assertEquals('otherstring description', $properties['otherstring']['description']);
         // Other properties default description.
         $this->assertEquals('otherstrings', $properties['otherstrings']['description']);
+        // Assert nested elements are formatted correctly.
+        $this->assertEquals('id', $properties['nestedarray']['type']['id']['description']);
     }
 }
 
@@ -194,10 +216,10 @@ class core_testable_exporter extends \core\external\exporter {
     protected static function define_related() {
         // We cache the context so it does not need to be retrieved from the course.
         return array('simplestdClass' => 'stdClass', 'arrayofstdClass' => 'stdClass[]', 'context' => 'context?',
-            'astring' => 'string', 'abool' => 'bool', 'aint' => 'int');
+            'astring' => 'string', 'abool' => 'bool', 'aint' => 'int', 'ints' => 'int[]');
     }
 
-    protected function get_other_values(renderer_base $output) {
+    protected function get_other_values(\renderer_base $output) {
         return array(
             'otherstring' => '>Another <strong>string</strong>',
             'otherstrings' => array('String >a', 'String <strong>b</strong>')
@@ -228,6 +250,13 @@ class core_testable_exporter extends \core\external\exporter {
             'otherstrings' => array(
                 'type' => PARAM_TEXT,
                 'multiple' => true
+            ),
+            'nestedarray' => array(
+                'multiple' => true,
+                'optional' => true,
+                'type' => [
+                    'id' => ['type' => PARAM_INT]
+                ]
             )
         );
     }
@@ -235,7 +264,7 @@ class core_testable_exporter extends \core\external\exporter {
     protected function get_format_parameters_for_stringA() {
         return [
             // For testing use the passed context if any.
-            'context' => isset($this->related['context']) ? $this->related['context'] : context_system::instance(),
+            'context' => isset($this->related['context']) ? $this->related['context'] : \context_system::instance(),
             'component' => 'test',
             'filearea' => 'area',
             'itemid' => 9,
@@ -244,14 +273,14 @@ class core_testable_exporter extends \core\external\exporter {
 
     protected function get_format_parameters_for_otherstring() {
         return [
-            'context' => context_system::instance(),
+            'context' => \context_system::instance(),
             'options' => ['escape' => false]
         ];
     }
 
     protected function get_format_parameters_for_otherstrings() {
         return [
-            'context' => context_system::instance(),
+            'context' => \context_system::instance(),
         ];
     }
 }

@@ -15,7 +15,7 @@
     along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 }}
 {{!
-    @template calendar/event_icon
+    @template core_calendar/event_icon
 
     Event icon display.
 
@@ -34,8 +34,8 @@
     }
 }}
 {{#modulename}}
-    {{#pix}} icon, {{modulename}} {{/pix}}
+    {{#pix}} monologo, {{modulename}} {{/pix}}
 {{/modulename}}
 {{^modulename}}
-    {{#pix}} i/{{eventtype}}event, core {{/pix}}
+    {{#icon}}{{#pix}} {{key}}, {{component}}, {{alttext}} {{/pix}}{{/icon}}
 {{/modulename}}

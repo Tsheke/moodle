@@ -14,6 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace tool_dataprivacy;
+
+use data_privacy_testcase;
+
+defined('MOODLE_INTERNAL') || die();
+require_once('data_privacy_testcase.php');
+
 /**
  * Tests for the manager observer.
  *
@@ -21,45 +28,7 @@
  * @copyright  2018 Andrew Nicols <andrew@nicols.co.uk>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
-
-/**
- * API tests.
- *
- * @package    tool_dataprivacy
- * @copyright  2018 Andrew Nicols <andrew@nicols.co.uk>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-class tool_dataprivacy_manager_observer_testcase extends advanced_testcase {
-
-    /**
-     * Helper to set andn return two users who are DPOs.
-     */
-    protected function setup_site_dpos() {
-        global $DB;
-        $this->resetAfterTest();
-
-        $generator = new testing_data_generator();
-        $u1 = $this->getDataGenerator()->create_user();
-        $u2 = $this->getDataGenerator()->create_user();
-
-        $context = context_system::instance();
-
-        // Give the manager role with the capability to manage data requests.
-        $managerroleid = $DB->get_field('role', 'id', array('shortname' => 'manager'));
-        assign_capability('tool/dataprivacy:managedatarequests', CAP_ALLOW, $managerroleid, $context->id, true);
-
-        // Assign both users as manager.
-        role_assign($managerroleid, $u1->id, $context->id);
-        role_assign($managerroleid, $u2->id, $context->id);
-
-        // Only map the manager role to the DPO role.
-        set_config('dporoles', $managerroleid, 'tool_dataprivacy');
-
-        return \tool_dataprivacy\api::get_site_dpos();
-    }
-
+class manager_observer_test extends data_privacy_testcase {
     /**
      * Ensure that when users are configured as DPO, they are sent an message upon failure.
      */
@@ -69,8 +38,11 @@ class tool_dataprivacy_manager_observer_testcase extends advanced_testcase {
         // Create another user who is not a DPO.
         $this->getDataGenerator()->create_user();
 
-        // Create the DPOs.
-        $dpos = $this->setup_site_dpos();
+        // Create two DPOs.
+        $dpo1 = $this->getDataGenerator()->create_user();
+        $dpo2 = $this->getDataGenerator()->create_user();
+        $this->assign_site_dpo(array($dpo1, $dpo2));
+        $dpos = \tool_dataprivacy\api::get_site_dpos();
 
         $observer = new \tool_dataprivacy\manager_observer();
 
@@ -87,7 +59,7 @@ class tool_dataprivacy_manager_observer_testcase extends advanced_testcase {
             return $message->useridto;
         }, $messages);
 
-        $this->assertEquals(array_keys($dpos), $messageusers, '', 0.0, 0, true);
+        $this->assertEqualsCanonicalizing(array_keys($dpos), $messageusers);
     }
 
     /**

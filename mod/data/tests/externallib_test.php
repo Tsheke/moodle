@@ -14,15 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Database module external functions tests
- *
- * @package    mod_data
- * @category   external
- * @copyright  2015 Juan Leyva <juan@moodle.com>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @since      Moodle 2.9
- */
+namespace mod_data;
+
+use externallib_advanced_testcase;
+use mod_data_external;
+use core_external\external_api;
+use core_external\external_settings;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -38,8 +35,9 @@ require_once($CFG->dirroot . '/webservice/tests/helpers.php');
  * @copyright  2015 Juan Leyva <juan@moodle.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @since      Moodle 2.9
+ * @coversDefaultClass \mod_data_external
  */
-class mod_data_external_testcase extends externallib_advanced_testcase {
+class externallib_test extends externallib_advanced_testcase {
 
     /** @var stdClass Test module context. */
     protected $context;
@@ -83,18 +81,18 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
     /**
      * Set up for every test
      */
-    public function setUp() {
+    public function setUp(): void {
         global $DB;
         $this->resetAfterTest();
         $this->setAdminUser();
 
         // Setup test data.
-        $course = new stdClass();
+        $course = new \stdClass();
         $course->groupmode = SEPARATEGROUPS;
         $course->groupmodeforce = true;
         $this->course = $this->getDataGenerator()->create_course($course);
         $this->database = $this->getDataGenerator()->create_module('data', array('course' => $this->course->id));
-        $this->context = context_module::instance($this->database->cmid);
+        $this->context = \context_module::instance($this->database->cmid);
         $this->cm = get_coursemodule_from_instance('data', $this->database->id);
 
         // Create users.
@@ -119,6 +117,21 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
     }
 
     /**
+     * Add a test field to the database activity instance to be used in the unit tests.
+     *
+     * @return \data_field_base
+     */
+    protected function add_test_field(): \data_field_base {
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_data');
+
+        // Add fields.
+        $fieldrecord = new \stdClass();
+        $fieldrecord->name = 'Test field'; // Identifier of the records for testing.
+        $fieldrecord->type = 'text';
+        return $generator->create_field($fieldrecord, $this->database);
+    }
+
+    /**
      * Test get databases by courses
      */
     public function test_mod_data_get_databases_by_courses() {
@@ -138,13 +151,16 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         $course2 = self::getDataGenerator()->create_course();
 
         // First database.
-        $record = new stdClass();
+        $record = new \stdClass();
         $record->introformat = FORMAT_HTML;
         $record->course = $course1->id;
+        // Set multilang text to check that is properly filtered to "en" only.
+        $record->name = '<span lang="en" class="multilang">English</span><span lang="es" class="multilang">Español</span>';
+        $record->intro = '<button>Test with HTML allowed.</button>';
         $database1 = self::getDataGenerator()->create_module('data', $record);
 
         // Second database.
-        $record = new stdClass();
+        $record = new \stdClass();
         $record->introformat = FORMAT_HTML;
         $record->course = $course2->id;
         $database2 = self::getDataGenerator()->create_module('data', $record);
@@ -167,19 +183,31 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         }
         $enrol->enrol_user($instance2, $student->id, $studentrole->id);
 
+        // Enable multilang filter to on content and heading.
+        \filter_manager::reset_caches();
+        filter_set_global_state('multilang', TEXTFILTER_ON);
+        filter_set_applies_to_strings('multilang', true);
+        // Set WS filtering.
+        $wssettings = external_settings::get_instance();
+        $wssettings->set_filter(true);
+
         // Create what we expect to be returned when querying the two courses.
         // First for the student user.
         $expectedfields = array('id', 'coursemodule', 'course', 'name', 'comments', 'timeavailablefrom',
                             'timeavailableto', 'timeviewfrom', 'timeviewto', 'requiredentries', 'requiredentriestoview',
-                            'intro', 'introformat', 'introfiles', 'maxentries', 'rssarticles', 'singletemplate', 'listtemplate',
+                            'intro', 'introformat', 'introfiles', 'lang',
+                            'maxentries', 'rssarticles', 'singletemplate', 'listtemplate',
                             'listtemplateheader', 'listtemplatefooter', 'addtemplate', 'rsstemplate', 'rsstitletemplate',
-                            'csstemplate', 'jstemplate', 'asearchtemplate', 'approval', 'defaultsort', 'defaultsortdir', 'manageapproved');
+                            'csstemplate', 'jstemplate', 'asearchtemplate', 'approval',
+                            'defaultsort', 'defaultsortdir', 'manageapproved');
 
         // Add expected coursemodule.
         $database1->coursemodule = $database1->cmid;
         $database1->introfiles = [];
+        $database1->lang = '';
         $database2->coursemodule = $database2->cmid;
         $database2->introfiles = [];
+        $database2->lang = '';
 
         $expected1 = array();
         $expected2 = array();
@@ -191,6 +219,7 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
             $expected1[$field] = $database1->{$field};
             $expected2[$field] = $database2->{$field};
         }
+        $expected1['name'] = 'English'; // Lang filtered expected.
         $expected1['comments'] = (bool) $expected1['comments'];
         $expected2['comments'] = (bool) $expected2['comments'];
 
@@ -274,7 +303,7 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
     public function test_view_database_no_capabilities() {
         // Test user with no capabilities.
         // We need a explicit prohibit since this capability is allowed for students by default.
-        assign_capability('mod/data:viewpage', CAP_PROHIBIT, $this->studentrole->id, $this->context->id);
+        assign_capability('mod/data:view', CAP_PROHIBIT, $this->studentrole->id, $this->context->id);
         accesslib_clear_all_caches_for_unit_testing();
 
         $this->expectException('moodle_exception');
@@ -313,6 +342,10 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
      */
     public function test_get_data_access_information_student() {
         global $DB;
+
+        // Add a field to database to let users add new entries.
+        $this->add_test_field();
+
         // Modify the database to add access restrictions.
         $this->database->timeavailablefrom = time() + DAYSECS;
         $this->database->requiredentries = 2;
@@ -342,6 +375,10 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
      */
     public function test_get_data_access_information_teacher() {
         global $DB;
+
+        // Add a field to database to let users add new entries.
+        $this->add_test_field();
+
         // Modify the database to add access restrictions.
         $this->database->timeavailablefrom = time() + DAYSECS;
         $this->database->requiredentries = 2;
@@ -367,6 +404,48 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
     }
 
     /**
+     * Test get_data_access_information with groups.
+     */
+    public function test_get_data_access_information_groups() {
+        global $DB;
+
+        // Add a field to database to let users add new entries.
+        $this->add_test_field();
+
+        $DB->set_field('course', 'groupmode', VISIBLEGROUPS, ['id' => $this->course->id]);
+
+        // Check I can see my group.
+        $this->setUser($this->student1);
+
+        $result = mod_data_external::get_data_access_information($this->database->id);
+        $result = external_api::clean_returnvalue(mod_data_external::get_data_access_information_returns(), $result);
+
+        $this->assertEquals($this->group1->id, $result['groupid']); // My group is correctly found.
+        $this->assertFalse($result['canmanageentries']);
+        $this->assertFalse($result['canapprove']);
+        $this->assertTrue($result['canaddentry']);  // I can entries in my groups.
+        $this->assertTrue($result['timeavailable']);
+        $this->assertFalse($result['inreadonlyperiod']);
+        $this->assertEquals(0, $result['numentries']);
+        $this->assertEquals(0, $result['entrieslefttoadd']);
+        $this->assertEquals(0, $result['entrieslefttoview']);
+
+        // Check the other course group in visible groups mode.
+        $result = mod_data_external::get_data_access_information($this->database->id, $this->group2->id);
+        $result = external_api::clean_returnvalue(mod_data_external::get_data_access_information_returns(), $result);
+
+        $this->assertEquals($this->group2->id, $result['groupid']); // The group is correctly found.
+        $this->assertFalse($result['canmanageentries']);
+        $this->assertFalse($result['canapprove']);
+        $this->assertFalse($result['canaddentry']);  // I cannot add entries in other groups.
+        $this->assertTrue($result['timeavailable']);
+        $this->assertFalse($result['inreadonlyperiod']);
+        $this->assertEquals(0, $result['numentries']);
+        $this->assertEquals(0, $result['entrieslefttoadd']);
+        $this->assertEquals(0, $result['entrieslefttoview']);
+    }
+
+    /**
      * Helper method to populate the database with some entries.
      *
      * @return array the entry ids created
@@ -383,7 +462,7 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         // Creating test Fields with default parameter values.
         foreach ($fieldtypes as $fieldtype) {
             $fieldname = 'field-' . $count;
-            $record = new StdClass();
+            $record = new \stdClass();
             $record->name = $fieldname;
             $record->type = $fieldtype;
             $record->required = 1;
@@ -412,9 +491,9 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         }
 
         $this->setUser($this->student1);
-        $entry11 = $generator->create_entry($this->database, $fieldcontents, $this->group1->id);
+        $entry11 = $generator->create_entry($this->database, $fieldcontents, $this->group1->id, ['Cats', 'Dogs']);
         $this->setUser($this->student2);
-        $entry12 = $generator->create_entry($this->database, $fieldcontents, $this->group1->id);
+        $entry12 = $generator->create_entry($this->database, $fieldcontents, $this->group1->id, ['Cats']);
         $entry13 = $generator->create_entry($this->database, $fieldcontents, $this->group1->id);
         // Entry not in group.
         $entry14 = $generator->create_entry($this->database, $fieldcontents, 0);
@@ -436,6 +515,18 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
      */
     public function test_get_entries() {
         global $DB;
+
+        // Check the behaviour when the database has no entries.
+        $result = mod_data_external::get_entries($this->database->id);
+        $result = external_api::clean_returnvalue(mod_data_external::get_entries_returns(), $result);
+        $this->assertEmpty($result['entries']);
+
+        $result = mod_data_external::get_entries($this->database->id, 0, true);
+        $result = external_api::clean_returnvalue(mod_data_external::get_entries_returns(), $result);
+        $this->assertEmpty($result['entries']);
+        $this->assertEmpty($result['listviewcontents']);
+
+        // Add a few fields to the database.
         list($entry11, $entry12, $entry13, $entry14, $entry21) = self::populate_database_with_entries();
 
         // First of all, expect to see only my group entries (not other users in other groups ones).
@@ -447,10 +538,13 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         $this->assertCount(3, $result['entries']);
         $this->assertEquals(3, $result['totalcount']);
         $this->assertEquals($entry11, $result['entries'][0]['id']);
+        $this->assertCount(2, $result['entries'][0]['tags']);
         $this->assertEquals($this->student1->id, $result['entries'][0]['userid']);
         $this->assertEquals($this->group1->id, $result['entries'][0]['groupid']);
         $this->assertEquals($this->database->id, $result['entries'][0]['dataid']);
         $this->assertEquals($entry12, $result['entries'][1]['id']);
+        $this->assertCount(1, $result['entries'][1]['tags']);
+        $this->assertEquals('Cats', $result['entries'][1]['tags'][0]['rawname']);
         $this->assertEquals($this->student2->id, $result['entries'][1]['userid']);
         $this->assertEquals($this->group1->id, $result['entries'][1]['groupid']);
         $this->assertEquals($this->database->id, $result['entries'][1]['dataid']);
@@ -463,7 +557,7 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         $result = mod_data_external::get_entries($this->database->id);
         $result = external_api::clean_returnvalue(mod_data_external::get_entries_returns(), $result);
         $this->assertCount(0, $result['warnings']);
-        $this->assertCount(4, $result['entries']);  // I can see my entry not approved yet.
+        $this->assertCount(4, $result['entries']);  // I can see my entry is pending approval.
         $this->assertEquals(4, $result['totalcount']);
 
         // Now try with the user in the second group that must see only two entries (his group entry and the one without group).
@@ -635,7 +729,7 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         $result = external_api::clean_returnvalue(mod_data_external::get_entry_returns(), $result);
         $this->assertEquals($entry21, $result['entry']['id']);
 
-        // Now, try to get an entry not approved yet.
+        // Now, try to get a pending approval.
         $this->setUser($this->student1);
         $this->expectException('moodle_exception');
         $result = mod_data_external::get_entry($entry13);
@@ -1038,6 +1132,10 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
      * Test add_entry empty_form.
      */
     public function test_add_entry_empty_form() {
+
+        // Add a field to database to let users add new entries.
+        $this->add_test_field();
+
         $result = mod_data_external::add_entry($this->database->id, 0, []);
         $result = external_api::clean_returnvalue(mod_data_external::add_entry_returns(), $result);
         $this->assertEquals(0, $result['newentryid']);
@@ -1075,6 +1173,30 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
 
         $this->setUser($this->student1);
         $this->expectExceptionMessage(get_string('noaccess', 'data'));
+        $this->expectException('moodle_exception');
+        mod_data_external::add_entry($this->database->id, 0, []);
+    }
+
+    /**
+     * Test add_entry invalid group.
+     */
+    public function test_add_entry_invalid_group() {
+
+        // Add a field to database to let users add new entries.
+        $this->add_test_field();
+
+        $this->setUser($this->student1);
+        $this->expectExceptionMessage(get_string('noaccess', 'data'));
+        $this->expectException('moodle_exception');
+        mod_data_external::add_entry($this->database->id, $this->group2->id, []);
+    }
+
+    /**
+     * Test add_entry for an empty database (no fields).
+     *
+     * @covers ::add_entry
+     */
+    public function test_add_entry_empty_database() {
         $this->expectException('moodle_exception');
         mod_data_external::add_entry($this->database->id, 0, []);
     }
@@ -1282,7 +1404,7 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         $this->getDataGenerator()->enrol_user($user2->id, $this->course->id, $this->studentrole->id, 'manual');
 
         // Rate the entry as user1.
-        $rating1 = new stdClass();
+        $rating1 = new \stdClass();
         $rating1->contextid = $this->context->id;
         $rating1->component = 'mod_data';
         $rating1->ratingarea = 'entry';
@@ -1295,7 +1417,7 @@ class mod_data_external_testcase extends externallib_advanced_testcase {
         $rating1->id = $DB->insert_record('rating', $rating1);
 
         // Rate the entry as user2.
-        $rating2 = new stdClass();
+        $rating2 = new \stdClass();
         $rating2->contextid = $this->context->id;
         $rating2->component = 'mod_data';
         $rating2->ratingarea = 'entry';

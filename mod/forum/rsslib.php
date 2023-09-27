@@ -182,7 +182,8 @@ function forum_rss_feed_discussions_sql($forum, $cm, $newsince=0) {
 
     $forumsort = "d.timemodified DESC";
     $postdata = "p.id AS postid, p.subject, p.created as postcreated, p.modified, p.discussion, p.userid, p.message as postmessage, p.messageformat AS postformat, p.messagetrust AS posttrust";
-    $userpicturefields = user_picture::fields('u', null, 'userid');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $userpicturefields = $userfieldsapi->get_sql('u', false, '', 'userid', false)->selects;
 
     $sql = "SELECT $postdata, d.id as discussionid, d.name as discussionname, d.timemodified, d.usermodified, d.groupid,
                    d.timestart, d.timeend, $userpicturefields
@@ -204,6 +205,8 @@ function forum_rss_feed_discussions_sql($forum, $cm, $newsince=0) {
  * @return string the SQL query to be used to get the Post details from the forum table of the database
  */
 function forum_rss_feed_posts_sql($forum, $cm, $newsince=0) {
+    global $USER;
+
     $modcontext = context_module::instance($cm->id);
 
     // Get group enforcement SQL.
@@ -224,7 +227,17 @@ function forum_rss_feed_posts_sql($forum, $cm, $newsince=0) {
         $newsince = '';
     }
 
-    $usernamefields = get_all_user_name_fields(true, 'u');
+    $canseeprivatereplies = has_capability('mod/forum:readprivatereplies', $modcontext);
+    if (!$canseeprivatereplies) {
+        $privatewhere = ' AND (p.privatereplyto = :currentuser1 OR p.userid = :currentuser2 OR p.privatereplyto = 0)';
+        $params['currentuser1'] = $USER->id;
+        $params['currentuser2'] = $USER->id;
+    } else {
+        $privatewhere = '';
+    }
+
+    $userfieldsapi = \core_user\fields::for_name();
+    $usernamefields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     $sql = "SELECT p.id AS postid,
                  d.id AS discussionid,
                  d.name AS discussionname,
@@ -245,6 +258,7 @@ function forum_rss_feed_posts_sql($forum, $cm, $newsince=0) {
             WHERE d.forum = {$forum->id} AND
                 p.discussion = d.id AND p.deleted <> 1 AND
                 u.id = p.userid $newsince
+                $privatewhere
                 $groupselect
             ORDER BY p.created desc";
 
@@ -311,7 +325,7 @@ function forum_rss_feed_contents($forum, $sql, $params, $context) {
     }
 
     if (!$cm = get_coursemodule_from_instance('forum', $forum->id, $forum->course)) {
-        print_error('invalidcoursemodule');
+        throw new \moodle_exception('invalidcoursemodule');
     }
 
     $formatoptions = new stdClass();

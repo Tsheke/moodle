@@ -87,6 +87,18 @@ class grade_scale extends grade_object {
     public $description;
 
     /**
+     * Standard event.
+     * @var bool $standard
+     */
+    public $standard;
+
+    /**
+     * Identifier of the text format to be used.
+     * @var int $descriptionformat
+     */
+    public int $descriptionformat;
+
+    /**
      * Finds and returns a grade_scale instance based on params.
      *
      * @static
@@ -114,9 +126,10 @@ class grade_scale extends grade_object {
      * in object properties.
      *
      * @param string $source from where was the object inserted (mod/forum, manual, etc.)
+     * @param bool $isbulkupdate If bulk grade update is happening.
      * @return int PK ID if successful, false otherwise
      */
-    public function insert($source=null) {
+    public function insert($source = null, $isbulkupdate = false) {
         $this->timecreated = time();
         $this->timemodified = time();
 
@@ -145,9 +158,10 @@ class grade_scale extends grade_object {
      * In addition to update() it also updates grade_outcomes_courses if needed
      *
      * @param string $source from where was the object inserted
+     * @param bool $isbulkupdate If bulk grade update is happening.
      * @return bool success
      */
-    public function update($source=null) {
+    public function update($source = null, $isbulkupdate = false) {
         $this->timemodified = time();
 
         $result = parent::update($source);
@@ -214,7 +228,9 @@ class grade_scale extends grade_object {
      * @return string name
      */
     public function get_name() {
-        return format_string($this->name);
+        // Grade scales can be created at site or course context, so set the filter context appropriately.
+        $context = empty($this->courseid) ? context_system::instance() : context_course::instance($this->courseid);
+        return format_string($this->name, false, ['context' => $context]);
     }
 
     /**

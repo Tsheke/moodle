@@ -74,6 +74,15 @@ class core_tag_tag {
     /** @var int option to hide standard tags when editing item tags */
     const HIDE_STANDARD = 2;
 
+    /** @var int|null tag context ID. */
+    public $taginstancecontextid;
+
+    /** @var int|null time modification. */
+    public $timemodified;
+
+    /** @var int|null 0 if not flagged or positive integer if flagged. */
+    public $flag;
+
     /**
      * Constructor. Use functions get(), get_by_name(), etc.
      *
@@ -81,8 +90,11 @@ class core_tag_tag {
      */
     protected function __construct($record) {
         if (empty($record->id)) {
-            throw new coding_exeption("Record must contain at least field 'id'");
+            throw new coding_exception("Record must contain at least field 'id'");
         }
+        // The following three variables must be added because the database ($record) does not contain them.
+        $this->taginstancecontextid = $record->taginstancecontextid ?? null;
+        $this->flag = $record->flag ?? null;
         $this->record = $record;
     }
 
@@ -146,7 +158,7 @@ class core_tag_tag {
         // Clean up a bit just in case the rules change again.
         $tagname = clean_param($tagname, PARAM_TAG);
 
-        return $ashtml ? htmlspecialchars($tagname) : $tagname;
+        return $ashtml ? htmlspecialchars($tagname, ENT_COMPAT) : $tagname;
     }
 
     /**
@@ -648,7 +660,8 @@ class core_tag_tag {
      * @param int[] $itemids
      * @param int $standardonly wether to return only standard tags or any
      * @param int $tiuserid tag instance user id, only needed for tag areas with user tagging
-     * @return core_tag_tag[] each object contains additional fields taginstanceid, taginstancecontextid and ordering
+     * @return core_tag_tag[][] first array key is itemid. For each itemid,
+     *      an array tagid => tag object with additional fields taginstanceid, taginstancecontextid and ordering
      */
     public static function get_items_tags($component, $itemtype, $itemids, $standardonly = self::BOTH_STANDARD_AND_NOT,
             $tiuserid = 0) {
@@ -752,7 +765,7 @@ class core_tag_tag {
     public static function set_item_tags($component, $itemtype, $itemid, context $context, $tagnames, $tiuserid = 0) {
         if ($itemtype === 'tag') {
             if ($tiuserid) {
-                throw new coding_exeption('Related tags can not have tag instance userid');
+                throw new coding_exception('Related tags can not have tag instance userid');
             }
             debugging('You can not use set_item_tags() for tagging a tag, please use set_related_tags()', DEBUG_DEVELOPER);
             static::get($itemid, '*', MUST_EXIST)->set_related_tags($tagnames);
@@ -907,7 +920,7 @@ class core_tag_tag {
         }
 
         $ordering = $DB->get_field_sql('SELECT MAX(ordering) FROM {tag_instance} ti
-                WHERE ti.itemtype = :itemtype AND ti.itemid = itemid AND
+                WHERE ti.itemtype = :itemtype AND ti.itemid = :itemid AND
                 ti.component = :component' . $usersql, $params);
 
         return $tag->add_instance($component, $itemtype, $itemid, $context, $ordering + 1, $tiuserid);
@@ -1091,10 +1104,6 @@ class core_tag_tag {
                 'rawname' => $this->rawname
             )
         ));
-        if (isset($data['rawname'])) {
-            $event->set_legacy_logdata(array($COURSE->id, 'tag', 'update', 'index.php?id='. $this->id,
-                $originalname . '->'. $this->name));
-        }
         $event->trigger();
         return true;
     }

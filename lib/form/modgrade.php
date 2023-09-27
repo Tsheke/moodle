@@ -240,6 +240,13 @@ class MoodleQuickForm_modgrade extends MoodleQuickForm_group {
             $label = html_writer::tag('label', $this->maxgradeformelement->getLabel(),
                 array('for' => $this->maxgradeformelement->getAttribute('id')));
             $this->_elements[] = $this->createFormElement('static', 'pointlabel', '', $label);
+
+            // Check if there are grades and if so then disable maxgradeformelement.
+            if ($this->hasgrades) {
+                // If it has grades then disable it.
+                $this->maxgradeformelement->updateAttributes(['disabled' => 'disabled']);
+            }
+
             $this->_elements[] = $this->maxgradeformelement;
             $this->_elements[] = $this->createFormElement('static', 'pointspacer', '', '<br />');
         }
@@ -285,10 +292,18 @@ class MoodleQuickForm_modgrade extends MoodleQuickForm_group {
     protected function process_value($type='none', $scale=null, $point=null, $rescalegrades=null) {
         global $COURSE;
         $val = 0;
-        if ($this->isupdate && $this->hasgrades && $this->canrescale && $this->currentgradetype == 'point' && empty($rescalegrades)) {
-            // If the maxgrade field is disabled with javascript, no value is sent with the form and mform assumes the default.
+
+        // If the maxgrade field is disabled with javascript, no value is sent with the form and mform assumes the default.
+        if ($this->isupdate && $this->hasgrades && $this->currentgradetype == 'point') {
+            // If the user cannot rescale, then return the original.
+            $returnoriginal = !$this->canrescale;
+
             // If the user was forced to choose a rescale option - and they haven't - prevent any changes to the max grade.
-            return (string)unformat_float($this->currentgrade);
+            $returnoriginal = $returnoriginal || ($this->canrescale && empty($rescalegrades));
+
+            if ($returnoriginal) {
+                return (string)unformat_float($this->currentgrade);
+            }
         }
         switch ($type) {
             case 'point':
@@ -338,7 +353,7 @@ class MoodleQuickForm_modgrade extends MoodleQuickForm_group {
      *
      * @param string $event Name of event
      * @param mixed $arg event arguments
-     * @param moodleform $caller calling object
+     * @param MoodleQuickForm $caller calling object
      * @return mixed
      */
     public function onQuickFormEvent($event, $arg, &$caller) {
@@ -349,9 +364,9 @@ class MoodleQuickForm_modgrade extends MoodleQuickForm_group {
                 $name = $arg[0];
 
                 // Set disable actions.
-                $caller->disabledIf($name.'[modgrade_scale]', $name.'[modgrade_type]', 'neq', 'scale');
-                $caller->disabledIf($name.'[modgrade_point]', $name.'[modgrade_type]', 'neq', 'point');
-                $caller->disabledIf($name.'[modgrade_rescalegrades]', $name.'[modgrade_type]', 'neq', 'point');
+                $caller->hideIf($name.'[modgrade_scale]', $name.'[modgrade_type]', 'neq', 'scale');
+                $caller->hideIf($name.'[modgrade_point]', $name.'[modgrade_type]', 'neq', 'point');
+                $caller->hideIf($name.'[modgrade_rescalegrades]', $name.'[modgrade_type]', 'neq', 'point');
 
                 // Set validation rules for the sub-elements belonging to this element.
                 // A handy note: the parent scope of a closure is the function in which the closure was declared.
@@ -510,7 +525,7 @@ class MoodleQuickForm_modgrade extends MoodleQuickForm_group {
                         }
                     } else {
                         $this->gradetypeformelement->setValue('none');
-                        $this->maxgradeformelement->setValue('');
+                        $this->maxgradeformelement->setValue(100);
                     }
                 }
                 break;

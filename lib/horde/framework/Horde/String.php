@@ -4,7 +4,7 @@
  *
  * Copyright 2003-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @todo Split up in Horde_String_Multibyte for multibyte-safe methods and
@@ -115,13 +115,15 @@ class Horde_String
              !Horde_Util::extensionExists('iconv') ||
              !Horde_Util::extensionExists('mbstring'))) {
             if (($to == 'utf-8') &&
+                function_exists('utf8_encode') &&
                 in_array($from, array('iso-8859-1', 'us-ascii', 'utf-8'))) {
-                return utf8_encode($input);
+                return @utf8_encode($input);
             }
 
             if (($from == 'utf-8') &&
+                function_exists('utf8_decode') &&
                 in_array($to, array('iso-8859-1', 'us-ascii', 'utf-8'))) {
-                return utf8_decode($input);
+                return @utf8_decode($input);
             }
         }
 
@@ -157,9 +159,13 @@ class Horde_String
 
         /* Try mbstring. */
         if (Horde_Util::extensionExists('mbstring')) {
-            $out = @mb_convert_encoding($input, $to, self::_mbstringCharset($from));
-            if (!empty($out)) {
-                return $out;
+            try {
+                $out = @mb_convert_encoding($input, $to, self::_mbstringCharset($from));
+                if (!empty($out)) {
+                    return $out;
+                }
+            } catch (ValueError $e) {
+                // catch error thrown under PHP 8.0, if mbstring does not support the encoding
             }
         }
 
@@ -195,7 +201,11 @@ class Horde_String
         if (!isset(self::$_lowers[$string])) {
             $language = setlocale(LC_CTYPE, 0);
             setlocale(LC_CTYPE, 'C');
-            self::$_lowers[$string] = strtolower($string);
+            if ($string === null) {
+                self::$_lowers[$string] = '';
+            } else {
+                self::$_lowers[$string] = strtolower($string);
+            }
             setlocale(LC_CTYPE, $language);
         }
 
@@ -373,7 +383,12 @@ class Horde_String
         $charset = self::lower($charset);
 
         if ($charset == 'utf-8' || $charset == 'utf8') {
-            return strlen(utf8_decode($string));
+            if (Horde_Util::extensionExists('mbstring')) {
+                return strlen(mb_convert_encoding($string, 'ISO-8859-1', 'UTF-8'));
+
+            } else if (function_exists('utf8_decode')) {
+                return strlen(@utf8_decode($string));
+            }
         }
 
         if (Horde_Util::extensionExists('mbstring')) {
@@ -589,10 +604,18 @@ class Horde_String
     public static function wordwrap($string, $width = 75, $break = "\n",
                                     $cut = false, $line_folding = false)
     {
+        $breakRegex = '(?:' . preg_quote($break) . ')';
+        $rpos = self::rpos($break, "\n");
+        if ($rpos === false) {
+            $rpos = 0;
+        } else {
+            $rpos++;
+        }
         $wrapped = '';
+        $hasWrapped = false;
 
         while (self::length($string, 'UTF-8') > $width) {
-            $line = self::substr($string, 0, $width, 'UTF-8');
+            $line = self::substr($string, 0, $width + ($hasWrapped ? $rpos : 0), 'UTF-8');
             $string = self::substr($string, self::length($line, 'UTF-8'), null, 'UTF-8');
 
             // Make sure we didn't cut a word, unless we want hard breaks
@@ -603,39 +626,47 @@ class Horde_String
             }
 
             // Wrap at existing line breaks.
-            if (preg_match('/^(.*?)(\r?\n)(.*)$/su', $line, $match)) {
+            $regex = '/^(' . ($hasWrapped ? $breakRegex : '') . '.*?)(\r?\n)(.*)$/us';
+            if (preg_match($regex, $line, $match)) {
                 $wrapped .= $match[1] . $match[2];
                 $string = $match[3] . $string;
+                $hasWrapped = false;
                 continue;
             }
 
             // Wrap at the last colon or semicolon followed by a whitespace if
             // doing line folding.
             if ($line_folding &&
-                preg_match('/^(.*?)(;|:)(\s+.*)$/u', $line, $match)) {
-                $wrapped .= $match[1] . $match[2] . $break;
-                $string = $match[3] . $string;
+                preg_match('/^(.*?)(;|:)(\s+.*)$/us', $line, $match)) {
+                $wrapped .= $match[1] . $match[2];
+                $string = $break . $match[3] . $string;
+                $hasWrapped = true;
                 continue;
             }
 
             // Wrap at the last whitespace of $line.
             $sub = $line_folding
-                ? '(.+[^\s])'
-                : '(.*)';
+                ? '(' . ($hasWrapped ? $breakRegex : '') . '.+[^\s])'
+                : '(' . ($hasWrapped ? $breakRegex : '') . '.*)';
 
             if (preg_match('/^' . $sub . '(\s+)(.*)$/u', $line, $match)) {
-                $wrapped .= $match[1] . $break;
-                $string = ($line_folding ? $match[2] : '') . $match[3] . $string;
+                $wrapped .= $match[1];
+                $string = $break . ($line_folding ? $match[2] : '')
+                    . $match[3] . $string;
+                $hasWrapped = true;
                 continue;
             }
 
             // Hard wrap if necessary.
             if ($cut) {
-                $wrapped .= $line . $break;
+                $wrapped .= $line;
+                $string = $break . $string;
+                $hasWrapped = true;
                 continue;
             }
 
             $wrapped .= $line;
+            $hasWrapped = false;
         }
 
         return $wrapped . $string;

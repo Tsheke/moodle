@@ -66,6 +66,7 @@ trait templatable_form_element {
             $context[strtolower($propname)] = isset($this->$classpropname) ? $this->$classpropname : false;
         }
         $extraclasses = $this->getAttribute('class');
+        $parentonlyclasses = $this->getAttribute('parentclass');
 
         // Special wierd named property.
         $context['frozen'] = !empty($this->_flagFrozen);
@@ -74,14 +75,17 @@ trait templatable_form_element {
         // Other attributes.
         $otherattributes = [];
         foreach ($this->getAttributes() as $attr => $value) {
-            if (!in_array($attr, $standardattributes) && $attr != 'class' && !is_object($value)) {
+            if (!in_array($attr, $standardattributes) && $attr != 'class' && $attr != 'parentclass' && !is_object($value)) {
                 $otherattributes[] = $attr . '="' . s($value) . '"';
             }
         }
         $context['extraclasses'] = $extraclasses;
+        $context['parentclasses'] = $parentonlyclasses;
         $context['type'] = $this->getType();
         $context['attributes'] = implode(' ', $otherattributes);
         $context['emptylabel'] = ($this->getLabel() === '');
+        $context['iderror'] = preg_replace('/_id_/', '_id_error_', $context['id']);
+        $context['iderror'] = preg_replace('/^id_/', 'id_error_', $context['iderror']);
 
         // Elements with multiple values need array syntax.
         if ($this->getAttribute('multiple')) {

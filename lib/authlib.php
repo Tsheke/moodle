@@ -79,6 +79,9 @@ define('AUTH_LOGIN_LOCKOUT', 4);
 /** Can not login becauser user is not authorised. */
 define('AUTH_LOGIN_UNAUTHORISED', 5);
 
+/** Can not login, failed reCaptcha challenge. */
+define('AUTH_LOGIN_FAILED_RECAPTCHA', 6);
+
 /**
  * Abstract authentication plugin.
  *
@@ -117,6 +120,9 @@ class auth_plugin_base {
      */
     protected $errorlogtag = '';
 
+    /** @var array Stores extra information available to the logged in event. */
+    protected $extrauserinfo = [];
+
     /**
      * This is the primary method that is used by the authenticate_user_login()
      * function in moodlelib.php.
@@ -133,7 +139,7 @@ class auth_plugin_base {
      * @return bool Authentication success or failure.
      */
     function user_login($username, $password) {
-        print_error('mustbeoveride', 'debug', '', 'user_login()' );
+        throw new \moodle_exception('mustbeoveride', 'debug', '', 'user_login()' );
     }
 
     /**
@@ -302,7 +308,7 @@ class auth_plugin_base {
      */
     function user_signup($user, $notify=true) {
         //override when can signup
-        print_error('mustbeoveride', 'debug', '', 'user_signup()' );
+        throw new \moodle_exception('mustbeoveride', 'debug', '', 'user_signup()' );
     }
 
     /**
@@ -335,7 +341,7 @@ class auth_plugin_base {
      */
     function user_confirm($username, $confirmsecret) {
         //override when can confirm
-        print_error('mustbeoveride', 'debug', '', 'user_confirm()' );
+        throw new \moodle_exception('mustbeoveride', 'debug', '', 'user_confirm()' );
     }
 
     /**
@@ -598,14 +604,16 @@ class auth_plugin_base {
      * @return array list of custom fields.
      */
     public function get_custom_user_profile_fields() {
-        global $DB;
+        global $CFG;
+        require_once($CFG->dirroot . '/user/profile/lib.php');
+
         // If already retrieved then return.
         if (!is_null($this->customfields)) {
             return $this->customfields;
         }
 
         $this->customfields = array();
-        if ($proffields = $DB->get_records('user_info_field')) {
+        if ($proffields = profile_get_custom_fields()) {
             foreach ($proffields as $proffield) {
                 $this->customfields[] = 'profile_field_'.$proffield->shortname;
             }
@@ -649,7 +657,7 @@ class auth_plugin_base {
         $user = $DB->get_record('user', array('username' => $username, 'mnethostid' => $CFG->mnet_localhost_id));
         if (empty($user)) { // Trouble.
             error_log($this->errorlogtag . get_string('auth_usernotexist', 'auth', $username));
-            print_error('auth_usernotexist', 'auth', '', $username);
+            throw new \moodle_exception('auth_usernotexist', 'auth', '', $username);
             die;
         }
 
@@ -758,6 +766,72 @@ class auth_plugin_base {
         }
         return $data;
     }
+
+    /**
+     * Returns information on how the specified user can change their password.
+     *
+     * @param stdClass $user A user object
+     * @return string[] An array of strings with keys subject and message
+     */
+    public function get_password_change_info(stdClass $user) : array {
+
+        global $USER;
+
+        $site = get_site();
+        $systemcontext = context_system::instance();
+
+        $data = new stdClass();
+        $data->firstname = $user->firstname;
+        $data->lastname  = $user->lastname;
+        $data->username  = $user->username;
+        $data->sitename  = format_string($site->fullname);
+        $data->admin     = generate_email_signoff();
+
+        // This is a workaround as change_password_url() is designed to allow
+        // use of the $USER global. See MDL-66984.
+        $olduser = $USER;
+        $USER = $user;
+        if ($this->can_change_password() and $this->change_password_url()) {
+            // We have some external url for password changing.
+            $data->link = $this->change_password_url()->out();
+        } else {
+            // No way to change password, sorry.
+            $data->link = '';
+        }
+        $USER = $olduser;
+
+        if (!empty($data->link) and has_capability('moodle/user:changeownpassword', $systemcontext, $user->id)) {
+            $subject = get_string('emailpasswordchangeinfosubject', '', format_string($site->fullname));
+            $message = get_string('emailpasswordchangeinfo', '', $data);
+        } else {
+            $subject = get_string('emailpasswordchangeinfosubject', '', format_string($site->fullname));
+            $message = get_string('emailpasswordchangeinfofail', '', $data);
+        }
+
+        return [
+            'subject' => $subject,
+            'message' => $message
+        ];
+    }
+
+    /**
+     * Set extra user information.
+     *
+     * @param array $values Any Key value pair.
+     * @return void
+     */
+    public function set_extrauserinfo(array $values): void {
+        $this->extrauserinfo = $values;
+    }
+
+    /**
+     * Returns extra user information.
+     *
+     * @return array An array of keys and values
+     */
+    public function get_extrauserinfo(): array {
+        return $this->extrauserinfo;
+    }
 }
 
 /**
@@ -828,6 +902,7 @@ function login_attempt_valid($user) {
 /**
  * To be called after failed user login.
  * @param stdClass $user
+ * @throws moodle_exception
  */
 function login_attempt_failed($user) {
     global $CFG;
@@ -839,30 +914,53 @@ function login_attempt_failed($user) {
         return;
     }
 
-    $count = get_user_preferences('login_failed_count', 0, $user);
-    $last = get_user_preferences('login_failed_last', 0, $user);
-    $sincescuccess = get_user_preferences('login_failed_count_since_success', $count, $user);
-    $sincescuccess = $sincescuccess + 1;
-    set_user_preference('login_failed_count_since_success', $sincescuccess, $user);
+    // Force user preferences cache reload to ensure the most up-to-date login_failed_count is fetched.
+    // This is perhaps overzealous but is the documented way of reloading the cache, as per the test method
+    // 'test_check_user_preferences_loaded'.
+    unset($user->preference);
 
-    if (empty($CFG->lockoutthreshold)) {
-        // No threshold means no lockout.
-        // Always unlock here, there might be some race conditions or leftovers when switching threshold.
-        login_unlock_account($user);
-        return;
-    }
+    $resource = 'user:' . $user->id;
+    $lockfactory = \core\lock\lock_config::get_lock_factory('core_failed_login_count_lock');
 
-    if (!empty($CFG->lockoutwindow) and time() - $last > $CFG->lockoutwindow) {
-        $count = 0;
-    }
+    // Get a new lock for the resource, waiting for it for a maximum of 10 seconds.
+    if ($lock = $lockfactory->get_lock($resource, 10)) {
+        try {
+            $count = get_user_preferences('login_failed_count', 0, $user);
+            $last = get_user_preferences('login_failed_last', 0, $user);
+            $sincescuccess = get_user_preferences('login_failed_count_since_success', $count, $user);
+            $sincescuccess = $sincescuccess + 1;
+            set_user_preference('login_failed_count_since_success', $sincescuccess, $user);
 
-    $count = $count+1;
+            if (empty($CFG->lockoutthreshold)) {
+                // No threshold means no lockout.
+                // Always unlock here, there might be some race conditions or leftovers when switching threshold.
+                login_unlock_account($user);
+                $lock->release();
+                return;
+            }
 
-    set_user_preference('login_failed_count', $count, $user);
-    set_user_preference('login_failed_last', time(), $user);
+            if (!empty($CFG->lockoutwindow) and time() - $last > $CFG->lockoutwindow) {
+                $count = 0;
+            }
 
-    if ($count >= $CFG->lockoutthreshold) {
-        login_lock_account($user);
+            $count = $count + 1;
+
+            set_user_preference('login_failed_count', $count, $user);
+            set_user_preference('login_failed_last', time(), $user);
+
+            if ($count >= $CFG->lockoutthreshold) {
+                login_lock_account($user);
+            }
+
+            // Release locks when we're done.
+            $lock->release();
+        } catch (Exception $e) {
+            // Always release the lock on a failure.
+            $lock->release();
+        }
+    } else {
+        // We did not get access to the resource in time, give up.
+        throw new moodle_exception('locktimeout');
     }
 }
 
@@ -923,12 +1021,18 @@ function login_lock_account($user) {
  * Unlock user account and reset timers.
  *
  * @param stdClass $user
+ * @param bool $notify Notify the user their account has been unlocked.
  */
-function login_unlock_account($user) {
+function login_unlock_account($user, bool $notify = false) {
+    global $SESSION;
+
     unset_user_preference('login_lockout', $user);
     unset_user_preference('login_failed_count', $user);
     unset_user_preference('login_failed_last', $user);
 
+    if ($notify) {
+        $SESSION->logininfomsg = get_string('accountunlocked', 'admin');
+    }
     // Note: do not clear the lockout secret because user might click on the link repeatedly.
 }
 
@@ -940,6 +1044,40 @@ function signup_captcha_enabled() {
     global $CFG;
     $authplugin = get_auth_plugin($CFG->registerauth);
     return !empty($CFG->recaptchapublickey) && !empty($CFG->recaptchaprivatekey) && $authplugin->is_captcha_enabled();
+}
+
+/**
+ * Returns whether the captcha element is enabled for the login form, and the admin settings fulfil its requirements.
+ * @return bool
+ */
+function login_captcha_enabled(): bool {
+    global $CFG;
+    return !empty($CFG->recaptchapublickey) && !empty($CFG->recaptchaprivatekey) && $CFG->enableloginrecaptcha == true;
+}
+
+/**
+ * Check the submitted captcha is valid or not.
+ *
+ * @param string|bool $captcha The value submitted in the login form that we are validating.
+ *                             If false is passed for the captcha, this function will always return true.
+ * @return boolean If the submitted captcha is valid.
+ */
+function validate_login_captcha(string|bool $captcha): bool {
+    global $CFG;
+    if (!empty($CFG->alternateloginurl)) {
+        // An external login page cannot use the reCaptcha.
+        return true;
+    }
+    if ($captcha === false) {
+        // The authenticate_user_login() is a core function was extended to validate captcha.
+        // For existing uses other than the login form it does not need to validate the captcha.
+        // Example: login/change_password_form.php or login/token.php.
+        return true;
+    }
+
+    require_once($CFG->libdir . '/recaptchalib_v2.php');
+    $response = recaptcha_check_response(RECAPTCHA_VERIFY_URL, $CFG->recaptchaprivatekey, getremoteaddr(), $captcha);
+    return $response['isvalid'];
 }
 
 /**
@@ -979,15 +1117,35 @@ function signup_validate_data($data, $files) {
     if (! validate_email($data['email'])) {
         $errors['email'] = get_string('invalidemail');
 
-    } else if ($DB->record_exists('user', array('email' => $data['email']))) {
-        $errors['email'] = get_string('emailexists') . ' ' .
-                get_string('emailexistssignuphint', 'moodle',
-                        html_writer::link(new moodle_url('/login/forgot_password.php'), get_string('emailexistshintlink')));
+    } else if (empty($CFG->allowaccountssameemail)) {
+        // Emails in Moodle as case-insensitive and accents-sensitive. Such a combination can lead to very slow queries
+        // on some DBs such as MySQL. So we first get the list of candidate users in a subselect via more effective
+        // accent-insensitive query that can make use of the index and only then we search within that limited subset.
+        $sql = "SELECT 'x'
+                  FROM {user}
+                 WHERE " . $DB->sql_equal('email', ':email1', false, true) . "
+                   AND id IN (SELECT id
+                                FROM {user}
+                               WHERE " . $DB->sql_equal('email', ':email2', false, false) . "
+                                 AND mnethostid = :mnethostid)";
+
+        $params = array(
+            'email1' => $data['email'],
+            'email2' => $data['email'],
+            'mnethostid' => $CFG->mnet_localhost_id,
+        );
+
+        // If there are other user(s) that already have the same email, show an error.
+        if ($DB->record_exists_sql($sql, $params)) {
+            $forgotpasswordurl = new moodle_url('/login/forgot_password.php');
+            $forgotpasswordlink = html_writer::link($forgotpasswordurl, get_string('emailexistshintlink'));
+            $errors['email'] = get_string('emailexists') . ' ' . get_string('emailexistssignuphint', 'moodle', $forgotpasswordlink);
+        }
     }
     if (empty($data['email2'])) {
         $errors['email2'] = get_string('missingemail');
 
-    } else if ($data['email2'] != $data['email']) {
+    } else if (core_text::strtolower($data['email2']) != core_text::strtolower($data['email'])) {
         $errors['email2'] = get_string('invalidemail');
     }
     if (!isset($errors['email'])) {
@@ -996,8 +1154,16 @@ function signup_validate_data($data, $files) {
         }
     }
 
+    // Construct fake user object to check password policy against required information.
+    $tempuser = new stdClass();
+    $tempuser->id = 1;
+    $tempuser->username = $data['username'];
+    $tempuser->firstname = $data['firstname'];
+    $tempuser->lastname = $data['lastname'];
+    $tempuser->email = $data['email'];
+
     $errmsg = '';
-    if (!check_password_policy($data['password'], $errmsg)) {
+    if (!check_password_policy($data['password'], $errmsg, $tempuser)) {
         $errors['password'] = $errmsg;
     }
 
@@ -1027,7 +1193,7 @@ function signup_setup_new_user($user) {
     $user->secret      = random_string(15);
     $user->auth        = $CFG->registerauth;
     // Initialize alternate name fields to empty strings.
-    $namefields = array_diff(get_all_user_name_fields(), useredit_get_required_name_fields());
+    $namefields = array_diff(\core_user\fields::get_name_fields(), useredit_get_required_name_fields());
     foreach ($namefields as $namefield) {
         $user->$namefield = '';
     }
@@ -1074,7 +1240,7 @@ function signup_is_enabled() {
 
 /**
  * Helper function used to print locking for auth plugins on admin pages.
- * @param stdclass $settings Moodle admin settings instance
+ * @param admin_settingpage $settings Moodle admin settings instance
  * @param string $auth authentication plugin shortname
  * @param array $userfields user profile fields
  * @param string $helptext help text to be displayed at top of form
@@ -1084,7 +1250,8 @@ function signup_is_enabled() {
  * @since Moodle 3.3
  */
 function display_auth_lock_options($settings, $auth, $userfields, $helptext, $mapremotefields, $updateremotefields, $customfields = array()) {
-    global $DB;
+    global $CFG;
+    require_once($CFG->dirroot . '/user/profile/lib.php');
 
     // Introductory explanation and help text.
     if ($mapremotefields) {
@@ -1105,7 +1272,8 @@ function display_auth_lock_options($settings, $auth, $userfields, $helptext, $ma
     // Generate the list of profile fields to allow updates / lock.
     if (!empty($customfields)) {
         $userfields = array_merge($userfields, $customfields);
-        $customfieldname = $DB->get_records('user_info_field', null, '', 'shortname, name');
+        $allcustomfields = profile_get_custom_fields();
+        $customfieldname = array_combine(array_column($allcustomfields, 'shortname'), $allcustomfields);
     }
 
     foreach ($userfields as $field) {
@@ -1125,8 +1293,6 @@ function display_auth_lock_options($settings, $auth, $userfields, $helptext, $ma
                 // limit for the setting name is 100.
                 $fieldnametoolong = true;
             }
-        } else if ($fieldname == 'url') {
-            $fieldname = get_string('webpage');
         } else {
             $fieldname = get_string($fieldname);
         }

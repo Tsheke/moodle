@@ -2,7 +2,7 @@
 /**
  * Copyright 2012-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (BSD). If you
+ * See the enclosed file LICENSE for license information (BSD). If you
  * did not receive this file, see http://www.horde.org/licenses/bsd.
  *
  * @category  Horde
@@ -44,11 +44,11 @@ class Horde_Mail_Rfc822_Identification extends Horde_Mail_Rfc822
     /**
      * Parse an identification header.
      *
-     * @param string $value  Identification field value to parse.
+     * @param string|null $value  Identification field value to parse.
      */
     public function parse($value)
     {
-        if (!strlen($value)) {
+        if (empty($value)) {
             return;
         }
 

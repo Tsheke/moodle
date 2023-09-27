@@ -25,21 +25,29 @@
         "width": "500"
     }
 }}
-<div class="progressbar_container" style="width: {{width}}px;" id="{{id}}">
-    <h2 id="{{id}}_status"></h2>
-    <div class="progress progress-striped active">
-        <div id="{{id}}_bar" class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">&nbsp;</div>
+<div id="{{id}}" class="progressbar_container mb-3">
+    <div class="progress">
+        <div id="{{id}}_bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-value="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
     </div>
-    <p id="{{id}}_estimate"></p>
+    <div class="d-flex">
+        <div style="flex: 1 1 0; min-width: 0;">
+            <div id="{{id}}_status" class="text-truncate">&nbsp;</div>
+        </div>
+        <div class="text-right pl-3" style="flex: 0 0 content">
+            <span id="{{id}}_estimate" class="">&nbsp;</span>
+            <span id="{{id}}_percentage" class="d-inline-block" style="width: 3em">0%</span>
+        </div>
+    </div>
 </div>
 
 {{! We must not use the JS helper otherwise this gets executed too late. }}
-<script type="text/javascript">
+<script>
 (function() {
     var el = document.getElementById('{{id}}'),
         progressBar = document.getElementById('{{id}}_bar'),
         statusIndicator = document.getElementById('{{id}}_status'),
         estimateIndicator = document.getElementById('{{id}}_estimate');
+        percentageIndicator = document.getElementById('{{id}}_percentage');
 
     el.addEventListener('update', function(e) {
         var msg = e.detail.message,
@@ -47,20 +55,19 @@
             estimate = e.detail.estimate;
 
         statusIndicator.textContent = msg;
-        progressBar.textContent = '' + percent + '%';
+        progressBar.style.width = percent.toFixed(1) + '%';
+        progressBar.setAttribute('value', percent.toFixed(1));
         if (percent === 100) {
-            el.classList.add('progress-success');
+            progressBar.classList.add('bg-success');
+            progressBar.classList.remove('progress-bar-striped');
+            progressBar.classList.remove('progress-bar-animated');
+            percentageIndicator.textContent = '100%';
             estimateIndicator.textContent = '';
         } else {
-            if (estimate) {
-                estimateIndicator.textContent = estimate;
-            } else {
-                estimateIndicator.textContent = '';
-            }
-            el.classList.remove('progress-success');
+            estimateIndicator.textContent = estimate;
+            percentageIndicator.textContent =  percent.toFixed(1) + '%';
+            progressBar.classList.remove('bg-success');
         }
-        progressBar.setAttribute('aria-valuenow', percent);
-        progressBar.setAttribute('style', 'width: ' + percent + '%');
     });
 })();
 </script>

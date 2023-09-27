@@ -24,6 +24,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use core\report_helper;
+
 require_once(__DIR__.'/../../config.php');
 require_once("{$CFG->libdir}/completionlib.php");
 
@@ -54,6 +56,11 @@ $PAGE->set_pagelayout('report');
 $firstnamesort = ($sort == 'firstname');
 $excel = ($format == 'excelcsv');
 $csv = ($format == 'csv' || $excel);
+if ($csv) {
+    $dateformat = "%F %T";
+} else {
+    $dateformat = get_string('strftimedatetimeshort', 'langconfig');
+}
 
 // Load CSV library
 if ($csv) {
@@ -65,8 +72,8 @@ $start   = optional_param('start', 0, PARAM_INT);
 $sifirst = optional_param('sifirst', 'all', PARAM_NOTAGS);
 $silast  = optional_param('silast', 'all', PARAM_NOTAGS);
 
-// Whether to show extra user identity information
-$extrafields = get_extra_user_fields($context);
+// Whether to show extra user identity information.
+$extrafields = \core_user\fields::get_identity_fields($context, true);
 $leftcols = 1 + count($extrafields);
 
 // Check permissions
@@ -91,7 +98,7 @@ $modinfo = get_fast_modinfo($course);
 $completion = new completion_info($course);
 
 if (!$completion->has_criteria()) {
-    print_error('nocriteriaset', 'completion', $CFG->wwwroot.'/course/report.php?id='.$course->id);
+    throw new \moodle_exception('nocriteriaset', 'completion', $CFG->wwwroot.'/course/report.php?id='.$course->id);
 }
 
 // Get criteria and put in correct order
@@ -144,7 +151,7 @@ if ($csv) {
     $shortname = format_string($course->shortname, true, array('context' => $context));
     $shortname = preg_replace('/[^a-z0-9-]/', '_',core_text::strtolower(strip_tags($shortname)));
 
-    $export = new csv_export_writer();
+    $export = new csv_export_writer('comma', '"', 'application/download', $excel);
     $export->set_filename('completion-'.$shortname);
 
 } else {
@@ -155,6 +162,9 @@ if ($csv) {
     $PAGE->set_heading($course->fullname);
 
     echo $OUTPUT->header();
+    // Print the selected dropdown.
+    $pluginname = get_string('pluginname', 'report_completion');
+    report_helper::print_report_selector($pluginname);
 
     // Handle groups (if enabled)
     groups_print_course_menu($course, $CFG->wwwroot.'/report/completion/index.php?course='.$course->id);
@@ -184,12 +194,12 @@ $where = array();
 $where_params = array();
 
 if ($sifirst !== 'all') {
-    $where[] = $DB->sql_like('u.firstname', ':sifirst', false);
+    $where[] = $DB->sql_like('u.firstname', ':sifirst', false, false);
     $where_params['sifirst'] = $sifirst.'%';
 }
 
 if ($silast !== 'all') {
-    $where[] = $DB->sql_like('u.lastname', ':silast', false);
+    $where[] = $DB->sql_like('u.lastname', ':silast', false, false);
     $where_params['silast'] = $silast.'%';
 }
 
@@ -440,7 +450,7 @@ if (!$csv) {
     // Print user identity columns
     foreach ($extrafields as $field) {
         echo '<th scope="col" class="completion-identifyfield">' .
-                get_user_field_name($field) . '</th>';
+                \core_user\fields::get_display_name($field) . '</th>';
     }
 
     ///
@@ -511,7 +521,7 @@ if (!$csv) {
     $row[] = get_string('id', 'report_completion');
     $row[] = get_string('name', 'report_completion');
     foreach ($extrafields as $field) {
-       $row[] = get_user_field_name($field);
+        $row[] = \core_user\fields::get_display_name($field);
     }
 
     // Add activity headers
@@ -546,7 +556,7 @@ foreach ($progress as $user) {
     if ($csv) {
         $row = array();
         $row[] = $user->id;
-        $row[] = fullname($user);
+        $row[] = fullname($user, has_capability('moodle/site:viewfullnames', $context));
         foreach ($extrafields as $field) {
             $row[] = $user->{$field};
         }
@@ -559,7 +569,8 @@ foreach ($progress as $user) {
             $userurl = new moodle_url('/user/view.php', array('id' => $user->id, 'course' => $course->id));
         }
 
-        print '<th scope="row"><a href="'.$userurl->out().'">'.fullname($user).'</a></th>';
+        print '<th scope="row"><a href="' . $userurl->out() . '">' .
+            fullname($user, has_capability('moodle/site:viewfullnames', $context)) . '</a></th>';
         foreach ($extrafields as $field) {
             echo '<td>'.s($user->{$field}).'</td>';
         }
@@ -586,7 +597,7 @@ foreach ($progress as $user) {
                 $state = COMPLETION_INCOMPLETE;
             }
             if ($is_complete) {
-                $date = userdate($criteria_completion->timecompleted, get_string('strftimedatetimeshort', 'langconfig'));
+                $date = userdate($criteria_completion->timecompleted, $dateformat);
             } else {
                 $date = '';
             }
@@ -634,7 +645,7 @@ foreach ($progress as $user) {
         $a->state    = $describe;
 
         if ($is_complete) {
-            $a->date = userdate($criteria_completion->timecompleted, get_string('strftimedatetimeshort', 'langconfig'));
+            $a->date = userdate($criteria_completion->timecompleted, $dateformat);
         } else {
             $a->date = '';
         }
@@ -688,7 +699,7 @@ foreach ($progress as $user) {
     $a = new StdClass;
 
     if ($ccompletion->is_complete()) {
-        $a->date = userdate($ccompletion->timecompleted, get_string('strftimedatetimeshort', 'langconfig'));
+        $a->date = userdate($ccompletion->timecompleted, $dateformat);
     } else {
         $a->date = '';
     }
@@ -724,7 +735,6 @@ if ($csv) {
 }
 
 print '</table>';
-print $pagingbar;
 
 $csvurl = new moodle_url('/report/completion/index.php', array('course' => $course->id, 'format' => 'csv'));
 $excelurl = new moodle_url('/report/completion/index.php', array('course' => $course->id, 'format' => 'excelcsv'));

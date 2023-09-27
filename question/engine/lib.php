@@ -66,7 +66,7 @@ abstract class question_engine {
      * {@link save_questions_usage_by_activity()}.
      *
      * @param string $component the plugin creating this attempt. For example mod_quiz.
-     * @param object $context the context this usage belongs to.
+     * @param context $context the context this usage belongs to.
      * @return question_usage_by_activity the newly created object.
      */
     public static function make_questions_usage_by_activity($component, $context) {
@@ -432,7 +432,7 @@ abstract class question_engine {
     public static function get_all_response_file_areas() {
         $variables = array();
         foreach (question_bank::get_all_qtypes() as $qtype) {
-            $variables += $qtype->response_file_areas();
+            $variables = array_merge($variables, $qtype->response_file_areas());
         }
 
         $areas = array();
@@ -453,6 +453,8 @@ abstract class question_engine {
 
     /**
      * Initialise the JavaScript required on pages where questions will be displayed.
+     *
+     * @return string
      */
     public static function initialise_js() {
         return question_flags::initialise_js();
@@ -474,7 +476,10 @@ abstract class question_engine {
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class question_display_options {
-    /**#@+ @var integer named constants for the values that most of the options take. */
+    /**#@+
+     * @var integer named constants for the values that most of the options take.
+     */
+    const SHOW_ALL = -1;
     const HIDDEN = 0;
     const VISIBLE = 1;
     const EDITABLE = 2;
@@ -582,7 +587,7 @@ class question_display_options {
     /**
      * Used in places like the question history table, to show a link to review
      * this question in a certain state. If blank, a link is not shown.
-     * @var string base URL for a review question script.
+     * @var moodle_url base URL for a review question script.
      */
     public $questionreviewlink = null;
 
@@ -625,9 +630,33 @@ class question_display_options {
     public $editquestionparams = array();
 
     /**
-     * @var int the context the attempt being output belongs to.
+     * @var context the context the attempt being output belongs to.
      */
     public $context;
+
+    /**
+     * @var int The option to show the action author in the response history.
+     */
+    public $userinfoinhistory = self::HIDDEN;
+
+    /**
+     * This identifier should be added to the labels of all input fields in the question.
+     *
+     * This is so people using assistive technology can easily tell which input belong to
+     * which question. The helper {@see self::add_question_identifier_to_label() makes this easier.
+     *
+     * If not set before the question is rendered, then it defaults to 'Question N'.
+     * (lang string)
+     *
+     * @var string The identifier that the question being rendered is associated with.
+     *              E.g. The question number when it is rendered on a quiz.
+     */
+    public $questionidentifier = null;
+
+    /**
+     * @var ?bool $versioninfo Should we display the version in the question info?
+     */
+    public ?bool $versioninfo = null;
 
     /**
      * Set all the feedback-related fields {@link $feedback}, {@link generalfeedback},
@@ -658,6 +687,38 @@ class question_display_options {
             $options[$i] = $i;
         }
         return $options;
+    }
+
+    /**
+     * Helper to add the question identify (if there is one) to the label of an input field in a question.
+     *
+     * @param string $label The plain field label. E.g. 'Answer 1'
+     * @param bool $sridentifier If true, the question identifier, if added, will be wrapped in a sr-only span. Default false.
+     * @param bool $addbefore If true, the question identifier will be added before the label.
+     * @return string The amended label. For example 'Answer 1, Question 1'.
+     */
+    public function add_question_identifier_to_label(string $label, bool $sridentifier = false, bool $addbefore = false): string {
+        if (!$this->has_question_identifier()) {
+            return $label;
+        }
+        $identifier = $this->questionidentifier;
+        if ($sridentifier) {
+            $identifier = html_writer::span($identifier, 'sr-only');
+        }
+        $fieldlang = 'fieldinquestion';
+        if ($addbefore) {
+            $fieldlang = 'fieldinquestionpre';
+        }
+        return get_string($fieldlang, 'question', (object)['fieldname' => $label, 'questionindentifier' => $identifier]);
+    }
+
+    /**
+     * Whether a question number has been provided for the question that is being displayed.
+     *
+     * @return bool
+     */
+    public function has_question_identifier(): bool {
+        return $this->questionidentifier !== null && trim($this->questionidentifier) !== '';
     }
 }
 
@@ -694,7 +755,7 @@ abstract class question_flags {
     public static function get_postdata(question_attempt $qa) {
         $qaid = $qa->get_database_id();
         $qubaid = $qa->get_usage_id();
-        $qid = $qa->get_question()->id;
+        $qid = $qa->get_question_id();
         $slot = $qa->get_slot();
         $checksum = self::get_toggle_checksum($qubaid, $qid, $qaid, $slot);
         return "qaid={$qaid}&qubaid={$qubaid}&qid={$qid}&slot={$slot}&checksum={$checksum}&sesskey=" .
@@ -737,26 +798,22 @@ abstract class question_flags {
             'requires' => array('base', 'dom', 'event-delegate', 'io-base'),
         );
         $actionurl = $CFG->wwwroot . '/question/toggleflag.php';
-        $flagtext = array(
-            0 => get_string('clickflag', 'question'),
-            1 => get_string('clickunflag', 'question')
-        );
         $flagattributes = array(
             0 => array(
                 'src' => $OUTPUT->image_url('i/unflagged') . '',
                 'title' => get_string('clicktoflag', 'question'),
-                'alt' => get_string('notflagged', 'question'),
-              //  'text' => get_string('clickflag', 'question'),
+                'alt' => get_string('flagged', 'question'), // Label on toggle should not change.
+                'text' => get_string('clickflag', 'question'),
             ),
             1 => array(
                 'src' => $OUTPUT->image_url('i/flagged') . '',
                 'title' => get_string('clicktounflag', 'question'),
                 'alt' => get_string('flagged', 'question'),
-               // 'text' => get_string('clickunflag', 'question'),
+                'text' => get_string('clickunflag', 'question'),
             ),
         );
         $PAGE->requires->js_init_call('M.core_question_flags.init',
-                array($actionurl, $flagattributes, $flagtext), false, $module);
+                array($actionurl, $flagattributes), false, $module);
         $done = true;
     }
 }
@@ -788,6 +845,16 @@ class question_out_of_sequence_exception extends moodle_exception {
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 abstract class question_utils {
+    /**
+     * @var float tolerance to use when comparing question mark/fraction values.
+     *
+     * When comparing floating point numbers in a computer, the representation is not
+     * necessarily exact. Therefore, we need to allow a tolerance.
+     * Question marks are stored in the database as decimal numbers with 7 decimal places.
+     * Therefore, this is the appropriate tolerance to use.
+     */
+    const MARK_TOLERANCE = 0.00000005;
+
     /**
      * Tests to see whether two arrays have the same keys, with the same values
      * (as compared by ===) for each key. However, the order of the arrays does
@@ -901,8 +968,49 @@ abstract class question_utils {
                     'converted to roman numerals.', $number);
         }
 
-        return self::$thousands[$number / 1000 % 10] . self::$hundreds[$number / 100 % 10] .
-                self::$tens[$number / 10 % 10] . self::$units[$number % 10];
+        return self::$thousands[floor($number / 1000) % 10] . self::$hundreds[floor($number / 100) % 10] .
+                self::$tens[floor($number / 10) % 10] . self::$units[$number % 10];
+    }
+
+    /**
+     * Convert an integer to a letter of alphabet.
+     * @param int $number an integer between 1 and 26 inclusive.
+     * Anything else will throw an exception.
+     * @return string the number converted to upper case letter of alphabet.
+     */
+    public static function int_to_letter($number) {
+        $alphabet = [
+                '1' => 'A',
+                '2' => 'B',
+                '3' => 'C',
+                '4' => 'D',
+                '5' => 'E',
+                '6' => 'F',
+                '7' => 'G',
+                '8' => 'H',
+                '9' => 'I',
+                '10' => 'J',
+                '11' => 'K',
+                '12' => 'L',
+                '13' => 'M',
+                '14' => 'N',
+                '15' => 'O',
+                '16' => 'P',
+                '17' => 'Q',
+                '18' => 'R',
+                '19' => 'S',
+                '20' => 'T',
+                '21' => 'U',
+                '22' => 'V',
+                '23' => 'W',
+                '24' => 'X',
+                '25' => 'Y',
+                '26' => 'Z'
+        ];
+        if (!is_integer($number) || $number < 1 || $number > count($alphabet)) {
+            throw new coding_exception('Only integers between 1 and 26 can be converted to letters.', $number);
+        }
+        return $alphabet[$number];
     }
 
     /**
@@ -958,9 +1066,10 @@ abstract class question_utils {
     /**
      * Get the options required to configure the filepicker for one of the editor
      * toolbar buttons.
+     *
      * @param mixed $acceptedtypes array of types of '*'.
      * @param int $draftitemid the draft area item id.
-     * @param object $context the context.
+     * @param context $context the context.
      * @return object the required options.
      */
     protected static function specific_filepicker_options($acceptedtypes, $draftitemid, $context) {
@@ -981,7 +1090,8 @@ abstract class question_utils {
 
     /**
      * Get filepicker options for question related text areas.
-     * @param object $context the context.
+     *
+     * @param context $context the context.
      * @param int $draftitemid the draft area item id.
      * @return array An array of options
      */
@@ -995,7 +1105,8 @@ abstract class question_utils {
 
     /**
      * Get editor options for question related text areas.
-     * @param object $context the context.
+     *
+     * @param context $context the context.
      * @return array An array of options
      */
     public static function get_editor_options($context) {

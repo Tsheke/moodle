@@ -47,76 +47,143 @@ function xmldb_forum_upgrade($oldversion) {
 
     $dbman = $DB->get_manager(); // Loads ddl manager and xmldb classes.
 
-    if ($oldversion < 2016091200) {
+    // Automatically generated Moodle v3.9.0 release upgrade line.
+    // Put any upgrade step following this.
 
-        // Define field lockdiscussionafter to be added to forum.
-        $table = new xmldb_table('forum');
-        $field = new xmldb_field('lockdiscussionafter', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'displaywordcount');
+    if ($oldversion < 2020072100) {
+        // Add index privatereplyto (not unique) to the forum_posts table.
+        $table = new xmldb_table('forum_posts');
+        $index = new xmldb_index('privatereplyto', XMLDB_INDEX_NOTUNIQUE, ['privatereplyto']);
 
-        // Conditionally launch add field lockdiscussionafter.
-        if (!$dbman->field_exists($table, $field)) {
-            $dbman->add_field($table, $field);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_mod_savepoint(true, 2020072100, 'forum');
+    }
+
+    if ($oldversion < 2021101100) {
+        // Add custom data to digest tasks to stop duplicates being created after this patch.
+        $timenow = time();
+
+        $sitetimezone = \core_date::get_server_timezone();
+        $servermidnight = usergetmidnight($timenow, $sitetimezone);
+        $digesttime = $servermidnight + ($CFG->digestmailtime * 3600);
+        if ($digesttime < $timenow) {
+            // Digest time is in the past. set for tomorrow.
+            $servermidnight = usergetmidnight($timenow + DAYSECS, $sitetimezone);
+        }
+
+        $customdata = json_encode(['servermidnight' => $servermidnight]);
+
+        $params = [
+            'component' => 'mod_forum',
+            'classname' => '\mod_forum\task\send_user_digests',
+            'customdata' => '', // We do not want to overwrite any tasks that already have the custom data.
+        ];
+
+        $textfield = $DB->sql_compare_text('customdata', 1);
+
+        $sql = "component = :component AND classname = :classname AND $textfield = :customdata";
+
+        $DB->set_field_select('task_adhoc', 'customdata', $customdata, $sql, $params);
+
+        upgrade_mod_savepoint(true, 2021101100, 'forum');
+    }
+
+    if ($oldversion < 2021101101) {
+        // Remove the userid-forumid index as it gets replaces with forumid-userid.
+        $table = new xmldb_table('forum_read');
+        $index = new xmldb_index('userid-forumid', XMLDB_INDEX_NOTUNIQUE, ['userid', 'forumid']);
+
+        // Conditionally launch drop index userid-forumid.
+        if ($dbman->index_exists($table, $index)) {
+            $dbman->drop_index($table, $index);
+        }
+
+        // Remove the userid-discussionid index as it gets replaced with discussionid-userid.
+        $table = new xmldb_table('forum_read');
+        $index = new xmldb_index('userid-discussionid', XMLDB_INDEX_NOTUNIQUE, ['userid', 'discussionid']);
+
+        // Conditionally launch drop index userid-discussionid.
+        if ($dbman->index_exists($table, $index)) {
+            $dbman->drop_index($table, $index);
+        }
+
+        // Define index userid (not unique) to be added to forum_read.
+        $table = new xmldb_table('forum_read');
+        $index = new xmldb_index('userid', XMLDB_INDEX_NOTUNIQUE, ['userid']);
+
+        // Conditionally launch add index userid.
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        // Build replacement indexes to replace the two dropped earlier.
+        // Define index forumid-userid (not unique) to be added to forum_read.
+        $table = new xmldb_table('forum_read');
+        $index = new xmldb_index('forumid-userid', XMLDB_INDEX_NOTUNIQUE, ['forumid', 'userid']);
+
+        // Conditionally launch add index forumid-userid.
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        // Define index discussionid-userid (not unique) to be added to forum_read.
+        $table = new xmldb_table('forum_read');
+        $index = new xmldb_index('discussionid-userid', XMLDB_INDEX_NOTUNIQUE, ['discussionid', 'userid']);
+
+        // Conditionally launch add index discussionid-userid.
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
         }
 
         // Forum savepoint reached.
-        upgrade_mod_savepoint(true, 2016091200, 'forum');
+        upgrade_mod_savepoint(true, 2021101101, 'forum');
     }
 
-    // Automatically generated Moodle v3.2.0 release upgrade line.
+    // Automatically generated Moodle v4.0.0 release upgrade line.
     // Put any upgrade step following this.
 
-    // Automatically generated Moodle v3.3.0 release upgrade line.
-    // Put any upgrade step following this.
+    if ($oldversion < 2022062700) {
+        // Unset $CFG->forum_usecoursefullname.
+        unset_config('forum_usecoursefullname');
 
-    if ($oldversion < 2017092200) {
+        // Define field usecoursefullname to be dropped from forum.
+        $table = new xmldb_table('forum');
+        $field = new xmldb_field('usecoursefullname');
 
-        // Remove duplicate entries from forum_subscriptions.
-        // Find records with multiple userid/forum combinations and find the highest ID.
-        // Later we will remove all those entries.
-        $sql = "
-            SELECT MIN(id) as minid, userid, forum
-            FROM {forum_subscriptions}
-            GROUP BY userid, forum
-            HAVING COUNT(id) > 1";
-
-        if ($duplicatedrows = $DB->get_recordset_sql($sql)) {
-            foreach ($duplicatedrows as $row) {
-                $DB->delete_records_select('forum_subscriptions',
-                    'userid = :userid AND forum = :forum AND id <> :minid', (array)$row);
-            }
+        // Conditionally launch drop field usecoursefullname.
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
         }
-        $duplicatedrows->close();
 
-        // Define key useridforum (primary) to be added to forum_subscriptions.
-        $table = new xmldb_table('forum_subscriptions');
-        $key = new xmldb_key('useridforum', XMLDB_KEY_UNIQUE, array('userid', 'forum'));
+        // Forum savepoint reached.
+        upgrade_mod_savepoint(true, 2022062700, 'forum');
+    }
 
-        // Launch add key useridforum.
+    if ($oldversion < 2022072900) {
+        // Define key usermodified (foreign) to be added to forum_discussions.
+        $table = new xmldb_table('forum_discussions');
+        $key = new xmldb_key('usermodified', XMLDB_KEY_FOREIGN, ['usermodified'], 'user', ['id']);
+        // Launch add key usermodified.
         $dbman->add_key($table, $key);
 
         // Forum savepoint reached.
-        upgrade_mod_savepoint(true, 2017092200, 'forum');
+        upgrade_mod_savepoint(true, 2022072900, 'forum');
     }
 
-    // Automatically generated Moodle v3.4.0 release upgrade line.
+    // Automatically generated Moodle v4.1.0 release upgrade line.
     // Put any upgrade step following this.
 
-    if ($oldversion < 2018032900) {
+    if ($oldversion < 2022112801) {
+        // Some very old discussions from early Moodle versions may have the usermodified set to zero.
+        $DB->execute("UPDATE {forum_discussions} SET usermodified = userid WHERE usermodified = 0");
 
-        // Define field deleted to be added to forum_posts.
-        $table = new xmldb_table('forum_posts');
-        $field = new xmldb_field('deleted', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'mailnow');
-
-        // Conditionally launch add field deleted.
-        if (!$dbman->field_exists($table, $field)) {
-            $dbman->add_field($table, $field);
-        }
-
-        // Forum savepoint reached.
-        upgrade_mod_savepoint(true, 2018032900, 'forum');
+        upgrade_mod_savepoint(true, 2022112801, 'forum');
     }
 
-    // Automatically generated Moodle v3.5.0 release upgrade line.
+    // Automatically generated Moodle v4.2.0 release upgrade line.
     // Put any upgrade step following this.
 
     return true;

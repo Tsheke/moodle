@@ -48,11 +48,20 @@ use tool_policy\policy_version;
  */
 class page_viewalldoc implements renderable, templatable {
 
+    /** @var ?moodle_url Return url */
+    private $returnurl = null;
+
+    /** @var array List current (active) policy versions. */
+    private array $policies = [];
+
     /**
      * Prepare the page for rendering.
      *
      */
-    public function __construct() {
+    public function __construct($returnurl) {
+        if (!empty($returnurl)) {
+            $this->returnurl = new moodle_url($returnurl);
+        }
 
         $this->prepare_global_page_access();
         $this->prepare_policies();
@@ -99,6 +108,9 @@ class page_viewalldoc implements renderable, templatable {
         ];
 
         $data->policies = array_values($this->policies);
+        if (!empty($this->returnurl)) {
+            $data->returnurl = $this->returnurl;
+        }
 
         array_walk($data->policies, function($item, $key) {
             $item->policytypestr = get_string('policydoctype'.$item->type, 'tool_policy');

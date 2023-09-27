@@ -34,9 +34,20 @@ define("LABEL_MAX_NAME_LENGTH", 50);
  * @return string
  */
 function get_label_name($label) {
-    $name = strip_tags(format_string($label->intro,true));
+    // Return label name if not empty.
+    if ($label->name) {
+        return $label->name;
+    }
+
+    $context = context_module::instance($label->coursemodule);
+    $intro = format_text($label->intro, $label->introformat, ['filter' => false, 'context' => $context]);
+    $name = html_to_text(format_string($intro, true, ['context' => $context]));
+    $name = preg_replace('/@@PLUGINFILE@@\/[[:^space:]]+/i', '', $name);
+    // Remove double space and also nbsp; characters.
+    $name = preg_replace('/\s+/u', ' ', $name);
+    $name = trim($name);
     if (core_text::strlen($name) > LABEL_MAX_NAME_LENGTH) {
-        $name = core_text::substr($name, 0, LABEL_MAX_NAME_LENGTH)."...";
+        $name = core_text::substr($name, 0, LABEL_MAX_NAME_LENGTH) . "...";
     }
 
     if (empty($name)) {
@@ -68,6 +79,15 @@ function label_add_instance($label) {
     \core_completion\api::update_completion_date_event($label->coursemodule, 'label', $id, $completiontimeexpected);
 
     return $id;
+}
+
+/**
+ * Sets the special label display on course page.
+ *
+ * @param cm_info $cm Course-module object
+ */
+function label_cm_info_view(cm_info $cm) {
+    $cm->set_custom_cmlist_item(true);
 }
 
 /**
@@ -164,15 +184,6 @@ function label_reset_userdata($data) {
 }
 
 /**
- * Returns all other caps used in module
- *
- * @return array
- */
-function label_get_extra_capabilities() {
-    return array('moodle/site:accessallgroups');
-}
-
-/**
  * @uses FEATURE_IDNUMBER
  * @uses FEATURE_GROUPS
  * @uses FEATURE_GROUPINGS
@@ -181,11 +192,11 @@ function label_get_extra_capabilities() {
  * @uses FEATURE_GRADE_HAS_GRADE
  * @uses FEATURE_GRADE_OUTCOMES
  * @param string $feature FEATURE_xx constant for requested feature
- * @return bool|null True if module supports feature, false if not, null if doesn't know
+ * @return mixed True if module supports feature, false if not, null if doesn't know or string for the module purpose.
  */
 function label_supports($feature) {
     switch($feature) {
-        case FEATURE_IDNUMBER:                return false;
+        case FEATURE_IDNUMBER:                return true;
         case FEATURE_GROUPS:                  return false;
         case FEATURE_GROUPINGS:               return false;
         case FEATURE_MOD_INTRO:               return true;
@@ -195,6 +206,7 @@ function label_supports($feature) {
         case FEATURE_MOD_ARCHETYPE:           return MOD_ARCHETYPE_RESOURCE;
         case FEATURE_BACKUP_MOODLE2:          return true;
         case FEATURE_NO_VIEW_LINK:            return true;
+        case FEATURE_MOD_PURPOSE:             return MOD_PURPOSE_CONTENT;
 
         default: return null;
     }
@@ -332,6 +344,7 @@ function label_generate_resized_image(stored_file $file, $maxwidth, $maxheight) 
         $attrib['width'] = $maxwidth;
     }
 
+    $attrib['class'] = "img-fluid";
     $img = html_writer::empty_tag('img', $attrib);
     if ($link) {
         return html_writer::link($link, $img);
@@ -362,15 +375,22 @@ function label_check_updates_since(cm_info $cm, $from, $filter = array()) {
  *
  * @param calendar_event $event
  * @param \core_calendar\action_factory $factory
+ * @param int $userid User id to use for all capability checks, etc. Set to 0 for current user (default).
  * @return \core_calendar\local\event\entities\action_interface|null
  */
 function mod_label_core_calendar_provide_event_action(calendar_event $event,
-                                                      \core_calendar\action_factory $factory) {
-    $cm = get_fast_modinfo($event->courseid)->instances['label'][$event->instance];
+                                                      \core_calendar\action_factory $factory,
+                                                      int $userid = 0) {
+    $cm = get_fast_modinfo($event->courseid, $userid)->instances['label'][$event->instance];
+
+    if (!$cm->uservisible) {
+        // The module is not visible to the user for any reason.
+        return null;
+    }
 
     $completion = new \completion_info($cm->get_course());
 
-    $completiondata = $completion->get_data($cm, false);
+    $completiondata = $completion->get_data($cm, false, $userid);
 
     if ($completiondata->completionstate != COMPLETION_INCOMPLETE) {
         return null;

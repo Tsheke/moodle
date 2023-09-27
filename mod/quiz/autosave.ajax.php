@@ -45,7 +45,7 @@ require_login($attemptobj->get_course(), false, $attemptobj->get_cm());
 
 // Check that this attempt belongs to this user.
 if ($attemptobj->get_userid() != $USER->id) {
-    throw new moodle_quiz_exception($attemptobj->get_quizobj(), 'notyourattempt');
+    throw new moodle_exception('notyourattempt', 'quiz', $attemptobj->view_url());
 }
 
 // Check capabilities.
@@ -55,10 +55,20 @@ if (!$attemptobj->is_preview_user()) {
 
 // If the attempt is already closed, send them to the review page.
 if ($attemptobj->is_finished()) {
-    throw new moodle_quiz_exception($attemptobj->get_quizobj(),
-            'attemptalreadyclosed', null, $attemptobj->review_url());
+    throw new moodle_exception('attemptalreadyclosed', 'quiz', $attemptobj->review_url());
 }
 
 $attemptobj->process_auto_save($timenow);
 $transaction->allow_commit();
-echo 'OK';
+
+// Calculate time remaining.
+$timeleft = $attemptobj->get_time_left_display($timenow);
+
+// Build response, only returning timeleft if quiz in-progress
+// has a time limit.
+$r = new stdClass();
+$r->status = "OK";
+if ($timeleft !== false) {
+    $r->timeleft = $timeleft;
+}
+echo json_encode($r);

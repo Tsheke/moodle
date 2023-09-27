@@ -97,11 +97,6 @@ class MoodleQuickForm_date_selector extends MoodleQuickForm_group {
                 }
             }
         }
-
-        // The YUI2 calendar only supports the gregorian calendar type.
-        if ($calendartype->get_name() === 'gregorian') {
-            form_init_date_js();
-        }
     }
 
     /**
@@ -132,6 +127,11 @@ class MoodleQuickForm_date_selector extends MoodleQuickForm_group {
         if (right_to_left()) {
             $dateformat = array_reverse($dateformat);
         }
+        // If optional we add a checkbox which the user can use to turn if on.
+        if ($this->_options['optional']) {
+            $this->_elements[] = $this->createFormElement('checkbox', 'enabled', null,
+                get_string('enable'), $this->getAttributes(), true);
+        }
         foreach ($dateformat as $key => $value) {
             // E_STRICT creating elements without forms is nasty because it internally uses $this
             $this->_elements[] = $this->createFormElement('select', $key, get_string($key, 'form'), $value, $this->getAttributes(), true);
@@ -140,12 +140,7 @@ class MoodleQuickForm_date_selector extends MoodleQuickForm_group {
         if ($calendartype->get_name() === 'gregorian') {
             $image = $OUTPUT->pix_icon('i/calendar', get_string('calendar', 'calendar'), 'moodle');
             $this->_elements[] = $this->createFormElement('link', 'calendar',
-                    null, '#', $image,
-                    array('class' => 'visibleifjs'));
-        }
-        // If optional we add a checkbox which the user can use to turn if on
-        if ($this->_options['optional']) {
-            $this->_elements[] = $this->createFormElement('checkbox', 'enabled', null, get_string('enable'), $this->getAttributes(), true);
+                    null, '#', $image);
         }
         foreach ($this->_elements as $element){
             if (method_exists($element, 'setHiddenLabel')){
@@ -173,7 +168,7 @@ class MoodleQuickForm_date_selector extends MoodleQuickForm_group {
                 if (null === $value) {
                     // If no boxes were checked, then there is no value in the array
                     // yet we don't want to display default value in this case.
-                    if ($caller->isSubmitted()) {
+                    if ($caller->isSubmitted() && !$caller->is_new_repeat($this->getName())) {
                         $value = $this->_findValue($caller->_submitValues);
                     } else {
                         $value = $this->_findValue($caller->_defaultValues);
@@ -256,7 +251,19 @@ class MoodleQuickForm_date_selector extends MoodleQuickForm_group {
      * @param string $error An error message associated with a group
      */
     function accept(&$renderer, $required = false, $error = null) {
+        form_init_date_js();
         $renderer->renderElement($this, $required, $error);
+    }
+
+    /**
+     * Export for template
+     *
+     * @param renderer_base $output
+     * @return array|stdClass
+     */
+    public function export_for_template(renderer_base $output) {
+        form_init_date_js();
+        return parent::export_for_template($output);
     }
 
     /**

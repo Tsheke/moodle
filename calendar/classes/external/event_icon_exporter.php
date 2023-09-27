@@ -45,6 +45,7 @@ class event_icon_exporter extends exporter {
      * @param array $related The related data.
      */
     public function __construct(event_interface $event, $related = []) {
+        global $PAGE;
         $coursemodule = $event->get_course_module();
         $category = $event->get_category();
         $categoryid = $category ? $category->get('id') : null;
@@ -55,22 +56,43 @@ class event_icon_exporter extends exporter {
         $user = $event->get_user();
         $userid = $user ? $user->get('id') : null;
         $isactivityevent = !empty($coursemodule);
-        $isglobalevent = ($course && $courseid == SITEID);
+        $issiteevent = ($course && $courseid == SITEID);
         $iscategoryevent = ($category && !empty($categoryid));
         $iscourseevent = ($course && !empty($courseid) && $courseid != SITEID && empty($groupid));
         $isgroupevent = ($group && !empty($groupid));
         $isuserevent = ($user && !empty($userid));
+        $iconurl = '';
+        $iconclass = '';
 
         if ($isactivityevent) {
-            $key = 'icon';
+            $key = 'monologo';
             $component = $coursemodule->get('modname');
 
+            $iconurl = get_fast_modinfo($courseid)->get_cm($coursemodule->get('id'))->get_icon_url();
+            $iconclass = $iconurl->get_param('filtericon') ? '' : 'nofilter';
+            $iconurl = $iconurl->out(false);
             if (get_string_manager()->string_exists($event->get_type(), $component)) {
                 $alttext = get_string($event->get_type(), $component);
             } else {
                 $alttext = get_string('activityevent', 'calendar');
             }
-        } else if ($isglobalevent) {
+        } else if ($event->get_component()) {
+            // Guess the icon and the title for the component event. By default display calendar icon and the
+            // plugin name as the alttext.
+            if ($PAGE->theme->resolve_image_location($event->get_type(), $event->get_component())) {
+                $key = $event->get_type();
+                $component = $event->get_component();
+            } else {
+                $key = 'i/otherevent';
+                $component = 'core';
+            }
+
+            if (get_string_manager()->string_exists($event->get_type(), $event->get_component())) {
+                $alttext = get_string($event->get_type(), $event->get_component());
+            } else {
+                $alttext = get_string('pluginname', $event->get_component());
+            }
+        } else if ($issiteevent) {
             $key = 'i/siteevent';
             $component = 'core';
             $alttext = get_string('typesite', 'calendar');
@@ -101,6 +123,8 @@ class event_icon_exporter extends exporter {
         $data->key = $key;
         $data->component = $component;
         $data->alttext = $alttext;
+        $data->iconurl = $iconurl;
+        $data->iconclass = $iconclass;
 
         parent::__construct($data, $related);
     }
@@ -115,6 +139,8 @@ class event_icon_exporter extends exporter {
             'key' => ['type' => PARAM_TEXT],
             'component' => ['type' => PARAM_TEXT],
             'alttext' => ['type' => PARAM_TEXT],
+            'iconurl' => ['type' => PARAM_TEXT],
+            'iconclass' => ['type' => PARAM_TEXT],
         ];
     }
 

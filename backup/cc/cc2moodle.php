@@ -206,7 +206,7 @@ class cc2moodle {
         if (array_key_exists("index", self::$instances)) {
 
             if (!file_put_contents(static::$path_to_manifest_folder . DIRECTORY_SEPARATOR . 'moodle.xml', $result_xml)) {
-                static::log_action('Cannot save the moodle manifest file: ' . static::$path_to_tmp_folder . DIRECTORY_SEPARATOR . 'moodle.xml', true);
+                static::log_action('Cannot save the moodle manifest file: ' . static::$path_to_manifest_folder . DIRECTORY_SEPARATOR . 'moodle.xml', true);
             } else {
                 $status = true;
             }
@@ -384,7 +384,7 @@ class cc2moodle {
             if (isset($CFG->defaultblocks)) {
                 $blocknames = $CFG->defaultblocks;
             } else {
-                $blocknames = 'participants,activity_modules,search_forums,course_list:news_items,calendar_upcoming,recent_activity';
+                $blocknames = 'activity_modules,search_forums,course_list:news_items,calendar_upcoming,recent_activity';
             }
         }
 
@@ -794,7 +794,7 @@ class cc2moodle {
         }
     }
 
-    protected function critical_error ($text) {
+    protected static function critical_error ($text) {
 
         $path_to_log = static::log_file();
 

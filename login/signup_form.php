@@ -28,15 +28,13 @@ defined('MOODLE_INTERNAL') || die();
 require_once($CFG->libdir.'/formslib.php');
 require_once($CFG->dirroot.'/user/profile/lib.php');
 require_once($CFG->dirroot . '/user/editlib.php');
+require_once('lib.php');
 
 class login_signup_form extends moodleform implements renderable, templatable {
     function definition() {
         global $USER, $CFG;
 
         $mform = $this->_form;
-
-        $mform->addElement('header', 'createuserandpass', get_string('createuserandpass'), '');
-
 
         $mform->addElement('text', 'username', get_string('username'), 'maxlength="100" size="12" autocapitalize="none"');
         $mform->setType('username', PARAM_RAW);
@@ -45,11 +43,15 @@ class login_signup_form extends moodleform implements renderable, templatable {
         if (!empty($CFG->passwordpolicy)){
             $mform->addElement('static', 'passwordpolicyinfo', '', print_password_policy());
         }
-        $mform->addElement('password', 'password', get_string('password'), 'maxlength="32" size="12"');
+        $mform->addElement('password', 'password', get_string('password'), [
+            'maxlength' => MAX_PASSWORD_CHARACTERS,
+            'size' => 12,
+            'autocomplete' => 'new-password'
+        ]);
         $mform->setType('password', core_user::get_property_type('password'));
         $mform->addRule('password', get_string('missingpassword'), 'required', null, 'client');
-
-        $mform->addElement('header', 'supplyinfo', get_string('supplyinfo'),'');
+        $mform->addRule('password', get_string('maximumchars', '', MAX_PASSWORD_CHARACTERS),
+            'maxlength', MAX_PASSWORD_CHARACTERS, 'client');
 
         $mform->addElement('text', 'email', get_string('email'), 'maxlength="100" size="25"');
         $mform->setType('email', core_user::get_property_type('email'));
@@ -97,12 +99,16 @@ class login_signup_form extends moodleform implements renderable, templatable {
             $mform->closeHeaderBefore('recaptcha_element');
         }
 
+        // Hook for plugins to extend form definition.
+        core_login_extend_signup_form($mform);
+
         // Add "Agree to sitepolicy" controls. By default it is a link to the policy text and a checkbox but
         // it can be implemented differently in custom sitepolicy handlers.
         $manager = new \core_privacy\local\sitepolicy\manager();
         $manager->signup_form($mform);
 
         // buttons
+        $this->set_display_vertical();
         $this->add_action_buttons(true, get_string('createaccount'));
 
     }
@@ -127,6 +133,9 @@ class login_signup_form extends moodleform implements renderable, templatable {
      */
     public function validation($data, $files) {
         $errors = parent::validation($data, $files);
+
+        // Extend validation for any form extensions from plugins.
+        $errors = array_merge($errors, core_login_validate_extend_signup_form($data));
 
         if (signup_captcha_enabled()) {
             $recaptchaelement = $this->_form->getElement('recaptcha_element');

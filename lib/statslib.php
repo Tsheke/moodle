@@ -164,7 +164,7 @@ function stats_cron_daily($maxdays=1) {
     $defaultfproleid = (int)$CFG->defaultfrontpageroleid;
 
     mtrace("Running daily statistics gathering, starting at $timestart:");
-    cron_trace_time_and_memory();
+    \core\cron::trace_time_and_memory();
 
     $days  = 0;
     $total = 0;
@@ -664,7 +664,7 @@ function stats_cron_weekly() {
     $DB->delete_records_select('stats_user_weekly', "timeend > $timestart");
 
     mtrace("Running weekly statistics gathering, starting at $timestart:");
-    cron_trace_time_and_memory();
+    \core\cron::trace_time_and_memory();
 
     $weeks = 0;
     while ($now > $nextstartweek) {
@@ -807,7 +807,7 @@ function stats_cron_monthly() {
 
 
     mtrace("Running monthly statistics gathering, starting at $timestart:");
-    cron_trace_time_and_memory();
+    \core\cron::trace_time_and_memory();
 
     $months = 0;
     while ($now > $nextstartmonth) {
@@ -987,18 +987,24 @@ function stats_get_base_daily($time=0) {
 function stats_get_base_weekly($time=0) {
     global $CFG;
 
-    $time = stats_get_base_daily($time);
+    $datetime = new DateTime();
+    $datetime->setTimestamp(stats_get_base_daily($time));
     $startday = $CFG->calendar_startwday;
 
     core_date::set_default_server_timezone();
     $thisday = date('w', $time);
 
+    $days = 0;
+
     if ($thisday > $startday) {
-        $time = $time - (($thisday - $startday) * 60*60*24);
+        $days = $thisday - $startday;
     } else if ($thisday < $startday) {
-        $time = $time - ((7 + $thisday - $startday) * 60*60*24);
+        $days = 7 + $thisday - $startday;
     }
-    return $time;
+
+    $datetime->sub(new DateInterval("P{$days}D"));
+
+    return $datetime->getTimestamp();
 }
 
 /**
@@ -1062,7 +1068,7 @@ function stats_get_next_month_start($time) {
 function stats_clean_old() {
     global $DB;
     mtrace("Running stats cleanup tasks...");
-    cron_trace_time_and_memory();
+    \core\cron::trace_time_and_memory();
     $deletebefore =  stats_get_base_monthly();
 
     // delete dailies older than 3 months (to be safe)
@@ -1190,11 +1196,13 @@ function stats_get_parameters($time,$report,$courseid,$mode,$roleid=0) {
         break;
 
     case STATS_REPORT_USER_VIEW:
-        $param->fields = 'statsreads as line1, statswrites as line2, statsreads+statswrites as line3';
+        $param->fields = 'timeend, SUM(statsreads) AS line1, SUM(statswrites) AS line2, SUM(statsreads+statswrites) AS line3';
+        $param->fieldscomplete = true;
         $param->line1 = get_string('statsuserreads');
         $param->line2 = get_string('statsuserwrites');
         $param->line3 = get_string('statsuseractivity');
         $param->stattype = 'activity';
+        $param->extras = "GROUP BY timeend";
         break;
 
     // ******************** STATS_MODE_RANKED ******************** //
@@ -1624,6 +1632,7 @@ function stats_temp_table_create() {
     $table->add_index('userid', XMLDB_INDEX_NOTUNIQUE, array('userid'));
     $table->add_index('courseid', XMLDB_INDEX_NOTUNIQUE, array('courseid'));
     $table->add_index('roleid', XMLDB_INDEX_NOTUNIQUE, array('roleid'));
+    $table->add_index('useridroleidcourseid', XMLDB_INDEX_NOTUNIQUE, array('userid', 'roleid', 'courseid'));
     $tables['temp_enroled'] = $table;
 
 

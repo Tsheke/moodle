@@ -12,7 +12,7 @@
  *
  * -----
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -114,6 +114,7 @@ class Horde_Mime_Uudecode implements Countable, IteratorAggregate
 
     /* Countable method. */
 
+    #[ReturnTypeWillChange]
     public function count()
     {
         return count($this->_data);
@@ -121,6 +122,7 @@ class Horde_Mime_Uudecode implements Countable, IteratorAggregate
 
     /* IteratorAggregate method. */
 
+    #[ReturnTypeWillChange]
     public function getIterator()
     {
         return new ArrayIterator($this->_data);

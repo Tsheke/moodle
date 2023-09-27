@@ -170,10 +170,10 @@ class qtype_ddmarker_test_helper extends question_test_helper {
         );
 
         $fromform->drops = array(
-            array('shape' => 'Circle', 'coords' => '322,213;10', 'choice' => 1),
-            array('shape' => 'Circle', 'coords' => '144,84;10', 'choice' => 2),
-            array('shape' => 'Circle', 'coords' => '195,180;10', 'choice' => 2),
-            array('shape' => 'Circle', 'coords' => '267,302;10', 'choice' => 2),
+            array('shape' => 'circle', 'coords' => '322,213;10', 'choice' => 1),
+            array('shape' => 'circle', 'coords' => '144,84;10', 'choice' => 2),
+            array('shape' => 'circle', 'coords' => '195,180;10', 'choice' => 2),
+            array('shape' => 'circle', 'coords' => '267,302;10', 'choice' => 2),
         );
 
         test_question_maker::set_standard_combined_feedback_form_data($fromform);
@@ -192,6 +192,8 @@ class qtype_ddmarker_test_helper extends question_test_helper {
         $fromform->hintshownumcorrect = array(1, 1);
         $fromform->hintclearwrong = array(0, 1);
         $fromform->hintoptions = array(0, 1);
+
+        $fromform->status = \core_question\local\bank\question_version_status::QUESTION_STATUS_READY;
 
         return $fromform;
     }
@@ -257,6 +259,8 @@ class qtype_ddmarker_test_helper extends question_test_helper {
         $fromform->hintshownumcorrect = array(1, 1);
         $fromform->hintclearwrong = array(0, 1);
         $fromform->hintoptions = array(0, 1);
+
+        $fromform->status = \core_question\local\bank\question_version_status::QUESTION_STATUS_READY;
 
         return $fromform;
     }

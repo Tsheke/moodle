@@ -108,26 +108,22 @@ YUI.add('moodle-enrol-rolemanager', function(Y) {
                 }
             });
         },
-        removeRole : function(e, user, roleid) {
+        removeRole: function(e, user, roleid) {
             e.halt();
-            var event = this.on('assignablerolesloaded', function(){
-                event.detach();
-                var confirmation = {
-                    modal:  true,
-                    visible  :  false,
-                    centered :  true,
-                    title    :  M.util.get_string('confirmunassigntitle', 'role'),
-                    question :  M.util.get_string('confirmunassign', 'role'),
-                    yesLabel :  M.util.get_string('confirmunassignyes', 'role'),
-                    noLabel  :  M.util.get_string('confirmunassignno', 'role')
-                };
-                new M.core.confirm(confirmation)
-                        .show()
-                        .on('complete-yes', this.removeRoleCallback, this, user.get(USERID), roleid);
-            }, this);
+            require(['core/notification'], function(Notification) {
+                Notification.saveCancelPromise(
+                    M.util.get_string('confirmation', 'admin'),
+                    M.util.get_string('confirmunassign', 'role'),
+                    M.util.get_string('confirmunassignyes', 'role')
+                ).then(function() {
+                    return this.removeRoleCallback(user.get(USERID), roleid);
+                }.bind(this)).catch(function() {
+                    // User cancelled.
+                });
+            }.bind(this));
             this._loadAssignableRoles();
         },
-        removeRoleCallback : function(e, userid, roleid) {
+        removeRoleCallback: function(userid, roleid) {
             Y.io(M.cfg.wwwroot+'/enrol/ajax.php', {
                 method:'POST',
                 data:'id='+this.get(COURSEID)+'&action=unassign&sesskey='+M.cfg.sesskey+'&role='+roleid+'&user='+userid,
@@ -366,7 +362,8 @@ YUI.add('moodle-enrol-rolemanager', function(Y) {
             var i, m = this.get(MANIPULATOR);
             var element = Y.Node.create('<div class="popover popover-bottom"><div class="arrow"></div>' +
                                         '<div class="header popover-title">' +
-                                        '<div role="button" class="close" aria-label="Close">' +
+                                        '<div role="button" class="close" aria-label="' +
+                                        M.util.get_string('closebuttontitle', 'moodle') + '">' +
                                         '<span aria-hidden="true">&times;</span></div>' +
                                         '<h3>'+M.util.get_string('assignroles', 'role')+'</h3>' +
                                         '</div><div class="content popover-content form-inline form-group"></div></div>');
@@ -374,7 +371,7 @@ YUI.add('moodle-enrol-rolemanager', function(Y) {
             var roles = m.get(ASSIGNABLEROLES);
             for (i in roles) {
                 var buttonid = 'add_assignable_role_' + roles[i].id;
-                var buttonhtml = '<input type="button" class="btn btn-secondary m-r-1" value="' +
+                var buttonhtml = '<input type="button" class="btn btn-secondary mr-1" value="' +
                                  roles[i].name + '" id="' + buttonid + '" />';
                 var button = Y.Node.create(buttonhtml);
                 button.on('click', this.submit, this, roles[i].id);

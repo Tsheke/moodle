@@ -140,6 +140,7 @@ function environment_get_errors($environment_results) {
         $type = $environment_result->getPart();
         $info = $environment_result->getInfo();
         $status = $environment_result->getStatus();
+        $plugin = $environment_result->getPluginName();
         $error_code = $environment_result->getErrorCode();
 
         $a = new stdClass();
@@ -209,7 +210,13 @@ function environment_get_errors($environment_results) {
         // Append the restrict if there is some
         $feedbacktext .= $environment_result->strToReport($environment_result->getRestrictStr(), 'error');
 
-        $report .= html_to_text($feedbacktext);
+        if ($plugin === '') {
+            $report = '[' . get_string('coresystem') . '] ' . $report;
+        } else {
+            $report = '[' . $plugin . '] ' . $report;
+        }
+
+        $report .= ' - ' . html_to_text($feedbacktext);
 
         if ($environment_result->getPart() == 'custom_check'){
             $errors[] = array($info, $report);
@@ -361,7 +368,7 @@ function get_latest_version_available($version, $env_select) {
         return false;
     }
 /// First we look for exact version
-    if (in_array($version, $versions)) {
+    if (in_array($version, $versions, true)) {
         return $version;
     } else {
         $found_version = false;
@@ -409,7 +416,7 @@ function get_environment_for_version($version, $env_select) {
     }
 
 /// If the version requested is available
-    if (!in_array($version, $versions)) {
+    if (!in_array($version, $versions, true)) {
         return false;
     }
 
@@ -801,8 +808,15 @@ function environment_check_moodle($version, $env_select) {
     $release = get_config('', 'release');
     $current_version = normalize_version($release);
     if (strpos($release, 'dev') !== false) {
-        // when final version is required, dev is NOT enough!
-        $current_version = $current_version - 0.1;
+        // When final version is required, dev is NOT enough so, at all effects
+        // it's like we are running the previous version.
+        $versionarr = explode('.', $current_version);
+        if (isset($versionarr[1]) and $versionarr[1] > 0) {
+            $versionarr[1]--;
+            $current_version = implode('.', $versionarr);
+        } else {
+            $current_version = $current_version - 0.1;
+        }
     }
 
 /// And finally compare them, saving results
@@ -1616,4 +1630,59 @@ function restrict_php_version_71(&$result) {
  */
 function restrict_php_version_72(&$result) {
     return restrict_php_version($result, '7.2');
+}
+
+/**
+ * Check if the current PHP version is greater than or equal to
+ * PHP version 7.3.
+ *
+ * @param object $result an environment_results instance
+ * @return bool result of version check
+ */
+function restrict_php_version_73(&$result) {
+    return restrict_php_version($result, '7.3');
+}
+
+/**
+ * Check if the current PHP version is greater than or equal to
+ * PHP version 7.4.
+ *
+ * @param object $result an environment_results instance
+ * @return bool result of version check
+ */
+function restrict_php_version_74(&$result) {
+    return restrict_php_version($result, '7.4');
+}
+
+/**
+ * Check if the current PHP version is greater than or equal to
+ * PHP version 8.0
+ *
+ * @param object $result an environment_results instance
+ * @return bool result of version check
+ */
+function restrict_php_version_80($result) {
+    return restrict_php_version($result, '8.0');
+}
+
+/**
+ * Check if the current PHP version is greater than or equal to
+ * PHP version 8.1
+ *
+ * @param object $result an environment_results instance
+ * @return bool result of version check
+ */
+function restrict_php_version_81($result) {
+    return restrict_php_version($result, '8.1');
+}
+
+/**
+ * Check if the current PHP version is greater than or equal to
+ * PHP version 8.2
+ *
+ * @param object $result an environment_results instance
+ * @return bool result of version check
+ */
+function restrict_php_version_82($result) {
+    return restrict_php_version($result, '8.2');
 }

@@ -65,13 +65,6 @@ class data_portfolio_caller extends portfolio_module_caller_base {
      */
     public function __construct($callbackargs) {
         parent::__construct($callbackargs);
-        // set up the list of fields to export
-        $this->selectedfields = array();
-        foreach ($callbackargs as $key => $value) {
-            if (strpos($key, 'field_') === 0) {
-                $this->selectedfields[] = substr($key, 6);
-            }
-        }
     }
 
     /**
@@ -270,7 +263,11 @@ class data_portfolio_caller extends portfolio_module_caller_base {
             return true; // too early yet
         }
         foreach ($this->fieldtypes as $key => $field) {
-            require_once($CFG->dirroot . '/mod/data/field/' . $field .'/field.class.php');
+            $filepath = $CFG->dirroot . '/mod/data/field/' . $field .'/field.class.php';
+            if (!file_exists($filepath)) {
+                continue;
+            }
+            require_once($filepath);
             $this->fields[$key] = unserialize(serialize($this->fields[$key]));
         }
     }
@@ -328,6 +325,11 @@ class data_portfolio_caller extends portfolio_module_caller_base {
         $replacement[] = '';
         $replacement[] = userdate($record->timecreated);
         $replacement[] = userdate($record->timemodified);
+
+        if (empty($this->data->singletemplate)) {
+            // Use default template if the template is not created.
+            $this->data->singletemplate = data_generate_default_template($this->data, 'singletemplate', 0, false, false);
+        }
 
         // actual replacement of the tags
         return array(str_ireplace($patterns, $replacement, $this->data->singletemplate), $files);
@@ -607,13 +609,14 @@ function data_set_events($data) {
         if ($data->timeavailablefrom > 0) {
             // Calendar event exists so update it.
             $event->name         = get_string('calendarstart', 'data', $data->name);
-            $event->description  = format_module_intro('data', $data, $data->coursemodule);
+            $event->description  = format_module_intro('data', $data, $data->coursemodule, false);
+            $event->format       = FORMAT_HTML;
             $event->timestart    = $data->timeavailablefrom;
             $event->timesort     = $data->timeavailablefrom;
             $event->visible      = instance_is_visible('data', $data);
             $event->timeduration = 0;
             $calendarevent = calendar_event::load($event->id);
-            $calendarevent->update($event);
+            $calendarevent->update($event, false);
         } else {
             // Calendar event is on longer needed.
             $calendarevent = calendar_event::load($event->id);
@@ -623,7 +626,8 @@ function data_set_events($data) {
         // Event doesn't exist so create one.
         if (isset($data->timeavailablefrom) && $data->timeavailablefrom > 0) {
             $event->name         = get_string('calendarstart', 'data', $data->name);
-            $event->description  = format_module_intro('data', $data, $data->coursemodule);
+            $event->description  = format_module_intro('data', $data, $data->coursemodule, false);
+            $event->format       = FORMAT_HTML;
             $event->courseid     = $data->course;
             $event->groupid      = 0;
             $event->userid       = 0;
@@ -633,7 +637,7 @@ function data_set_events($data) {
             $event->timesort     = $data->timeavailablefrom;
             $event->visible      = instance_is_visible('data', $data);
             $event->timeduration = 0;
-            calendar_event::create($event);
+            calendar_event::create($event, false);
         }
     }
 
@@ -646,13 +650,14 @@ function data_set_events($data) {
         if ($data->timeavailableto > 0) {
             // Calendar event exists so update it.
             $event->name         = get_string('calendarend', 'data', $data->name);
-            $event->description  = format_module_intro('data', $data, $data->coursemodule);
+            $event->description  = format_module_intro('data', $data, $data->coursemodule, false);
+            $event->format       = FORMAT_HTML;
             $event->timestart    = $data->timeavailableto;
             $event->timesort     = $data->timeavailableto;
             $event->visible      = instance_is_visible('data', $data);
             $event->timeduration = 0;
             $calendarevent = calendar_event::load($event->id);
-            $calendarevent->update($event);
+            $calendarevent->update($event, false);
         } else {
             // Calendar event is on longer needed.
             $calendarevent = calendar_event::load($event->id);
@@ -662,7 +667,8 @@ function data_set_events($data) {
         // Event doesn't exist so create one.
         if (isset($data->timeavailableto) && $data->timeavailableto > 0) {
             $event->name         = get_string('calendarend', 'data', $data->name);
-            $event->description  = format_module_intro('data', $data, $data->coursemodule);
+            $event->description  = format_module_intro('data', $data, $data->coursemodule, false);
+            $event->format       = FORMAT_HTML;
             $event->courseid     = $data->course;
             $event->groupid      = 0;
             $event->userid       = 0;
@@ -672,7 +678,7 @@ function data_set_events($data) {
             $event->timesort     = $data->timeavailableto;
             $event->visible      = instance_is_visible('data', $data);
             $event->timeduration = 0;
-            calendar_event::create($event);
+            calendar_event::create($event, false);
         }
     }
 }
@@ -955,6 +961,10 @@ function data_get_tag_title_field($dataid) {
     $validfieldtypes = array('text', 'textarea', 'menu', 'radiobutton', 'checkbox', 'multimenu', 'url');
     $fields = $DB->get_records('data_fields', ['dataid' => $dataid]);
     $template = $DB->get_field('data', 'addtemplate', ['id' => $dataid]);
+    if (empty($template)) {
+        $data = $DB->get_record('data', ['id' => $dataid]);
+        $template = data_generate_default_template($data, 'addtemplate', 0, false, false);
+    }
 
     $filteredfields = [];
 
@@ -966,7 +976,11 @@ function data_get_tag_title_field($dataid) {
         if ($field->addtemplateposition === false) {
             continue;
         }
-        require_once($CFG->dirroot . '/mod/data/field/' . $field->type . '/field.class.php');
+        $filepath = $CFG->dirroot . '/mod/data/field/' . $field->type . '/field.class.php';
+        if (!file_exists($filepath)) {
+            continue;
+        }
+        require_once($filepath);
         $classname = 'data_field_' . $field->type;
         $field->priority = $classname::get_priority();
         $filteredfields[] = $field;
@@ -997,11 +1011,19 @@ function data_get_tag_title_field($dataid) {
  *
  * @param stdClass $field The field from the 'data_fields' table
  * @param stdClass $entry The entry from the 'data_records' table
- * @return string The title of the entry
+ * @return string|null It will return the title of the entry or null if the field type is not available.
  */
 function data_get_tag_title_for_entry($field, $entry) {
     global $CFG, $DB;
-    require_once($CFG->dirroot . '/mod/data/field/' . $field->type . '/field.class.php');
+
+    if (!isset($field->type)) {
+        return null;
+    }
+    $filepath = $CFG->dirroot . '/mod/data/field/' . $field->type . '/field.class.php';
+    if (!file_exists($filepath)) {
+        return null;
+    }
+    require_once($filepath);
 
     $classname = 'data_field_' . $field->type;
     $sql = "SELECT dc.*
@@ -1108,12 +1130,11 @@ function data_search_entries($data, $cm, $context, $mode, $currentgroup, $search
     $advparams       = array();
     // This is used for the initial reduction of advanced search results with required entries.
     $entrysql        = '';
-    $namefields = user_picture::fields('u');
-    // Remove the id from the string. This already exists in the sql statement.
-    $namefields = str_replace('u.id,', '', $namefields);
+    $userfieldsapi = \core_user\fields::for_userpic()->excluding('id');
+    $namefields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
 
     // Find the field we are sorting on.
-    if ($sort <= 0 or !$sortfield = data_get_field_from_id($sort, $data)) {
+    if ($sort <= 0 || !($sortfield = data_get_field_from_id($sort, $data))) {
 
         switch ($sort) {
             case DATA_LASTNAME:
@@ -1165,7 +1186,7 @@ function data_search_entries($data, $cm, $context, $mode, $currentgroup, $search
 
     } else {
 
-        $sortcontent = $DB->sql_compare_text('c.' . $sortfield->get_sort_field());
+        $sortcontent = $DB->sql_compare_text('s.' . $sortfield->get_sort_field());
         $sortcontentfull = $sortfield->get_sort_sql($sortcontent);
 
         $what = ' DISTINCT r.id, r.approved, r.timecreated, r.timemodified, r.userid, r.groupid, r.dataid, ' . $namefields . ',
@@ -1176,7 +1197,8 @@ function data_search_entries($data, $cm, $context, $mode, $currentgroup, $search
                      AND r.dataid = :dataid
                      AND r.userid = u.id ';
         if (!$advanced) {
-            $where .= 'AND c.fieldid = :sort';
+            $where .= 'AND s.fieldid = :sort AND s.recordid = r.id';
+            $tables .= ',{data_content} s ';
         }
         $params['dataid'] = $data->id;
         $params['sort'] = $sort;
@@ -1331,7 +1353,7 @@ function data_build_search_array($data, $paging, $searcharray, $defaults = null,
             $searchfield = data_get_field_from_id($field->id, $data);
             // Get field data to build search sql with.  If paging is false, get from user.
             // If paging is true, get data from $searcharray which is obtained from the $SESSION (see line 116).
-            if (!$paging) {
+            if (!$paging && $searchfield->type != 'unknown') {
                 $val = $searchfield->parse_search_field($defaults);
             } else {
                 // Set value from session if there is a value @ the required index.
@@ -1421,6 +1443,7 @@ function data_approve_entry($entryid, $approve) {
 
 /**
  * Populate the field contents of a new record with the submitted data.
+ * An event has been previously triggered upon the creation of the new record in data_add_record().
  *
  * @param  stdClass $data           database object
  * @param  stdClass $context        context object
@@ -1449,18 +1472,6 @@ function data_add_fields_contents_to_new_record($data, $context, $recordid, $fie
     foreach ($processeddata->fields as $fieldname => $field) {
         $field->update_content($recordid, $datarecord->$fieldname, $fieldname);
     }
-
-    // Trigger an event for updating this record.
-    $event = \mod_data\event\record_created::create(array(
-        'objectid' => $recordid,
-        'context' => $context,
-        'courseid' => $data->course,
-        'other' => array(
-            'dataid' => $data->id
-        )
-    ));
-    $event->add_record_snapshot('data', $data);
-    $event->trigger();
 }
 
 /**

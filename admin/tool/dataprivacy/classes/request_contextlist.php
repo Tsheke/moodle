@@ -14,24 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Contains the request_contextlist persistent.
- *
- * @package    tool_dataprivacy
- * @copyright  2018 Jake Dallimore <jrhdallimore@gmail.com>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
 namespace tool_dataprivacy;
-
-defined('MOODLE_INTERNAL') || die();
 
 use core\persistent;
 
 /**
  * The request_contextlist persistent.
  *
- * @copyright  2018 Jake Dallimore <jrhdallimore@gmail.com>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package   tool_dataprivacy
+ * @copyright 2021 The Open University
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @since     Moodle 4.3
  */
 class request_contextlist extends persistent {
 
@@ -43,26 +36,25 @@ class request_contextlist extends persistent {
      *
      * @return array
      */
-    protected static function define_properties() {
+    protected static function define_properties(): array {
         return [
             'requestid' => [
-                'type' => PARAM_INT
+                'type' => PARAM_INT,
             ],
             'contextlistid' => [
-                'type' => PARAM_INT
-            ]
+                'type' => PARAM_INT,
+            ],
         ];
     }
 
     /**
      * Creates a new relation, but does not persist it.
      *
-     * @param int $requestid
-     * @param int $contextlistid
+     * @param int $requestid ID of data request.
+     * @param int $contextlistid ID of context list.
      * @return $this
-     * @throws \coding_exception
      */
-    public static function create_relation($requestid, $contextlistid) {
+    public static function create_relation(int $requestid, int $contextlistid): request_contextlist {
         $requestcontextlist = new request_contextlist();
         return $requestcontextlist->set('requestid', $requestid)
             ->set('contextlistid', $contextlistid);

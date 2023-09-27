@@ -59,9 +59,18 @@ class MoodleQuickForm_group extends HTML_QuickForm_group implements templatable 
      * @param array $elements (optional) array of HTML_QuickForm_element elements to group
      * @param string $separator (optional) string to seperate elements.
      * @param string $appendName (optional) string to appened to grouped elements.
+     * @param mixed $attributes (optional) Either a typical HTML attribute string
+     *              or an associative array
      */
-    public function __construct($elementName=null, $elementLabel=null, $elements=null, $separator=null, $appendName = true) {
-        parent::__construct($elementName, $elementLabel, $elements, $separator, $appendName);
+    public function __construct(
+        $elementName = null,
+        $elementLabel = null,
+        $elements = null,
+        $separator = null,
+        $appendName = true,
+        $attributes = null
+    ) {
+        parent::__construct($elementName, $elementLabel, $elements, $separator, $appendName, $attributes);
     }
 
     /**
@@ -256,5 +265,23 @@ class MoodleQuickForm_group extends HTML_QuickForm_group implements templatable 
             }
         }
         $renderer->finishGroup($this);
+    }
+
+    /**
+     * Calls the validateSubmitValue function for the containing elements and returns an error string as soon as it finds one.
+     *
+     * @param array $values Values of the containing elements.
+     * @return string|null Validation error message or null.
+     */
+    public function validateSubmitValue($values) {
+        foreach ($this->_elements as $element) {
+            if (method_exists($element, 'validateSubmitValue')) {
+                $value = $values[$element->getName()] ?? null;
+                $result = $element->validateSubmitValue($value);
+                if (!empty($result) && is_string($result)) {
+                    return $result;
+                }
+            }
+        }
     }
 }

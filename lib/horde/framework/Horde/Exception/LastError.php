@@ -2,7 +2,7 @@
 /**
  * Copyright 2008-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @author   
@@ -48,7 +48,7 @@ class Horde_Exception_LastError extends Horde_Exception
             $this->file = $code_or_lasterror['file'];
             $this->line = $code_or_lasterror['line'];
         } else {
-            parent::__construct($message, $code_or_lasterror);
+            parent::__construct($message, $code_or_lasterror ?? 0);
         }
     }
 

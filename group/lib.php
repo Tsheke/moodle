@@ -107,6 +107,11 @@ function groups_add_member($grouporid, $userorid, $component=null, $itemid=0) {
     // Invalidate the group and grouping cache for users.
     cache_helper::invalidate_by_definition('core', 'user_group_groupings', array(), array($userid));
 
+    // Group conversation messaging.
+    if ($conversation = \core_message\api::get_conversation_by_area('core_group', 'groups', $groupid, $context->id)) {
+        \core_message\api::add_members_to_conversation([$userid], $conversation->id);
+    }
+
     // Trigger group event.
     $params = array(
         'context' => $context,
@@ -211,6 +216,12 @@ function groups_remove_member($grouporid, $userorid) {
     // Invalidate the group and grouping cache for users.
     cache_helper::invalidate_by_definition('core', 'user_group_groupings', array(), array($userid));
 
+    // Group conversation messaging.
+    $context = context_course::instance($group->courseid);
+    if ($conversation = \core_message\api::get_conversation_by_area('core_group', 'groups', $groupid, $context->id)) {
+        \core_message\api::remove_members_from_conversation([$userid], $conversation->id);
+    }
+
     // Trigger group event.
     $params = array(
         'context' => context_course::instance($group->courseid),
@@ -230,10 +241,11 @@ function groups_remove_member($grouporid, $userorid) {
  * @param stdClass $data group properties
  * @param stdClass $editform
  * @param array $editoroptions
- * @return id of group or false if error
+ * @return int id of group or throws an exception on error
+ * @throws moodle_exception
  */
 function groups_create_group($data, $editform = false, $editoroptions = false) {
-    global $CFG, $DB;
+    global $CFG, $DB, $USER;
 
     //check that courseid exists
     $course = $DB->get_record('course', array('id' => $data->courseid), '*', MUST_EXIST);
@@ -249,12 +261,22 @@ function groups_create_group($data, $editform = false, $editoroptions = false) {
         }
     }
 
+    $data->visibility ??= GROUPS_VISIBILITY_ALL;
+
+    if (!in_array($data->visibility, [GROUPS_VISIBILITY_ALL, GROUPS_VISIBILITY_MEMBERS])) {
+        $data->participation = false;
+        $data->enablemessaging = false;
+    }
+
     if ($editform and $editoroptions) {
         $data->description = $data->description_editor['text'];
         $data->descriptionformat = $data->description_editor['format'];
     }
 
     $data->id = $DB->insert_record('groups', $data);
+
+    $handler = \core_group\customfield\group_handler::create();
+    $handler->instance_form_save($data, true);
 
     if ($editform and $editoroptions) {
         // Update description from editor with fixed files
@@ -274,6 +296,23 @@ function groups_create_group($data, $editform = false, $editoroptions = false) {
 
     // Invalidate the grouping cache for the course
     cache_helper::invalidate_by_definition('core', 'groupdata', array(), array($course->id));
+    // Rebuild the coursehiddengroups cache for the course.
+    \core_group\visibility::update_hiddengroups_cache($course->id);
+
+    // Group conversation messaging.
+    if (\core_message\api::can_create_group_conversation($USER->id, $context)) {
+        if (!empty($data->enablemessaging)) {
+            \core_message\api::create_conversation(
+                \core_message\api::MESSAGE_CONVERSATION_TYPE_GROUP,
+                [],
+                $group->name,
+                \core_message\api::MESSAGE_CONVERSATION_ENABLED,
+                'core_group',
+                'groups',
+                $group->id,
+                $context->id);
+        }
+    }
 
     // Trigger group event.
     $params = array(
@@ -292,7 +331,8 @@ function groups_create_group($data, $editform = false, $editoroptions = false) {
  *
  * @param stdClass $data grouping properties
  * @param array $editoroptions
- * @return id of grouping or false if error
+ * @return int id of grouping or throws an exception on error
+ * @throws moodle_exception
  */
 function groups_create_grouping($data, $editoroptions=null) {
     global $DB;
@@ -314,6 +354,9 @@ function groups_create_grouping($data, $editoroptions=null) {
 
     $id = $DB->insert_record('groupings', $data);
     $data->id = $id;
+
+    $handler = \core_group\customfield\grouping_handler::create();
+    $handler->instance_form_save($data, true);
 
     if ($editoroptions !== null) {
         $description = new stdClass;
@@ -383,7 +426,7 @@ function groups_update_group_icon($group, $data, $editform) {
  * @return bool true or exception
  */
 function groups_update_group($data, $editform = false, $editoroptions = false) {
-    global $CFG, $DB;
+    global $CFG, $DB, $USER;
 
     $context = context_course::instance($data->courseid);
 
@@ -397,6 +440,10 @@ function groups_update_group($data, $editform = false, $editoroptions = false) {
             throw new moodle_exception('idnumbertaken');
         }
     }
+    if (isset($data->visibility) && !in_array($data->visibility, [GROUPS_VISIBILITY_ALL, GROUPS_VISIBILITY_MEMBERS])) {
+        $data->participation = false;
+        $data->enablemessaging = false;
+    }
 
     if ($editform and $editoroptions) {
         $data = file_postupdate_standard_editor($data, 'description', $editoroptions, $context, 'group', 'description', $data->id);
@@ -404,13 +451,55 @@ function groups_update_group($data, $editform = false, $editoroptions = false) {
 
     $DB->update_record('groups', $data);
 
+    $handler = \core_group\customfield\group_handler::create();
+    $handler->instance_form_save($data);
+
     // Invalidate the group data.
     cache_helper::invalidate_by_definition('core', 'groupdata', array(), array($data->courseid));
+    // Rebuild the coursehiddengroups cache for the course.
+    \core_group\visibility::update_hiddengroups_cache($data->courseid);
 
     $group = $DB->get_record('groups', array('id'=>$data->id));
 
     if ($editform) {
         groups_update_group_icon($group, $data, $editform);
+    }
+
+    // Group conversation messaging.
+    if (\core_message\api::can_create_group_conversation($USER->id, $context)) {
+        if ($conversation = \core_message\api::get_conversation_by_area('core_group', 'groups', $group->id, $context->id)) {
+            if ($data->enablemessaging && $data->enablemessaging != $conversation->enabled) {
+                \core_message\api::enable_conversation($conversation->id);
+            }
+            if (!$data->enablemessaging && $data->enablemessaging != $conversation->enabled) {
+                \core_message\api::disable_conversation($conversation->id);
+            }
+            \core_message\api::update_conversation_name($conversation->id, $group->name);
+        } else {
+            if (!empty($data->enablemessaging)) {
+                $conversation = \core_message\api::create_conversation(
+                    \core_message\api::MESSAGE_CONVERSATION_TYPE_GROUP,
+                    [],
+                    $group->name,
+                    \core_message\api::MESSAGE_CONVERSATION_ENABLED,
+                    'core_group',
+                    'groups',
+                    $group->id,
+                    $context->id
+                );
+
+                // Add members to conversation if they exists in the group.
+                if ($groupmemberroles = groups_get_members_by_role($group->id, $group->courseid, 'u.id')) {
+                    $users = [];
+                    foreach ($groupmemberroles as $roleid => $roledata) {
+                        foreach ($roledata->users as $member) {
+                            $users[] = $member->id;
+                        }
+                    }
+                    \core_message\api::add_members_to_conversation($users, $conversation->id);
+                }
+            }
+        }
     }
 
     // Trigger group event.
@@ -449,6 +538,9 @@ function groups_update_grouping($data, $editoroptions=null) {
     }
     $DB->update_record('groupings', $data);
 
+    $handler = \core_group\customfield\grouping_handler::create();
+    $handler->instance_form_save($data);
+
     // Invalidate the group data.
     cache_helper::invalidate_by_definition('core', 'groupdata', array(), array($data->courseid));
 
@@ -485,12 +577,20 @@ function groups_delete_group($grouporid) {
         }
     }
 
+    $context = context_course::instance($group->courseid);
+
     // delete group calendar events
     $DB->delete_records('event', array('groupid'=>$groupid));
     //first delete usage in groupings_groups
     $DB->delete_records('groupings_groups', array('groupid'=>$groupid));
     //delete members
     $DB->delete_records('groups_members', array('groupid'=>$groupid));
+
+    // Delete any members in a conversation related to this group.
+    if ($conversation = \core_message\api::get_conversation_by_area('core_group', 'groups', $groupid, $context->id)) {
+        \core_message\api::delete_all_conversation_data($conversation->id);
+    }
+
     //group itself last
     $DB->delete_records('groups', array('id'=>$groupid));
 
@@ -504,6 +604,8 @@ function groups_delete_group($grouporid) {
     cache_helper::invalidate_by_definition('core', 'groupdata', array(), array($group->courseid));
     // Purge the group and grouping cache for users.
     cache_helper::purge_by_definition('core', 'user_group_groupings');
+    // Rebuild the coursehiddengroups cache for the course.
+    \core_group\visibility::update_hiddengroups_cache($group->courseid);
 
     // Trigger group event.
     $params = array(
@@ -652,6 +754,8 @@ function groups_delete_groups($courseid, $showfeedback=false) {
     cache_helper::invalidate_by_definition('core', 'groupdata', array(), array($courseid));
     // Purge the group and grouping cache for users.
     cache_helper::purge_by_definition('core', 'user_group_groupings');
+    // Rebuild the coursehiddengroups cache for the course.
+    \core_group\visibility::update_hiddengroups_cache($courseid);
 
     if ($showfeedback) {
         echo $OUTPUT->notification(get_string('deleted').' - '.get_string('groups', 'group'), 'notifysuccess');
@@ -714,11 +818,12 @@ function groups_get_possible_roles($context) {
  * @param string $orderby The column to sort users by
  * @param int $notingroup restrict to users not in existing groups
  * @param bool $onlyactiveenrolments restrict to users who have an active enrolment in the course
+ * @param array $extrafields Extra user fields to return
  * @return array An array of the users
  */
 function groups_get_potential_members($courseid, $roleid = null, $source = null,
                                       $orderby = 'lastname ASC, firstname ASC',
-                                      $notingroup = null, $onlyactiveenrolments = false) {
+                                      $notingroup = null, $onlyactiveenrolments = false, $extrafields = []) {
     global $DB;
 
     $context = context_course::instance($courseid);
@@ -776,7 +881,8 @@ function groups_get_potential_members($courseid, $roleid = null, $source = null,
         }
     }
 
-    $allusernamefields = get_all_user_name_fields(true, 'u');
+    $userfieldsapi = \core_user\fields::for_userpic()->including(...$extrafields);
+    $allusernamefields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     $sql = "SELECT DISTINCT u.id, u.username, $allusernamefields, u.idnumber
               FROM {user} u
               JOIN ($esql) e ON e.id = u.id
@@ -898,14 +1004,15 @@ function groups_unassign_grouping($groupingid, $groupid, $invalidatecache = true
  *
  * @param int $groupid
  * @param int $courseid Course ID (should match the group's course)
- * @param string $fields List of fields from user table prefixed with u, default 'u.*'
- * @param string $sort SQL ORDER BY clause, default (when null passed) is what comes from users_order_by_sql.
+ * @param string $fields List of fields from user table (prefixed with u) and joined tables, default 'u.*'
+ * @param string|null $sort SQL ORDER BY clause, default (when null passed) is what comes from users_order_by_sql.
  * @param string $extrawheretest extra SQL conditions ANDed with the existing where clause.
- * @param array $whereorsortparams any parameters required by $extrawheretest (named parameters).
+ * @param array $whereorsortparams any parameters required by $extrawheretest or $joins (named parameters).
+ * @param string $joins any joins required to get the specified fields.
  * @return array Complex array as described above
  */
-function groups_get_members_by_role($groupid, $courseid, $fields='u.*',
-        $sort=null, $extrawheretest='', $whereorsortparams=array()) {
+function groups_get_members_by_role(int $groupid, int $courseid, string $fields = 'u.*',
+        ?string $sort = null, string $extrawheretest = '', array $whereorsortparams = [], string $joins = '') {
     global $DB;
 
     // Retrieve information about all users and their roles on the course or
@@ -929,6 +1036,7 @@ function groups_get_members_by_role($groupid, $courseid, $fields='u.*',
               JOIN {user} u ON u.id = gm.userid
          LEFT JOIN {role_assignments} ra ON (ra.userid = u.id AND ra.contextid $relatedctxsql)
          LEFT JOIN {role} r ON r.id = ra.roleid
+                   $joins
              WHERE gm.groupid=:mgroupid
                    ".$extrawheretest."
           ORDER BY r.sortorder, $sort";
@@ -1111,4 +1219,76 @@ function core_group_inplace_editable($itemtype, $itemid, $newvalue) {
     if ($itemtype === 'user_groups') {
         return \core_group\output\user_groups_editable::update($itemid, $newvalue);
     }
+}
+
+/**
+ * Updates group messaging to enable/disable in bulk.
+ *
+ * @param array $groupids array of group id numbers.
+ * @param bool $enabled if true, enables messaging else disables messaging
+ */
+function set_groups_messaging(array $groupids, bool $enabled): void {
+    foreach ($groupids as $groupid) {
+        $data = groups_get_group($groupid, '*', MUST_EXIST);
+        $data->enablemessaging = $enabled;
+        groups_update_group($data);
+    }
+}
+
+/**
+ * Returns custom fields data for provided groups.
+ *
+ * @param array $groupids a list of group IDs to provide data for.
+ * @return \core_customfield\data_controller[]
+ */
+function get_group_custom_fields_data(array $groupids): array {
+    $result = [];
+
+    if (!empty($groupids)) {
+        $handler = \core_group\customfield\group_handler::create();
+        $customfieldsdata = $handler->get_instances_data($groupids, true);
+
+        foreach ($customfieldsdata as $groupid => $fieldcontrollers) {
+            foreach ($fieldcontrollers as $fieldcontroller) {
+                $result[$groupid][] = [
+                    'type' => $fieldcontroller->get_field()->get('type'),
+                    'value' => $fieldcontroller->export_value(),
+                    'valueraw' => $fieldcontroller->get_value(),
+                    'name' => $fieldcontroller->get_field()->get('name'),
+                    'shortname' => $fieldcontroller->get_field()->get('shortname'),
+                ];
+            }
+        }
+    }
+
+    return $result;
+}
+
+/**
+ * Returns custom fields data for provided groupings.
+ *
+ * @param array $groupingids a list of group IDs to provide data for.
+ * @return \core_customfield\data_controller[]
+ */
+function get_grouping_custom_fields_data(array $groupingids): array {
+    $result = [];
+
+    if (!empty($groupingids)) {
+        $handler = \core_group\customfield\grouping_handler::create();
+        $customfieldsdata = $handler->get_instances_data($groupingids, true);
+
+        foreach ($customfieldsdata as $groupingid => $fieldcontrollers) {
+            foreach ($fieldcontrollers as $fieldcontroller) {
+                $result[$groupingid][] = [
+                    'type' => $fieldcontroller->get_field()->get('type'),
+                    'value' => $fieldcontroller->export_value(),
+                    'valueraw' => $fieldcontroller->get_value(),
+                    'name' => $fieldcontroller->get_field()->get('name'),
+                    'shortname' => $fieldcontroller->get_field()->get('shortname'),
+                ];
+            }
+        }
+    }
+
+    return $result;
 }

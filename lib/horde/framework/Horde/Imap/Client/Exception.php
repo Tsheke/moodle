@@ -2,7 +2,7 @@
 /**
  * Copyright 2008-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -253,7 +253,7 @@ class Horde_Imap_Client_Exception extends Horde_Exception_Wrapped
      * Constructor.
      *
      * @param string $message  Error message (non-translated).
-     * @param code $code       Error code.
+     * @param int $code        Error code.
      */
     public function __construct($message = null, $code = null)
     {

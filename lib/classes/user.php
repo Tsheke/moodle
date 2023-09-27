@@ -69,7 +69,6 @@ class core_user {
         'country',
         'lang',
         'description',
-        'url',
         'idnumber',
         'institution',
         'department',
@@ -244,32 +243,18 @@ class core_user {
         }
 
         // Start building the WHERE clause based on name.
-        list ($where, $whereparams) = users_search_sql($query, 'u', false);
+        list ($where, $whereparams) = users_search_sql($query, 'u');
 
         // We allow users to search with extra identity fields (as well as name) but only if they
         // have the permission to display those identity fields.
         $extrasql = '';
         $extraparams = [];
 
-        if (empty($CFG->showuseridentity)) {
-            // Explode gives wrong result with empty string.
-            $extra = [];
-        } else {
-            $extra = explode(',', $CFG->showuseridentity);
-        }
-
-        // We need the username just to skip guests.
-        $extrafieldlist = $extra;
-        if (!in_array('username', $extra)) {
-            $extrafieldlist[] = 'username';
-        }
-        // The deleted flag will always be false because users_search_sql excludes deleted users,
-        // but it must be present or it causes PHP warnings in some functions below.
-        if (!in_array('deleted', $extra)) {
-            $extrafieldlist[] = 'deleted';
-        }
-        $selectfields = \user_picture::fields('u',
-                array_merge(get_all_user_name_fields(), $extrafieldlist));
+        // TODO Does not support custom user profile fields (MDL-70456).
+        $userfieldsapi = \core_user\fields::for_identity(null, false)->with_userpic()->with_name()
+            ->including('username', 'deleted');
+        $selectfields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
+        $extra = $userfieldsapi->get_required_fields([\core_user\fields::PURPOSE_IDENTITY]);
 
         $index = 1;
         foreach ($extra as $fieldname) {
@@ -382,7 +367,7 @@ class core_user {
     protected static function get_enrolled_sql_on_courses_with_capability($capability) {
         // Get all courses where user have the capability.
         $courses = get_user_capability_course($capability, null, true,
-                'ctxid, ctxpath, ctxdepth, ctxlevel, ctxinstance');
+                implode(',', array_values(context_helper::get_preload_record_columns('ctx'))));
         if (!$courses) {
             return [null, null];
         }
@@ -524,18 +509,17 @@ class core_user {
     }
 
     /**
-     * Return true is user id is greater than self::NOREPLY_USER and
-     * alternatively check db.
+     * Return true if user id is greater than 0 and alternatively check db.
      *
      * @param int $userid user id.
      * @param bool $checkdb if true userid will be checked in db. By default it's false, and
-     *                      userid is compared with NOREPLY_USER for performance.
+     *                      userid is compared with 0 for performance.
      * @return bool true is real user else false.
      */
     public static function is_real_user($userid, $checkdb = false) {
         global $DB;
 
-        if ($userid < 0) {
+        if ($userid <= 0) {
             return false;
         }
         if ($checkdb) {
@@ -543,6 +527,18 @@ class core_user {
         } else {
             return true;
         }
+    }
+
+    /**
+     * Determine whether the given user ID is that of the current user. Useful for components implementing permission callbacks
+     * for preferences consumed by {@see fill_preferences_cache}
+     *
+     * @param stdClass $user
+     * @return bool
+     */
+    public static function is_current_user(stdClass $user): bool {
+        global $USER;
+        return $user->id == $USER->id;
     }
 
     /**
@@ -602,33 +598,35 @@ class core_user {
             // The user has chosen to delete the selected users picture.
             $fs->delete_area_files($context->id, 'user', 'icon'); // Drop all images in area.
             $newpicture = 0;
+        }
 
-        } else {
-            // Save newly uploaded file, this will avoid context mismatch for newly created users.
-            file_save_draft_area_files($usernew->imagefile, $context->id, 'user', 'newicon', 0, $filemanageroptions);
-            if (($iconfiles = $fs->get_area_files($context->id, 'user', 'newicon')) && count($iconfiles) == 2) {
-                // Get file which was uploaded in draft area.
-                foreach ($iconfiles as $file) {
-                    if (!$file->is_directory()) {
-                        break;
-                    }
+        // Save newly uploaded file, this will avoid context mismatch for newly created users.
+        if (!isset($usernew->imagefile)) {
+            $usernew->imagefile = 0;
+        }
+        file_save_draft_area_files($usernew->imagefile, $context->id, 'user', 'newicon', 0, $filemanageroptions);
+        if (($iconfiles = $fs->get_area_files($context->id, 'user', 'newicon')) && count($iconfiles) == 2) {
+            // Get file which was uploaded in draft area.
+            foreach ($iconfiles as $file) {
+                if (!$file->is_directory()) {
+                    break;
                 }
-                // Copy file to temporary location and the send it for processing icon.
-                if ($iconfile = $file->copy_content_to_temp()) {
-                    // There is a new image that has been uploaded.
-                    // Process the new image and set the user to make use of it.
-                    // NOTE: Uploaded images always take over Gravatar.
-                    $newpicture = (int)process_new_icon($context, 'user', 'icon', 0, $iconfile);
-                    // Delete temporary file.
-                    @unlink($iconfile);
-                    // Remove uploaded file.
-                    $fs->delete_area_files($context->id, 'user', 'newicon');
-                } else {
-                    // Something went wrong while creating temp file.
-                    // Remove uploaded file.
-                    $fs->delete_area_files($context->id, 'user', 'newicon');
-                    return false;
-                }
+            }
+            // Copy file to temporary location and the send it for processing icon.
+            if ($iconfile = $file->copy_content_to_temp()) {
+                // There is a new image that has been uploaded.
+                // Process the new image and set the user to make use of it.
+                // NOTE: Uploaded images always take over Gravatar.
+                $newpicture = (int)process_new_icon($context, 'user', 'icon', 0, $iconfile);
+                // Delete temporary file.
+                @unlink($iconfile);
+                // Remove uploaded file.
+                $fs->delete_area_files($context->id, 'user', 'newicon');
+            } else {
+                // Something went wrong while creating temp file.
+                // Remove uploaded file.
+                $fs->delete_area_files($context->id, 'user', 'newicon');
+                return false;
             }
         }
 
@@ -659,7 +657,7 @@ class core_user {
      * @return void
      */
     protected static function fill_properties_cache() {
-        global $CFG;
+        global $CFG, $SESSION;
         if (self::$propertiescache !== null) {
             return;
         }
@@ -681,12 +679,7 @@ class core_user {
         $fields['lastname'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
         $fields['surname'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
         $fields['email'] = array('type' => PARAM_RAW_TRIMMED, 'null' => NULL_NOT_ALLOWED);
-        $fields['emailstop'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED);
-        $fields['icq'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
-        $fields['skype'] = array('type' => PARAM_NOTAGS, 'null' => NULL_ALLOWED);
-        $fields['aim'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
-        $fields['yahoo'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
-        $fields['msn'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
+        $fields['emailstop'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED, 'default' => 0);
         $fields['phone1'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
         $fields['phone2'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
         $fields['institution'] = array('type' => PARAM_TEXT, 'null' => NULL_NOT_ALLOWED);
@@ -695,7 +688,8 @@ class core_user {
         $fields['city'] = array('type' => PARAM_TEXT, 'null' => NULL_NOT_ALLOWED, 'default' => $CFG->defaultcity);
         $fields['country'] = array('type' => PARAM_ALPHA, 'null' => NULL_NOT_ALLOWED, 'default' => $CFG->country,
                 'choices' => array_merge(array('' => ''), get_string_manager()->get_list_of_countries(true, true)));
-        $fields['lang'] = array('type' => PARAM_LANG, 'null' => NULL_NOT_ALLOWED, 'default' => $CFG->lang,
+        $fields['lang'] = array('type' => PARAM_LANG, 'null' => NULL_NOT_ALLOWED,
+                'default' => (!empty($CFG->autolangusercreation) && !empty($SESSION->lang)) ? $SESSION->lang : $CFG->lang,
                 'choices' => array_merge(array('' => ''), get_string_manager()->get_list_of_translations(false)));
         $fields['calendartype'] = array('type' => PARAM_PLUGIN, 'null' => NULL_NOT_ALLOWED, 'default' => $CFG->calendartype,
                 'choices' => array_merge(array('' => ''), \core_calendar\type_factory::get_list_of_calendar_types()));
@@ -708,9 +702,8 @@ class core_user {
         $fields['lastlogin'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED);
         $fields['currentlogin'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED);
         $fields['lastip'] = array('type' => PARAM_NOTAGS, 'null' => NULL_NOT_ALLOWED);
-        $fields['secret'] = array('type' => PARAM_RAW, 'null' => NULL_NOT_ALLOWED);
+        $fields['secret'] = array('type' => PARAM_ALPHANUM, 'null' => NULL_NOT_ALLOWED);
         $fields['picture'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED);
-        $fields['url'] = array('type' => PARAM_URL, 'null' => NULL_NOT_ALLOWED);
         $fields['description'] = array('type' => PARAM_RAW, 'null' => NULL_ALLOWED);
         $fields['descriptionformat'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED);
         $fields['mailformat'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED,
@@ -952,6 +945,8 @@ class core_user {
      * @return void
      */
     protected static function fill_preferences_cache() {
+        global $CFG;
+
         if (self::$preferencescache !== null) {
             return;
         }
@@ -966,8 +961,6 @@ class core_user {
                 return ($USER->id != $user->id && (has_capability('moodle/user:update', $systemcontext) ||
                         ($user->timecreated > time() - 10 && has_capability('moodle/user:create', $systemcontext))));
             });
-        $preferences['usemodchooser'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED, 'default' => 1,
-            'choices' => array(0, 1));
         $preferences['forum_markasreadonnotification'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED, 'default' => 1,
             'choices' => array(0, 1));
         $preferences['htmleditor'] = array('type' => PARAM_NOTAGS, 'null' => NULL_ALLOWED,
@@ -979,19 +972,89 @@ class core_user {
             });
         $preferences['badgeprivacysetting'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED, 'default' => 1,
             'choices' => array(0, 1), 'permissioncallback' => function($user, $preferencename) {
-                global $CFG, $USER;
-                return !empty($CFG->enablebadges) && $user->id == $USER->id;
+                global $CFG;
+                return !empty($CFG->enablebadges) && self::is_current_user($user);
             });
         $preferences['blogpagesize'] = array('type' => PARAM_INT, 'null' => NULL_NOT_ALLOWED, 'default' => 10,
             'permissioncallback' => function($user, $preferencename) {
-                global $USER;
-                return $USER->id == $user->id && has_capability('moodle/blog:view', context_system::instance());
+                return self::is_current_user($user) && has_capability('moodle/blog:view', context_system::instance());
             });
+        $preferences['filemanager_recentviewmode'] = [
+            'type' => PARAM_INT,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => 1,
+            'choices' => [1, 2, 3],
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['filepicker_recentrepository'] = [
+            'type' => PARAM_INT,
+            'null' => NULL_NOT_ALLOWED,
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['filepicker_recentlicense'] = [
+            'type' => PARAM_SAFEDIR,
+            'null' => NULL_NOT_ALLOWED,
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['filepicker_recentviewmode'] = [
+            'type' => PARAM_INT,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => 1,
+            'choices' => [1, 2, 3],
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['userselector_optionscollapsed'] = [
+            'type' => PARAM_BOOL,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => true,
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['userselector_autoselectunique'] = [
+            'type' => PARAM_BOOL,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => false,
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['userselector_preserveselected'] = [
+            'type' => PARAM_BOOL,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => false,
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['userselector_searchtype'] = [
+            'type' => PARAM_INT,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => USER_SEARCH_STARTS_WITH,
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+        $preferences['question_bank_advanced_search'] = [
+            'type' => PARAM_BOOL,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => false,
+            'permissioncallback' => [static::class, 'is_current_user'],
+        ];
+
+        $choices = [HOMEPAGE_SITE];
+        if (!empty($CFG->enabledashboard)) {
+            $choices[] = HOMEPAGE_MY;
+        }
+        $choices[] = HOMEPAGE_MYCOURSES;
+        $preferences['user_home_page_preference'] = [
+            'type' => PARAM_INT,
+            'null' => NULL_ALLOWED,
+            'default' => get_default_home_page(),
+            'choices' => $choices,
+            'permissioncallback' => function ($user, $preferencename) {
+                global $CFG;
+                return self::is_current_user($user) &&
+                    (!empty($CFG->defaulthomepage) && ($CFG->defaulthomepage == HOMEPAGE_USER));
+            }
+        ];
 
         // Core components that may want to define their preferences.
         // List of core components implementing callback is hardcoded here for performance reasons.
         // TODO MDL-58184 cache list of core components implementing a function.
-        $corecomponents = ['core_message', 'core_calendar'];
+        $corecomponents = ['core_message', 'core_calendar', 'core_contentbank'];
         foreach ($corecomponents as $component) {
             if (($pluginpreferences = component_callback($component, 'user_preferences')) && is_array($pluginpreferences)) {
                 $preferences += $pluginpreferences;
@@ -1050,7 +1113,7 @@ class core_user {
             return false;
         }
 
-        if ($user->id == $USER->id) {
+        if (self::is_current_user($user)) {
             // Editing own profile.
             $systemcontext = context_system::instance();
             return has_capability('moodle/user:editownprofile', $systemcontext);
@@ -1146,6 +1209,261 @@ class core_user {
             }
             return $value;
         }
+    }
+
+    /**
+     * Is the user expected to perform an action to start using Moodle properly?
+     *
+     * This covers cases such as filling the profile, changing password or agreeing to the site policy.
+     *
+     * @param stdClass $user User object, defaults to the current user.
+     * @return bool
+     */
+    public static function awaiting_action(stdClass $user = null): bool {
+        global $USER;
+
+        if ($user === null) {
+            $user = $USER;
+        }
+
+        if (user_not_fully_set_up($user)) {
+            // Awaiting the user to fill all fields in the profile.
+            return true;
+        }
+
+        if (get_user_preferences('auth_forcepasswordchange', false, $user)) {
+            // Awaiting the user to change their password.
+            return true;
+        }
+
+        if (empty($user->policyagreed) && !is_siteadmin($user)) {
+            $manager = new \core_privacy\local\sitepolicy\manager();
+
+            if ($manager->is_defined(isguestuser($user))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get welcome message.
+     *
+     * @return lang_string welcome message
+     */
+    public static function welcome_message(): ?lang_string {
+        global $USER;
+
+        $isloggedinas = \core\session\manager::is_loggedinas();
+        if (!isloggedin() || isguestuser() || $isloggedinas) {
+            return null;
+        }
+        if (empty($USER->core_welcome_message)) {
+            $USER->core_welcome_message = true;
+            $messagekey = 'welcomeback';
+            if (empty(get_user_preferences('core_user_welcome', null))) {
+                $messagekey = 'welcometosite';
+                set_user_preference('core_user_welcome', time());
+            }
+
+            $namefields = [
+                'fullname' => fullname($USER),
+                'alternativefullname' => fullname($USER, true),
+            ];
+
+            foreach (\core_user\fields::get_name_fields() as $namefield) {
+                $namefields[$namefield] = $USER->{$namefield};
+            }
+
+            return new lang_string($messagekey, 'core', $namefields);
+        };
+        return null;
+    }
+
+    /**
+     * Return full name depending on context.
+     * This function should be used for displaying purposes only as the details may not be the same as it is on database.
+     *
+     * @param stdClass $user the person to get details of.
+     * @param context|null $context The context will be used to determine the visibility of the user's full name.
+     * @param array $options can include: override - if true, will not use forced firstname/lastname settings
+     * @return string Full name of the user
+     */
+    public static function get_fullname(stdClass $user, context $context = null, array $options = []): string {
+        global $CFG, $SESSION;
+
+        // Clone the user so that it does not mess up the original object.
+        $user = clone($user);
+
+        // Override options.
+        $override = $options["override"] ?? false;
+
+        if (!isset($user->firstname) && !isset($user->lastname)) {
+            return '';
+        }
+
+        // Get all of the name fields.
+        $allnames = \core_user\fields::get_name_fields();
+        if ($CFG->debugdeveloper) {
+            $missingfields = [];
+            foreach ($allnames as $allname) {
+                if (!property_exists($user, $allname)) {
+                    $missingfields[] = $allname;
+                }
+            }
+            if (!empty($missingfields)) {
+                debugging('The following name fields are missing from the user object: ' . implode(', ', $missingfields));
+            }
+        }
+
+        if (!$override) {
+            if (!empty($CFG->forcefirstname)) {
+                $user->firstname = $CFG->forcefirstname;
+            }
+            if (!empty($CFG->forcelastname)) {
+                $user->lastname = $CFG->forcelastname;
+            }
+        }
+
+        if (!empty($SESSION->fullnamedisplay)) {
+            $CFG->fullnamedisplay = $SESSION->fullnamedisplay;
+        }
+
+        $template = null;
+        // If the fullnamedisplay setting is available, set the template to that.
+        if (isset($CFG->fullnamedisplay)) {
+            $template = $CFG->fullnamedisplay;
+        }
+        // If the template is empty, or set to language, return the language string.
+        if ((empty($template) || $template == 'language') && !$override) {
+            return get_string('fullnamedisplay', null, $user);
+        }
+
+        // Check to see if we are displaying according to the alternative full name format.
+        if ($override) {
+            if (empty($CFG->alternativefullnameformat) || $CFG->alternativefullnameformat == 'language') {
+                // Default to show just the user names according to the fullnamedisplay string.
+                return get_string('fullnamedisplay', null, $user);
+            } else {
+                // If the override is true, then change the template to use the complete name.
+                $template = $CFG->alternativefullnameformat;
+            }
+        }
+
+        $requirednames = array();
+        // With each name, see if it is in the display name template, and add it to the required names array if it is.
+        foreach ($allnames as $allname) {
+            if (strpos($template, $allname) !== false) {
+                $requirednames[] = $allname;
+            }
+        }
+
+        $displayname = $template;
+        // Switch in the actual data into the template.
+        foreach ($requirednames as $altname) {
+            if (isset($user->$altname)) {
+                // Using empty() on the below if statement causes breakages.
+                if ((string)$user->$altname == '') {
+                    $displayname = str_replace($altname, 'EMPTY', $displayname);
+                } else {
+                    $displayname = str_replace($altname, $user->$altname, $displayname);
+                }
+            } else {
+                $displayname = str_replace($altname, 'EMPTY', $displayname);
+            }
+        }
+        // Tidy up any misc. characters (Not perfect, but gets most characters).
+        // Don't remove the "u" at the end of the first expression unless you want garbled characters when combining hiragana or
+        // katakana and parenthesis.
+        $patterns = array();
+        // This regular expression replacement is to fix problems such as 'James () Kirk' Where 'Tiberius' (middlename) has not been
+        // filled in by a user.
+        // The special characters are Japanese brackets that are common enough to make allowances for them (not covered by :punct:).
+        $patterns[] = '/[[:punct:]「」]*EMPTY[[:punct:]「」]*/u';
+        // This regular expression is to remove any double spaces in the display name.
+        $patterns[] = '/\s{2,}/u';
+        foreach ($patterns as $pattern) {
+            $displayname = preg_replace($pattern, ' ', $displayname);
+        }
+
+        // Trimming $displayname will help the next check to ensure that we don't have a display name with spaces.
+        $displayname = trim($displayname);
+        if (empty($displayname)) {
+            // Going with just the first name if no alternate fields are filled out. May be changed later depending on what
+            // people in general feel is a good setting to fall back on.
+            $displayname = $user->firstname;
+        }
+        return $displayname;
+    }
+
+    /**
+     * Return profile url depending on context.
+     *
+     * @param stdClass $user the person to get details of.
+     * @param context|null $context The context will be used to determine the visibility of the user's profile url.
+     * @return moodle_url Profile url of the user
+     */
+    public static function get_profile_url(stdClass $user, context $context = null): moodle_url {
+        if (empty($user->id)) {
+            throw new coding_exception('User id is required when displaying profile url.');
+        }
+
+        // Params to be passed to the user view page.
+        $params = ['id' => $user->id];
+
+        // Get courseid if provided.
+        if (isset($options['courseid'])) {
+            $params['courseid'] = $options['courseid'];
+        }
+
+        // Get courseid from context if provided.
+        if ($context) {
+            $coursecontext = $context->get_course_context(false);
+            if ($coursecontext) {
+                $params['courseid'] = $coursecontext->instanceid;
+            }
+        }
+
+        // If courseid is not set or is set to site id, then return profile page, otherwise return view page.
+        if (!isset($params['courseid']) || $params['courseid'] == SITEID) {
+            return new moodle_url('/user/profile.php', $params);
+        } else {
+            return new moodle_url('/user/view.php', $params);
+        }
+    }
+
+    /**
+     * Return user picture depending on context.
+     * This function should be used for displaying purposes only as the details may not be the same as it is on database.
+     *
+     * @param stdClass $user the person to get details of.
+     * @param context|null $context The context will be used to determine the visibility of the user's picture.
+     * @param array $options public properties of {@see user_picture} to be overridden
+     *     - courseid = $this->page->course->id (course id of user profile in link)
+     *     - size = 35 (size of image)
+     *     - link = true (make image clickable - the link leads to user profile)
+     *     - popup = false (open in popup)
+     *     - alttext = true (add image alt attribute)
+     *     - class = image class attribute (default 'userpicture')
+     *     - visibletoscreenreaders = true (whether to be visible to screen readers)
+     *     - includefullname = false (whether to include the user's full name together with the user picture)
+     *     - includetoken = false (whether to use a token for authentication. True for current user, int value for other user id)
+     * @return user_picture User picture object
+     */
+    public static function get_profile_picture(stdClass $user, context $context = null, array $options = []): user_picture {
+        // Create a new user picture object.
+        $userpicture = new user_picture($user);
+
+        // Override the user picture object with the options provided.
+        foreach ($options as $key => $value) {
+            if (property_exists($userpicture, $key)) {
+                $userpicture->$key = $value;
+            }
+        }
+
+        // Return the user picture.
+        return $userpicture;
     }
 
 }

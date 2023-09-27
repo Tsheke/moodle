@@ -18,14 +18,14 @@ Feature: Text area with enable/disable function.
     And I set the field "Text editor" to "Plain text area"
     And I press "Save changes"
     And I am on "Course 1" course homepage
-    And I follow "Control Enable/Disable Text area"
+    And I click on "Control Enable/Disable Text area" "link" in the "region-main" "region"
 
   @javascript
   Scenario: Check disable Text area editor.
     When I set the field "mycontrol" to "Disable"
-    Then the "readonly" attribute of "textarea#id_myeditor" "css_element" should contain "readonly"
+    Then the "readonly" attribute of "textarea#id_myeditor" "css_element" should be set
 
   @javascript
   Scenario: Check enable Text area editor.
     When I set the field "mycontrol" to "Enable"
-    Then "textarea#id_myeditor[readonly]" "css_element" should not exist
+    Then the "readonly" attribute of "textarea#id_myeditor" "css_element" should not be set

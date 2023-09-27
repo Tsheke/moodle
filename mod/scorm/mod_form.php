@@ -75,7 +75,7 @@ class mod_scorm_mod_form extends moodleform_mod {
             $mform->addElement('text', 'packageurl', get_string('packageurl', 'scorm'), array('size' => 60));
             $mform->setType('packageurl', PARAM_RAW);
             $mform->addHelpButton('packageurl', 'packageurl', 'scorm');
-            $mform->disabledIf('packageurl', 'scormtype', 'eq', SCORM_TYPE_LOCAL);
+            $mform->hideIf('packageurl', 'scormtype', 'eq', SCORM_TYPE_LOCAL);
         } else {
             $mform->addElement('hidden', 'scormtype', SCORM_TYPE_LOCAL);
             $mform->setType('scormtype', PARAM_ALPHA);
@@ -90,7 +90,7 @@ class mod_scorm_mod_form extends moodleform_mod {
 
         $mform->addElement('filemanager', 'packagefile', get_string('package', 'scorm'), null, $filemanageroptions);
         $mform->addHelpButton('packagefile', 'package', 'scorm');
-        $mform->disabledIf('packagefile', 'scormtype', 'noteq', SCORM_TYPE_LOCAL);
+        $mform->hideIf('packagefile', 'scormtype', 'noteq', SCORM_TYPE_LOCAL);
 
         // Update packages timing.
         $mform->addElement('select', 'updatefreq', get_string('updatefreq', 'scorm'), scorm_get_updatefreq_array());
@@ -111,14 +111,14 @@ class mod_scorm_mod_form extends moodleform_mod {
         $mform->setDefault('width', $cfgscorm->framewidth);
         $mform->setType('width', PARAM_INT);
         $mform->setAdvanced('width', $cfgscorm->framewidth_adv);
-        $mform->disabledIf('width', 'popup', 'eq', 0);
+        $mform->hideIf('width', 'popup', 'eq', 0);
 
         // Height.
         $mform->addElement('text', 'height', get_string('height', 'scorm'), 'maxlength="5" size="5"');
         $mform->setDefault('height', $cfgscorm->frameheight);
         $mform->setType('height', PARAM_INT);
         $mform->setAdvanced('height', $cfgscorm->frameheight_adv);
-        $mform->disabledIf('height', 'popup', 'eq', 0);
+        $mform->hideIf('height', 'popup', 'eq', 0);
 
         // Window Options.
         $winoptgrp = array();
@@ -127,13 +127,8 @@ class mod_scorm_mod_form extends moodleform_mod {
             $mform->setDefault($key, $value);
         }
         $mform->addGroup($winoptgrp, 'winoptgrp', get_string('options', 'scorm'), '<br />', false);
-        $mform->disabledIf('winoptgrp', 'popup', 'eq', 0);
+        $mform->hideIf('winoptgrp', 'popup', 'eq', 0);
         $mform->setAdvanced('winoptgrp', $cfgscorm->winoptgrp_adv);
-
-        // Display activity name.
-        $mform->addElement('advcheckbox', 'displayactivityname', get_string('displayactivityname', 'scorm'));
-        $mform->addHelpButton('displayactivityname', 'displayactivityname', 'scorm');
-        $mform->setDefault('displayactivityname', $cfgscorm->displayactivityname);
 
         // Skip view page.
         $skipviewoptions = scorm_get_skip_view_array();
@@ -166,23 +161,23 @@ class mod_scorm_mod_form extends moodleform_mod {
         $mform->addHelpButton('nav', 'nav', 'scorm');
         $mform->setDefault('nav', $cfgscorm->nav);
         $mform->setAdvanced('nav', $cfgscorm->nav_adv);
-        $mform->disabledIf('nav', 'hidetoc', 'noteq', SCORM_TOC_SIDE);
+        $mform->hideIf('nav', 'hidetoc', 'noteq', SCORM_TOC_SIDE);
 
         // Navigation panel position from left.
         $mform->addElement('text', 'navpositionleft', get_string('fromleft', 'scorm'), 'maxlength="5" size="5"');
         $mform->setDefault('navpositionleft', $cfgscorm->navpositionleft);
         $mform->setType('navpositionleft', PARAM_INT);
         $mform->setAdvanced('navpositionleft', $cfgscorm->navpositionleft_adv);
-        $mform->disabledIf('navpositionleft', 'hidetoc', 'noteq', SCORM_TOC_SIDE);
-        $mform->disabledIf('navpositionleft', 'nav', 'noteq', SCORM_NAV_FLOATING);
+        $mform->hideIf('navpositionleft', 'hidetoc', 'noteq', SCORM_TOC_SIDE);
+        $mform->hideIf('navpositionleft', 'nav', 'noteq', SCORM_NAV_FLOATING);
 
         // Navigation panel position from top.
         $mform->addElement('text', 'navpositiontop', get_string('fromtop', 'scorm'), 'maxlength="5" size="5"');
         $mform->setDefault('navpositiontop', $cfgscorm->navpositiontop);
         $mform->setType('navpositiontop', PARAM_INT);
         $mform->setAdvanced('navpositiontop', $cfgscorm->navpositiontop_adv);
-        $mform->disabledIf('navpositiontop', 'hidetoc', 'noteq', SCORM_TOC_SIDE);
-        $mform->disabledIf('navpositiontop', 'nav', 'noteq', SCORM_NAV_FLOATING);
+        $mform->hideIf('navpositiontop', 'hidetoc', 'noteq', SCORM_TOC_SIDE);
+        $mform->hideIf('navpositiontop', 'nav', 'noteq', SCORM_NAV_FLOATING);
 
         // Display attempt status.
         $mform->addElement('select', 'displayattemptstatus', get_string('displayattemptstatus', 'scorm'),
@@ -198,7 +193,7 @@ class mod_scorm_mod_form extends moodleform_mod {
         $mform->addElement('date_time_selector', 'timeclose', get_string("scormclose", "scorm"), array('optional' => true));
 
         // Grade Settings.
-        $mform->addElement('header', 'gradesettings', get_string('grade'));
+        $mform->addElement('header', 'gradesettings', get_string('gradenoun'));
 
         // Grade Method.
         $mform->addElement('select', 'grademethod', get_string('grademethod', 'scorm'), scorm_get_grade_method_array());
@@ -211,7 +206,7 @@ class mod_scorm_mod_form extends moodleform_mod {
         }
         $mform->addElement('select', 'maxgrade', get_string('maximumgrade'), $grades);
         $mform->setDefault('maxgrade', $cfgscorm->maxgrade);
-        $mform->disabledIf('maxgrade', 'grademethod', 'eq', GRADESCOES);
+        $mform->hideIf('maxgrade', 'grademethod', 'eq', GRADESCOES);
 
         // Attempts management.
         $mform->addElement('header', 'attemptsmanagementhdr', get_string('attemptsmanagement', 'scorm'));
@@ -223,7 +218,7 @@ class mod_scorm_mod_form extends moodleform_mod {
 
         // What Grade.
         $mform->addElement('select', 'whatgrade', get_string('whatgrade', 'scorm'),  scorm_get_what_grade_array());
-        $mform->disabledIf('whatgrade', 'maxattempt', 'eq', 1);
+        $mform->hideIf('whatgrade', 'maxattempt', 'eq', 1);
         $mform->addHelpButton('whatgrade', 'whatgrade', 'scorm');
         $mform->setDefault('whatgrade', $cfgscorm->whatgrade);
 
@@ -275,12 +270,19 @@ class mod_scorm_mod_form extends moodleform_mod {
 
         $this->standard_coursemodule_elements();
 
+        // A SCORM module should define this within itself and is not needed here.
+        $suffix = $this->get_suffix();
+        $completionpassgradeel = 'completionpassgrade' . $suffix;
+        if ($mform->elementExists($completionpassgradeel)) {
+            $mform->removeElement($completionpassgradeel);
+        }
+
         // Buttons.
         $this->add_action_buttons();
     }
 
     public function data_preprocessing(&$defaultvalues) {
-        global $COURSE;
+        global $CFG, $COURSE;
 
         if (isset($defaultvalues['popup']) && ($defaultvalues['popup'] == 1) && isset($defaultvalues['options'])) {
             if (!empty($defaultvalues['options'])) {
@@ -313,10 +315,10 @@ class mod_scorm_mod_form extends moodleform_mod {
 
         if (($COURSE->format == 'singleactivity') && ((count($scorms) == 0) || ($defaultvalues['instance'] == $coursescorm->id))) {
             $defaultvalues['redirect'] = 'yes';
-            $defaultvalues['redirecturl'] = '../course/view.php?id='.$defaultvalues['course'];
+            $defaultvalues['redirecturl'] = $CFG->wwwroot.'/course/view.php?id='.$defaultvalues['course'];
         } else {
             $defaultvalues['redirect'] = 'no';
-            $defaultvalues['redirecturl'] = '../mod/scorm/view.php?id='.$defaultvalues['coursemodule'];
+            $defaultvalues['redirecturl'] = $CFG->wwwroot.'/mod/scorm/view.php?id='.$defaultvalues['coursemodule'];
         }
         if (isset($defaultvalues['version'])) {
             $defaultvalues['pkgtype'] = (substr($defaultvalues['version'], 0, 5) == 'SCORM') ? 'scorm' : 'aicc';
@@ -332,24 +334,29 @@ class mod_scorm_mod_form extends moodleform_mod {
         }
 
         // Set some completion default data.
+        $suffix = $this->get_suffix();
+        $completionstatusrequiredel = 'completionstatusrequired' . $suffix;
         $cvalues = array();
-        if (empty($this->_instance)) {
-            // When in add mode, set a default completion rule that requires the SCORM's status be set to "Completed".
-            $cvalues[4] = 1;
-        } else if (!empty($defaultvalues['completionstatusrequired']) && !is_array($defaultvalues['completionstatusrequired'])) {
+        if (!empty($defaultvalues[$completionstatusrequiredel]) && !is_array($defaultvalues[$completionstatusrequiredel])) {
             // Unpack values.
             foreach (scorm_status_options() as $key => $value) {
-                if (($defaultvalues['completionstatusrequired'] & $key) == $key) {
+                if (($defaultvalues[$completionstatusrequiredel] & $key) == $key) {
                     $cvalues[$key] = 1;
                 }
             }
-        }
-        if (!empty($cvalues)) {
-            $defaultvalues['completionstatusrequired'] = $cvalues;
+        } else if (empty($this->_instance)) {
+            // When in add mode, set a default completion rule that requires the SCORM's status be set to "Completed".
+            $cvalues[4] = 1;
         }
 
-        if (!isset($defaultvalues['completionscorerequired']) || !strlen($defaultvalues['completionscorerequired'])) {
-            $defaultvalues['completionscoredisabled'] = 1;
+        if (!empty($cvalues)) {
+            $defaultvalues[$completionstatusrequiredel] = $cvalues;
+        }
+
+        $completionscorerequiredel = 'completionscorerequired' . $suffix;
+        if (!isset($defaultvalues[$completionscorerequiredel]) || !strlen($defaultvalues[$completionscorerequiredel])) {
+            $completionscoredisabledel = 'completionscoredisabled' . $suffix;
+            $defaultvalues[$completionscoredisabledel] = 1;
         }
     }
 
@@ -447,15 +454,18 @@ class mod_scorm_mod_form extends moodleform_mod {
                 $errors['timeclose'] = get_string('closebeforeopen', 'scorm');
             }
         }
-        if (!empty($data['completionstatusallscos'])) {
+        $suffix = $this->get_suffix();
+        $completionstatusallscosel = 'completionstatusallscos' . $suffix;
+        if (!empty($data[$completionstatusallscosel])) {
+            $completionstatusrequiredel = 'completionstatusrequired' . $suffix;
             $requirestatus = false;
             foreach (scorm_status_options(true) as $key => $value) {
-                if (!empty($data['completionstatusrequired'][$key])) {
+                if (!empty($data[$completionstatusrequiredel][$key])) {
                     $requirestatus = true;
                 }
             }
             if (!$requirestatus) {
-                $errors['completionstatusallscos'] = get_string('youmustselectastatus', 'scorm');
+                $errors[$completionstatusallscosel] = get_string('youmustselectastatus', 'scorm');
             }
         }
 
@@ -490,50 +500,52 @@ class mod_scorm_mod_form extends moodleform_mod {
     }
 
     public function add_completion_rules() {
+        $suffix = $this->get_suffix();
         $mform =& $this->_form;
-        $items = array();
+        $items = [];
 
         // Require score.
-        $group = array();
-        $group[] =& $mform->createElement('text', 'completionscorerequired', '', array('size' => 5));
-        $group[] =& $mform->createElement('checkbox', 'completionscoredisabled', null, get_string('disable'));
-        $mform->setType('completionscorerequired', PARAM_INT);
-        $mform->addGroup($group, 'completionscoregroup', get_string('completionscorerequired', 'scorm'), '', false);
-        $mform->addHelpButton('completionscoregroup', 'completionscorerequired', 'scorm');
-        $mform->disabledIf('completionscorerequired', 'completionscoredisabled', 'checked');
-        $mform->setDefault('completionscorerequired', 0);
+        $group = [];
+        $completionscorerequiredel = 'completionscorerequired' . $suffix;
+        $group[] =& $mform->createElement(
+            'checkbox',
+            'completionscoredisabled',
+            null,
+            get_string('completionscorerequired', 'scorm')
+        );
+        $group[] =& $mform->createElement('text', $completionscorerequiredel, '', ['size' => 5]);
+        $mform->setType($completionscorerequiredel, PARAM_INT);
+        $completionscoregroupel = 'completionscoregroup' . $suffix;
+        $mform->addGroup($group, $completionscoregroupel, '', '', false);
+        $mform->hideIf($completionscorerequiredel, 'completionscoredisabled', 'notchecked');
+        $mform->setDefault($completionscorerequiredel, 0);
 
-        $items[] = 'completionscoregroup';
+        $items[] = $completionscoregroupel;
 
         // Require status.
-        $first = true;
-        $firstkey = null;
+        $completionstatusrequiredel = 'completionstatusrequired' . $suffix;
         foreach (scorm_status_options(true) as $key => $value) {
-            $name = null;
-            $key = 'completionstatusrequired['.$key.']';
-            if ($first) {
-                $name = get_string('completionstatusrequired', 'scorm');
-                $first = false;
-                $firstkey = $key;
-            }
-            $mform->addElement('checkbox', $key, $name, $value);
+            $key = $completionstatusrequiredel . '['.$key.']';
+            $mform->addElement('checkbox', $key, '', $value);
             $mform->setType($key, PARAM_BOOL);
+            $mform->hideIf($key, $completionstatusrequiredel, 'notchecked');
             $items[] = $key;
         }
-        $mform->addHelpButton($firstkey, 'completionstatusrequired', 'scorm');
 
-        $mform->addElement('checkbox', 'completionstatusallscos', get_string('completionstatusallscos', 'scorm'));
-        $mform->setType('completionstatusallscos', PARAM_BOOL);
-        $mform->addHelpButton('completionstatusallscos', 'completionstatusallscos', 'scorm');
-        $mform->setDefault('completionstatusallscos', 0);
-        $items[] = 'completionstatusallscos';
+        $completionstatusallscosel = 'completionstatusallscos' . $suffix;
+        $mform->addElement('checkbox', $completionstatusallscosel, get_string('completionstatusallscos', 'scorm'));
+        $mform->setType($completionstatusallscosel, PARAM_BOOL);
+        $mform->addHelpButton($completionstatusallscosel, 'completionstatusallscos', 'scorm');
+        $mform->setDefault($completionstatusallscosel, 0);
+        $items[] = $completionstatusallscosel;
 
         return $items;
     }
 
     public function completion_rule_enabled($data) {
-        $status = !empty($data['completionstatusrequired']);
-        $score = empty($data['completionscoredisabled']) && strlen($data['completionscorerequired']);
+        $suffix = $this->get_suffix();
+        $status = !empty($data['completionstatusrequired' . $suffix]);
+        $score = empty($data['completionscoredisabled' . $suffix]) && strlen($data['completionscorerequired' . $suffix]);
 
         return $status || $score;
     }
@@ -550,25 +562,31 @@ class mod_scorm_mod_form extends moodleform_mod {
         parent::data_postprocessing($data);
         // Convert completionstatusrequired to a proper integer, if any.
         $total = 0;
-        if (isset($data->completionstatusrequired) && is_array($data->completionstatusrequired)) {
-            foreach (array_keys($data->completionstatusrequired) as $state) {
-                $total |= $state;
+        $suffix = $this->get_suffix();
+        if (isset($data->{'completionstatusrequired' . $suffix}) && is_array($data->{'completionstatusrequired' . $suffix})) {
+            foreach ($data->{'completionstatusrequired' . $suffix} as $state => $value) {
+                if ($value) {
+                    $total |= $state;
+                }
             }
-            $data->completionstatusrequired = $total;
+            if (!$total) {
+                $total  = null;
+            }
+            $data->{'completionstatusrequired' . $suffix} = $total;
         }
 
         if (!empty($data->completionunlocked)) {
             // Turn off completion settings if the checkboxes aren't ticked.
-            $autocompletion = isset($data->completion) && $data->completion == COMPLETION_TRACKING_AUTOMATIC;
+            $completion = $data->{'completion' . $suffix};
+            $autocompletion = isset($completion) && $completion == COMPLETION_TRACKING_AUTOMATIC;
 
-            if (!(isset($data->completionstatusrequired) && $autocompletion)) {
-                $data->completionstatusrequired = null;
+            if (!(isset($data->{'completionstatusrequired' . $suffix}) && $autocompletion)) {
+                $data->{'completionstatusrequired' . $suffix} = null;
             }
-            // Else do nothing: completionstatusrequired has been already converted
-            //             into a correct integer representation.
+            // Else do nothing: completionstatusrequired has been already converted into a correct integer representation.
 
-            if (!empty($data->completionscoredisabled) || !$autocompletion) {
-                $data->completionscorerequired = null;
+            if (!empty($data->{'completionscoredisabled' . $suffix}) || !$autocompletion) {
+                $data->{'completionscorerequired' . $suffix} = null;
             }
         }
     }

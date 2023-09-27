@@ -2,7 +2,7 @@
 /**
  * Copyright 2014-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -73,6 +73,7 @@ implements SplSubject
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function attach(SplObserver $observer)
     {
         $this->detach($observer);
@@ -81,6 +82,7 @@ implements SplSubject
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function detach(SplObserver $observer)
     {
         if (($key = array_search($observer, $this->_observers, true)) !== false) {
@@ -92,6 +94,7 @@ implements SplSubject
      * Notification is triggered internally whenever the object's internal
      * data storage is altered.
      */
+    #[ReturnTypeWillChange]
     public function notify()
     {
         foreach ($this->_observers as $val) {

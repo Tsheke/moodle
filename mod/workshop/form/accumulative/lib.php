@@ -81,10 +81,10 @@ function workshopform_accumulative_pluginfile($course, $cm, $context, $filearea,
  */
 class workshop_accumulative_strategy implements workshop_strategy {
 
-    /** @const default number of dimensions to show */
+    /** @var default number of dimensions to show */
     const MINDIMS = 3;
 
-    /** @const number of dimensions to add */
+    /** @var number of dimensions to add */
     const ADDDIMS = 2;
 
     /** @var workshop the parent workshop instance */
@@ -269,7 +269,9 @@ class workshop_accumulative_strategy implements workshop_strategy {
             $grade->assessmentid = $assessment->id;
             $grade->strategy = 'accumulative';
             $grade->dimensionid = $data->{'dimensionid__idx_' . $i};
-            $grade->grade = $data->{'grade__idx_' . $i};
+            if (isset($data->{'grade__idx_' . $i})) {
+                $grade->grade = $data->{'grade__idx_' . $i};
+            }
             $grade->peercomment = $data->{'peercomment__idx_' . $i};
             $grade->peercommentformat = FORMAT_MOODLE;
             if (empty($grade->id)) {

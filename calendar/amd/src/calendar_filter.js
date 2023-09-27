@@ -17,7 +17,6 @@
  * This module is responsible for the calendar filter.
  *
  * @module     core_calendar/calendar_filter
- * @package    core_calendar
  * @copyright  2017 Andrew Nicols <andrew@nicols.co.uk>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -64,9 +63,13 @@ function(
         // Toggle the hidden. We need to render the template before we change the value.
         data.hidden = !data.hidden;
 
+        M.util.js_pending("core_calendar/calendar_filter:toggleFilter");
         return Str.get_string('eventtype' + data.eventtype, 'calendar')
         .then(function(nameStr) {
             data.name = nameStr;
+            data.icon = true;
+            data.key = 'i/' + data.eventtype + 'event';
+            data.component = 'core';
 
             return data;
         })
@@ -78,6 +81,7 @@ function(
         })
         .then(function() {
             fireFilterChangedEvent(data);
+            M.util.js_complete("core_calendar/calendar_filter:toggleFilter");
             return;
         });
     };

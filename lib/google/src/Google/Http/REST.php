@@ -22,6 +22,7 @@ if (!class_exists('Google_Client')) {
 /**
  * This class implements the RESTful transport of apiServiceRequest()'s
  */
+#[AllowDynamicProperties]
 class Google_Http_REST
 {
   /**
@@ -170,7 +171,7 @@ class Google_Http_REST
     }
 
     if (count($queryVars)) {
-      $requestUrl .= '?' . implode($queryVars, '&');
+      $requestUrl .= '?' . implode('&', $queryVars);
     }
 
     return $requestUrl;

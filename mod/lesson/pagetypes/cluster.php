@@ -96,7 +96,7 @@ class lesson_add_page_form_cluster extends lesson_add_page_form_base {
     protected $standard = false;
 
     public function custom_definition() {
-        global $PAGE;
+        global $PAGE, $CFG;
 
         $mform = $this->_form;
         $lesson = $this->_customdata['lesson'];
@@ -109,7 +109,11 @@ class lesson_add_page_form_cluster extends lesson_add_page_form_base {
         $mform->setType('qtype', PARAM_TEXT);
 
         $mform->addElement('text', 'title', get_string("pagetitle", "lesson"), array('size'=>70));
-        $mform->setType('title', PARAM_TEXT);
+        if (!empty($CFG->formatstringstriptags)) {
+            $mform->setType('title', PARAM_TEXT);
+        } else {
+            $mform->setType('title', PARAM_CLEANHTML);
+        }
 
         $this->editoroptions = array('noclean'=>true, 'maxfiles'=>EDITOR_UNLIMITED_FILES, 'maxbytes'=>$PAGE->course->maxbytes);
         $mform->addElement('editor', 'contents_editor', get_string("pagecontents", "lesson"), null, $this->editoroptions);
@@ -128,7 +132,7 @@ class lesson_add_page_form_cluster extends lesson_add_page_form_base {
         if ($pageid == 0) {
             if ($lesson->has_pages()) {
                 if (!$page = $DB->get_record("lesson_pages", array("prevpageid" => 0, "lessonid" => $lesson->id))) {
-                    print_error('cannotfindpagerecord', 'lesson');
+                    throw new \moodle_exception('cannotfindpagerecord', 'lesson');
                 }
             } else {
                 // This is the ONLY page
@@ -137,7 +141,7 @@ class lesson_add_page_form_cluster extends lesson_add_page_form_base {
             }
         } else {
             if (!$page = $DB->get_record("lesson_pages", array("id" => $pageid))) {
-                print_error('cannotfindpagerecord', 'lesson');
+                throw new \moodle_exception('cannotfindpagerecord', 'lesson');
             }
         }
         $newpage = new stdClass;

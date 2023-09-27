@@ -31,7 +31,7 @@ require_once($CFG->libdir.'/tablelib.php');
 ////////////////////////////////////////////////////////
 $id = required_param('id', PARAM_INT);
 $subject = optional_param('subject', '', PARAM_CLEANHTML);
-$message = optional_param('message', '', PARAM_CLEANHTML);
+$message = optional_param_array('message', '', PARAM_CLEANHTML);
 $format = optional_param('format', FORMAT_MOODLE, PARAM_INT);
 $messageuser = optional_param_array('messageuser', false, PARAM_INT);
 $action = optional_param('action', '', PARAM_ALPHA);
@@ -44,15 +44,19 @@ $current_tab = 'nonrespondents';
 //get the objects
 ////////////////////////////////////////////////////////
 
+if ($message) {
+    $message = $message['text'];
+}
+
 list ($course, $cm) = get_course_and_cm_from_cmid($id, 'feedback');
 if (! $feedback = $DB->get_record("feedback", array("id"=>$cm->instance))) {
-    print_error('invalidcoursemodule');
+    throw new \moodle_exception('invalidcoursemodule');
 }
 
 //this page only can be shown on nonanonymous feedbacks in courses
 //we should never reach this page
 if ($feedback->anonymous != FEEDBACK_ANONYMOUS_NO OR $feedback->course == SITEID) {
-    print_error('error');
+    throw new \moodle_exception('error');
 }
 
 $url = new moodle_url('/mod/feedback/show_nonrespondents.php', array('id'=>$cm->id));
@@ -66,13 +70,16 @@ $coursecontext = context_course::instance($course->id);
 
 require_login($course, true, $cm);
 
+$actionbar = new \mod_feedback\output\responses_action_bar($cm->id, $url);
+
 if (($formdata = data_submitted()) AND !confirm_sesskey()) {
-    print_error('invalidsesskey');
+    throw new \moodle_exception('invalidsesskey');
 }
 
 require_capability('mod/feedback:viewreports', $context);
 
-if ($action == 'sendmessage' AND has_capability('moodle/course:bulkmessaging', $coursecontext)) {
+$canbulkmessaging = has_capability('moodle/course:bulkmessaging', $coursecontext);
+if ($action == 'sendmessage' AND $canbulkmessaging) {
     $shortname = format_string($course->shortname,
                             true,
                             array('context' => $coursecontext));
@@ -130,10 +137,19 @@ if ($action == 'sendmessage' AND has_capability('moodle/course:bulkmessaging', $
 /// Print the page header
 $PAGE->set_heading($course->fullname);
 $PAGE->set_title($feedback->name);
+$PAGE->set_secondary_active_tab('responses');
+if ($responsesnode = $PAGE->settingsnav->find('responses', navigation_node::TYPE_CUSTOM)) {
+    $responsesnode->make_active();
+}
+$PAGE->activityheader->set_attrs([
+    'hidecompletion' => true,
+    'description' => ''
+]);
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($feedback->name));
 
-require('tabs.php');
+/** @var \mod_feedback\output\renderer $renderer */
+$renderer = $PAGE->get_renderer('mod_feedback');
+echo $renderer->main_action_bar($actionbar);
 
 /// Print the main part of the page
 ///////////////////////////////////////////////////////////////////////////
@@ -160,9 +176,22 @@ $baseurl->params(array('id'=>$id, 'showall'=>$showall));
 $tablecolumns = array('userpic', 'fullname', 'status');
 $tableheaders = array(get_string('userpic'), get_string('fullnameuser'), get_string('status'));
 
-if (has_capability('moodle/course:bulkmessaging', $coursecontext)) {
+if ($canbulkmessaging) {
     $tablecolumns[] = 'select';
-    $tableheaders[] = get_string('select');
+
+    // Build the select/deselect all control.
+    $selectallid = 'selectall-non-respondents';
+    $mastercheckbox = new \core\output\checkbox_toggleall('feedback-non-respondents', true, [
+        'id' => $selectallid,
+        'name' => $selectallid,
+        'value' => 1,
+        'label' => get_string('select'),
+        // Consistent label to prevent the select column from resizing.
+        'selectall' => get_string('select'),
+        'deselectall' => get_string('select'),
+        'labelclasses' => 'm-0',
+    ]);
+    $tableheaders[] = $OUTPUT->render($mastercheckbox);
 }
 
 $table = new flexible_table('feedback-shownonrespondents-'.$course->id);
@@ -228,7 +257,6 @@ if (empty($students)) {
     echo $OUTPUT->notification(get_string('noexistingparticipants', 'enrol'));
 } else {
 
-    $canbulkmessaging = has_capability('moodle/course:bulkmessaging', $coursecontext);
     if ($canbulkmessaging) {
         echo '<form class="mform" action="show_nonrespondents.php" method="post" id="feedback_sendmessageform">';
     }
@@ -247,7 +275,15 @@ if (empty($students)) {
 
         //selections to bulk messaging
         if ($canbulkmessaging) {
-            $data[] = '<input type="checkbox" class="usercheckbox" name="messageuser[]" value="'.$student->id.'" />';
+            $checkbox = new \core\output\checkbox_toggleall('feedback-non-respondents', false, [
+                'id' => 'messageuser-' . $student->id,
+                'name' => 'messageuser[]',
+                'classes' => 'mr-1',
+                'value' => $student->id,
+                'label' => get_string('includeuserinrecipientslist', 'mod_feedback', fullname($student)),
+                'labelclasses' => 'accesshide',
+            ]);
+            $data[] = $OUTPUT->render($checkbox);
         }
         $table->add_data($data);
     }
@@ -264,18 +300,14 @@ if (empty($students)) {
         $allurl->param('showall', 1);
         echo $OUTPUT->container(html_writer::link($allurl, get_string('showall', '', $matchcount)), array(), 'showall');
     }
-    if (has_capability('moodle/course:bulkmessaging', $coursecontext)) {
-        echo '<div class="buttons"><br />';
-        echo '<input type="button" id="checkall" value="'.get_string('selectall').'" class="btn btn-secondary" /> ';
-        echo '<input type="button" id="checknone" value="'.get_string('deselectall').'" class="btn btn-secondary" /> ';
-        echo '</div>';
+    if ($canbulkmessaging) {
         echo '<fieldset class="clearfix">';
         echo '<legend class="ftoggler">'.get_string('send_message', 'feedback').'</legend>';
         echo '<div>';
         echo '<label for="feedback_subject">'.get_string('subject', 'feedback').'&nbsp;</label>';
         echo '<input type="text" id="feedback_subject" size="50" maxlength="255" name="subject" value="'.s($subject).'" />';
         echo '</div>';
-        print_textarea(true, 15, 25, 30, 10, "message", $message);
+        echo $OUTPUT->print_textarea('message', 'edit-message', $message, 15, 25);
         print_string('formathtml');
         echo '<input type="hidden" name="format" value="'.FORMAT_HTML.'" />';
         echo '<br /><div class="buttons">';
@@ -286,9 +318,6 @@ if (empty($students)) {
         echo '<input type="hidden" name="id" value="'.$id.'" />';
         echo '</fieldset>';
         echo '</form>';
-        //include the needed js
-        $module = array('name'=>'mod_feedback', 'fullpath'=>'/mod/feedback/feedback.js');
-        $PAGE->requires->js_init_call('M.mod_feedback.init_sendmessage', null, false, $module);
     }
 }
 

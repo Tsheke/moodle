@@ -62,13 +62,13 @@ class filetypes_util {
      */
     public function normalize_file_types($types) {
 
-        if ($types === '') {
+        if ($types === '' || $types === null) {
             return [];
         }
 
         // Turn string into a list.
         if (!is_array($types)) {
-            $types = preg_split('/[\s,;:"\']+/', $types, null, PREG_SPLIT_NO_EMPTY);
+            $types = preg_split('/[\s,;:"\']+/', $types, -1, PREG_SPLIT_NO_EMPTY);
         }
 
         // Fix whitespace and normalize the syntax a bit.
@@ -259,7 +259,7 @@ class filetypes_util {
      * @param string|array $onlytypes Allow selection from these file types only; for example 'web_image'.
      * @param bool $allowall Allow to select 'All file types'. Does not apply with onlytypes are set.
      * @param string|array $current Current values that should be selected.
-     * @return object
+     * @return array
      */
     public function data_for_browser($onlytypes=null, $allowall=true, $current=null) {
 
@@ -285,7 +285,7 @@ class filetypes_util {
             $types = [];
 
             foreach ($groupinfo->extensions as $extension) {
-                if ($onlytypes && !$this->is_whitelisted($extension, $onlytypes)) {
+                if ($onlytypes && !$this->is_listed($extension, $onlytypes)) {
                     $group->selectable = false;
                     $group->expanded = true;
                     $group->ext = '';
@@ -328,7 +328,7 @@ class filetypes_util {
                 continue;
             }
             $extension = '.'.$extension;
-            if ($onlytypes && !$this->is_whitelisted($extension, $onlytypes)) {
+            if ($onlytypes && !$this->is_listed($extension, $onlytypes)) {
                 continue;
             }
             if (!isset($info['groups']) || empty($info['groups'])) {
@@ -416,35 +416,40 @@ class filetypes_util {
     }
 
     /**
-     * Should the given file type be considered as a part of the given whitelist.
+     * Should the file type be considered as a part of the given list.
      *
-     * If multiple types are provided, all of them must be part of the
-     * whitelist. Empty type is part of any whitelist. Any type is part of an
-     * empty whitelist.
+     * If multiple types are provided, all of them must be part of the list. Empty type is part of any list.
+     * Any type is part of an empty list.
      *
-     * @param string|array $types File types to be checked
-     * @param string|array $whitelist An array or string of whitelisted types
+     * @param string|array $types File type or list of types to be checked.
+     * @param string|array $list An array or string listing the types to check against.
      * @return boolean
      */
-    public function is_whitelisted($types, $whitelist) {
-        return empty($this->get_not_whitelisted($types, $whitelist));
+    public function is_listed($types, $list) {
+        return empty($this->get_not_listed($types, $list));
     }
 
     /**
-     * Returns all types that are not part of the give whitelist.
-     *
-     * This is similar check to the {@link self::is_whitelisted()} but this one
-     * actually returns the extra types.
-     *
-     * @param string|array $types File types to be checked
-     * @param string|array $whitelist An array or string of whitelisted types
-     * @return array Types not present in the whitelist
+     * @deprecated since Moodle 3.10 MDL-69050 - please use {@see is_listed} instead.
      */
-    public function get_not_whitelisted($types, $whitelist) {
+    public function is_whitelisted() {
+        throw new \coding_exception('\core_form\filetypes_util::is_whitelisted() has been removed.');
+    }
 
-        $whitelistedtypes = $this->expand($whitelist, true, true);
+    /**
+     * Returns all types that are not part of the given list.
+     *
+     * This is similar check to the {@see self::is_listed()} but this one actually returns the extra types.
+     *
+     * @param string|array $types File type or list of types to be checked.
+     * @param string|array $list An array or string listing the types to check against.
+     * @return array Types not present in the list.
+     */
+    public function get_not_listed($types, $list) {
 
-        if (empty($whitelistedtypes) || $whitelistedtypes == ['*']) {
+        $listedtypes = $this->expand($list, true, true);
+
+        if (empty($listedtypes) || $listedtypes == ['*']) {
             return [];
         }
 
@@ -454,22 +459,29 @@ class filetypes_util {
             return [];
         }
 
-        return array_diff($giventypes, $whitelistedtypes);
+        return array_diff($giventypes, $listedtypes);
+    }
+
+    /**
+     * @deprecated since Moodle 3.10 MDL-69050 - please use {@see get_not_listed} instead.
+     */
+    public function get_not_whitelisted() {
+        throw new \coding_exception('\core_form\filetypes_util::get_not_whitelisted() has been removed.');
     }
 
     /**
      * Is the given filename of an allowed file type?
      *
-     * Empty whitelist is interpretted as "any file type is allowed" rather
+     * Empty allowlist is interpreted as "any file type is allowed" rather
      * than "no file can be uploaded".
      *
      * @param string $filename the file name
-     * @param string|array $whitelist list of allowed file extensions
+     * @param string|array $allowlist list of allowed file extensions
      * @return boolean True if the file type is allowed, false if not
      */
-    public function is_allowed_file_type($filename, $whitelist) {
+    public function is_allowed_file_type($filename, $allowlist) {
 
-        $allowedextensions = $this->expand($whitelist);
+        $allowedextensions = $this->expand($allowlist);
 
         if (empty($allowedextensions) || $allowedextensions == ['*']) {
             return true;

@@ -24,7 +24,7 @@
 namespace tool_dataprivacy;
 
 use coding_exception;
-use context_course;
+use context_helper;
 use context_system;
 use core\invalid_persistent_exception;
 use core\message\message;
@@ -76,7 +76,7 @@ class api {
     /** The request is now being processed. */
     const DATAREQUEST_STATUS_PROCESSING = 4;
 
-    /** Data request completed. */
+    /** Information/other request completed. */
     const DATAREQUEST_STATUS_COMPLETE = 5;
 
     /** Data request cancelled by the user. */
@@ -84,6 +84,21 @@ class api {
 
     /** Data request rejected by the DPO. */
     const DATAREQUEST_STATUS_REJECTED = 7;
+
+    /** Data request download ready. */
+    const DATAREQUEST_STATUS_DOWNLOAD_READY = 8;
+
+    /** Data request expired. */
+    const DATAREQUEST_STATUS_EXPIRED = 9;
+
+    /** Data delete request completed, account is removed. */
+    const DATAREQUEST_STATUS_DELETED = 10;
+
+    /** Approve data request. */
+    const DATAREQUEST_ACTION_APPROVE = 1;
+
+    /** Reject data request. */
+    const DATAREQUEST_ACTION_REJECT = 2;
 
     /**
      * Determines whether the user can contact the site's Data Protection Officer via Moodle.
@@ -96,18 +111,14 @@ class api {
     }
 
     /**
-     * Check's whether the current user has the capability to manage data requests.
+     * Checks whether the current user has the capability to manage data requests.
      *
      * @param int $userid The user ID.
      * @return bool
-     * @throws coding_exception
-     * @throws dml_exception
      */
     public static function can_manage_data_requests($userid) {
-        $context = context_system::instance();
-
-        // A user can manage data requests if he/she has the site DPO role and has the capability to manage data requests.
-        return self::is_site_dpo($userid) && has_capability('tool/dataprivacy:managedatarequests', $context, $userid);
+        // Privacy officers can manage data requests.
+        return self::is_site_dpo($userid);
     }
 
     /**
@@ -128,21 +139,61 @@ class api {
     }
 
     /**
-     * Fetches the list of users with the Data Protection Officer role.
+     * Fetches the list of configured privacy officer roles.
      *
+     * Every time this function is called, it checks each role if they have the 'managedatarequests' capability and removes
+     * any role that doesn't have the required capability anymore.
+     *
+     * @return int[]
      * @throws dml_exception
+     */
+    public static function get_assigned_privacy_officer_roles() {
+        $roleids = [];
+
+        // Get roles from config.
+        $configroleids = explode(',', str_replace(' ', '', get_config('tool_dataprivacy', 'dporoles')));
+        if (!empty($configroleids)) {
+            // Fetch roles that have the capability to manage data requests.
+            $capableroles = array_keys(get_roles_with_capability('tool/dataprivacy:managedatarequests'));
+
+            // Extract the configured roles that have the capability from the list of capable roles.
+            $roleids = array_intersect($capableroles, $configroleids);
+        }
+
+        return $roleids;
+    }
+
+    /**
+     * Fetches the role shortnames of Data Protection Officer roles.
+     *
+     * @return array An array of the DPO role shortnames
+     */
+    public static function get_dpo_role_names() : array {
+        global $DB;
+
+        $dporoleids = self::get_assigned_privacy_officer_roles();
+        $dponames = array();
+
+        if (!empty($dporoleids)) {
+            list($insql, $inparams) = $DB->get_in_or_equal($dporoleids);
+            $dponames = $DB->get_fieldset_select('role', 'shortname', "id {$insql}", $inparams);
+        }
+
+        return $dponames;
+    }
+
+    /**
+     * Fetches the list of users with the Privacy Officer role.
      */
     public static function get_site_dpos() {
         // Get role(s) that can manage data requests.
-        $dporoles = explode(',', get_config('tool_dataprivacy', 'dporoles'));
+        $dporoles = self::get_assigned_privacy_officer_roles();
 
         $dpos = [];
         $context = context_system::instance();
         foreach ($dporoles as $roleid) {
-            if (empty($roleid)) {
-                continue;
-            }
-            $allnames = get_all_user_name_fields(true, 'u');
+            $userfieldsapi = \core_user\fields::for_name();
+            $allnames = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
             $fields = 'u.id, u.confirmed, u.username, '. $allnames . ', ' .
                       'u.maildisplay, u.mailformat, u.maildigest, u.email, u.emailstop, u.city, '.
                       'u.country, u.picture, u.idnumber, u.department, u.institution, '.
@@ -161,15 +212,14 @@ class api {
     }
 
     /**
-     * Checks whether a given user is a site DPO.
+     * Checks whether a given user is a site Privacy Officer.
      *
      * @param int $userid The user ID.
      * @return bool
-     * @throws dml_exception
      */
     public static function is_site_dpo($userid) {
         $dpos = self::get_site_dpos();
-        return array_key_exists($userid, $dpos);
+        return array_key_exists($userid, $dpos) || is_siteadmin();
     }
 
     /**
@@ -178,49 +228,95 @@ class api {
      * @param int $foruser The user whom the request is being made for.
      * @param int $type The request type.
      * @param string $comments Request comments.
+     * @param int $creationmethod The creation method of the data request.
+     * @param bool $notify Notify DPOs of this pending request.
      * @return data_request
      * @throws invalid_persistent_exception
      * @throws coding_exception
      */
-    public static function create_data_request($foruser, $type, $comments = '') {
+    public static function create_data_request($foruser, $type, $comments = '',
+            $creationmethod = data_request::DATAREQUEST_CREATION_MANUAL,
+            $notify = null
+        ) {
         global $USER;
+
+        if (null === $notify) {
+            // Only if notifications have not been decided by caller.
+            if ( data_request::DATAREQUEST_CREATION_AUTO == $creationmethod) {
+                // If the request was automatically created, then do not notify unless explicitly set.
+                $notify = false;
+            } else {
+                $notify = true;
+            }
+        }
 
         $datarequest = new data_request();
         // The user the request is being made for.
         $datarequest->set('userid', $foruser);
 
-        $requestinguser = $USER->id;
-        // Check when the user is making a request on behalf of another.
-        if ($requestinguser != $foruser) {
-            if (self::is_site_dpo($requestinguser)) {
-                // The user making the request is a DPO. Should be fine.
-                $datarequest->set('dpo', $requestinguser);
-            } else {
-                // If not a DPO, only users with the capability to make data requests for the user should be allowed.
-                // (e.g. users with the Parent role, etc).
-                if (!self::can_create_data_request_for_user($foruser)) {
-                    $forusercontext = \context_user::instance($foruser);
-                    throw new required_capability_exception($forusercontext,
-                            'tool/dataprivacy:makedatarequestsforchildren', 'nopermissions', '');
-                }
-            }
-        }
+        // The cron is considered to be a guest user when it creates a data request.
+        // NOTE: This should probably be changed. We should leave the default value for $requestinguser if
+        // the request is not explicitly created by a specific user.
+        $requestinguser = (isguestuser() && $creationmethod == data_request::DATAREQUEST_CREATION_AUTO) ?
+                get_admin()->id : $USER->id;
         // The user making the request.
         $datarequest->set('requestedby', $requestinguser);
         // Set status.
-        $datarequest->set('status', self::DATAREQUEST_STATUS_PENDING);
+
+        $allowfiltering = get_config('tool_dataprivacy', 'allowfiltering') && ($type != self::DATAREQUEST_TYPE_DELETE);
+        if ($allowfiltering) {
+            $status = self::DATAREQUEST_STATUS_PENDING;
+        } else {
+            $status = self::DATAREQUEST_STATUS_AWAITING_APPROVAL;
+            if (self::is_automatic_request_approval_on($type)) {
+                // Set status to approved if automatic data request approval is enabled.
+                $status = self::DATAREQUEST_STATUS_APPROVED;
+                // Set the privacy officer field if the one making the data request is a privacy officer.
+                if (self::is_site_dpo($requestinguser)) {
+                    $datarequest->set('dpo', $requestinguser);
+                }
+                // Mark this request as system approved.
+                $datarequest->set('systemapproved', true);
+                // No need to notify privacy officer(s) about automatically approved data requests.
+                $notify = false;
+            }
+        }
+        $datarequest->set('status', $status);
         // Set request type.
         $datarequest->set('type', $type);
         // Set request comments.
         $datarequest->set('comments', $comments);
+        // Set the creation method.
+        $datarequest->set('creationmethod', $creationmethod);
 
         // Store subject access request.
         $datarequest->create();
 
-        // Fire an ad hoc task to initiate the data request process.
-        $task = new initiate_data_request_task();
-        $task->set_custom_data(['requestid' => $datarequest->get('id')]);
-        manager::queue_adhoc_task($task, true);
+        // Queue the ad-hoc task for automatically approved data requests.
+        if ($status == self::DATAREQUEST_STATUS_APPROVED) {
+            $userid = null;
+            if ($type == self::DATAREQUEST_TYPE_EXPORT) {
+                $userid = $foruser;
+            }
+            self::queue_data_request_task($datarequest->get('id'), $userid);
+        }
+
+        if ($notify) {
+            // Get the list of the site Data Protection Officers.
+            $dpos = self::get_site_dpos();
+
+            // Email the data request to the Data Protection Officer(s)/Admin(s).
+            foreach ($dpos as $dpo) {
+                self::notify_dpo($dpo, $datarequest);
+            }
+        }
+
+        if ($status == self::DATAREQUEST_STATUS_PENDING) {
+            // Fire an ad hoc task to initiate the data request process.
+            $task = new initiate_data_request_task();
+            $task->set_custom_data(['requestid' => $datarequest->get('id')]);
+            manager::queue_adhoc_task($task, true);
+        }
 
         return $datarequest;
     }
@@ -235,6 +331,7 @@ class api {
      * @param int $userid The User ID.
      * @param int[] $statuses The status filters.
      * @param int[] $types The request type filters.
+     * @param int[] $creationmethods The request creation method filters.
      * @param string $sort The order by clause.
      * @param int $offset Amount of records to skip.
      * @param int $limit Amount of records to fetch.
@@ -242,7 +339,8 @@ class api {
      * @throws coding_exception
      * @throws dml_exception
      */
-    public static function get_data_requests($userid = 0, $statuses = [], $types = [], $sort = '', $offset = 0, $limit = 0) {
+    public static function get_data_requests($userid = 0, $statuses = [], $types = [], $creationmethods = [],
+                                             $sort = '', $offset = 0, $limit = 0) {
         global $DB, $USER;
         $results = [];
         $sqlparams = [];
@@ -263,6 +361,13 @@ class api {
         if (!empty($types)) {
             list($typeinsql, $typeparams) = $DB->get_in_or_equal($types, SQL_PARAMS_NAMED);
             $sqlconditions[] = "type $typeinsql";
+            $sqlparams = array_merge($sqlparams, $typeparams);
+        }
+
+        // Set request creation method filter.
+        if (!empty($creationmethods)) {
+            list($typeinsql, $typeparams) = $DB->get_in_or_equal($creationmethods, SQL_PARAMS_NAMED);
+            $sqlconditions[] = "creationmethod $typeinsql";
             $sqlparams = array_merge($sqlparams, $typeparams);
         }
 
@@ -300,6 +405,18 @@ class api {
             }
         }
 
+        // If any are due to expire, expire them and re-fetch updated data.
+        if (empty($statuses)
+                || in_array(self::DATAREQUEST_STATUS_DOWNLOAD_READY, $statuses)
+                || in_array(self::DATAREQUEST_STATUS_EXPIRED, $statuses)) {
+            $expiredrequests = data_request::get_expired_requests($userid);
+
+            if (!empty($expiredrequests)) {
+                data_request::expire($expiredrequests);
+                $results = self::get_data_requests($userid, $statuses, $types, $creationmethods, $sort, $offset, $limit);
+            }
+        }
+
         return $results;
     }
 
@@ -309,11 +426,12 @@ class api {
      * @param int $userid The User ID.
      * @param int[] $statuses The status filters.
      * @param int[] $types The request type filters.
+     * @param int[] $creationmethods The request creation method filters.
      * @return int
      * @throws coding_exception
      * @throws dml_exception
      */
-    public static function get_data_requests_count($userid = 0, $statuses = [], $types = []) {
+    public static function get_data_requests_count($userid = 0, $statuses = [], $types = [], $creationmethods = []) {
         global $DB, $USER;
         $count = 0;
         $sqlparams = [];
@@ -325,6 +443,11 @@ class api {
         if (!empty($types)) {
             list($typeinsql, $typeparams) = $DB->get_in_or_equal($types, SQL_PARAMS_NAMED);
             $sqlconditions[] = "type $typeinsql";
+            $sqlparams = array_merge($sqlparams, $typeparams);
+        }
+        if (!empty($creationmethods)) {
+            list($typeinsql, $typeparams) = $DB->get_in_or_equal($creationmethods, SQL_PARAMS_NAMED);
+            $sqlconditions[] = "creationmethod $typeinsql";
             $sqlparams = array_merge($sqlparams, $typeparams);
         }
         if ($userid) {
@@ -381,15 +504,60 @@ class api {
             self::DATAREQUEST_STATUS_COMPLETE,
             self::DATAREQUEST_STATUS_CANCELLED,
             self::DATAREQUEST_STATUS_REJECTED,
+            self::DATAREQUEST_STATUS_DOWNLOAD_READY,
+            self::DATAREQUEST_STATUS_EXPIRED,
+            self::DATAREQUEST_STATUS_DELETED,
         ];
-        list($insql, $inparams) = $DB->get_in_or_equal($nonpendingstatuses, SQL_PARAMS_NAMED);
-        $select = 'type = :type AND userid = :userid AND status NOT ' . $insql;
+        list($insql, $inparams) = $DB->get_in_or_equal($nonpendingstatuses, SQL_PARAMS_NAMED, 'st', false);
+        $select = "type = :type AND userid = :userid AND status {$insql}";
         $params = array_merge([
             'type' => $type,
             'userid' => $userid
         ], $inparams);
 
         return data_request::record_exists_select($select, $params);
+    }
+
+    /**
+     * Find whether any ongoing requests exist for a set of users.
+     *
+     * @param   array   $userids
+     * @return  array
+     */
+    public static function find_ongoing_request_types_for_users(array $userids) : array {
+        global $DB;
+
+        if (empty($userids)) {
+            return [];
+        }
+
+        // Check if the user already has an incomplete data request of the same type.
+        $nonpendingstatuses = [
+            self::DATAREQUEST_STATUS_COMPLETE,
+            self::DATAREQUEST_STATUS_CANCELLED,
+            self::DATAREQUEST_STATUS_REJECTED,
+            self::DATAREQUEST_STATUS_DOWNLOAD_READY,
+            self::DATAREQUEST_STATUS_EXPIRED,
+            self::DATAREQUEST_STATUS_DELETED,
+        ];
+        list($statusinsql, $statusparams) = $DB->get_in_or_equal($nonpendingstatuses, SQL_PARAMS_NAMED, 'st', false);
+        list($userinsql, $userparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'us');
+
+        $select = "userid {$userinsql} AND status {$statusinsql}";
+        $params = array_merge($statusparams, $userparams);
+
+        $requests = $DB->get_records_select(data_request::TABLE, $select, $params, 'userid', 'id, userid, type');
+
+        $returnval = [];
+        foreach ($userids as $userid) {
+            $returnval[$userid] = (object) [];
+        }
+
+        foreach ($requests as $request) {
+            $returnval[$request->userid]->{$request->type} = true;
+        }
+
+        return $returnval;
     }
 
     /**
@@ -404,6 +572,9 @@ class api {
             self::DATAREQUEST_STATUS_COMPLETE,
             self::DATAREQUEST_STATUS_CANCELLED,
             self::DATAREQUEST_STATUS_REJECTED,
+            self::DATAREQUEST_STATUS_DOWNLOAD_READY,
+            self::DATAREQUEST_STATUS_EXPIRED,
+            self::DATAREQUEST_STATUS_DELETED,
         ];
 
         return !in_array($status, $finalstatuses);
@@ -460,6 +631,7 @@ class api {
      * Approves a data request based on the request ID.
      *
      * @param int $requestid The request identifier
+     * @param array $filtercoursecontexts Apply to export request, only approve contexts belong to these courses.
      * @return bool
      * @throws coding_exception
      * @throws dml_exception
@@ -467,7 +639,7 @@ class api {
      * @throws required_capability_exception
      * @throws moodle_exception
      */
-    public static function approve_data_request($requestid) {
+    public static function approve_data_request($requestid, $filtercoursecontexts = []) {
         global $USER;
 
         // Check first whether the user can manage data requests.
@@ -482,21 +654,33 @@ class api {
             throw new moodle_exception('errorrequestnotwaitingforapproval', 'tool_dataprivacy');
         }
 
+        // Check if current user has permission to approve delete data request.
+        if ($request->get('type') == self::DATAREQUEST_TYPE_DELETE && !self::can_create_data_deletion_request_for_other()) {
+            throw new required_capability_exception(context_system::instance(),
+                'tool/dataprivacy:requestdeleteforotheruser', 'nopermissions', '');
+        }
+
         // Update the status and the DPO.
         $result = self::update_request_status($requestid, self::DATAREQUEST_STATUS_APPROVED, $USER->id);
 
-        // Approve all the contexts attached to the request.
-        // Currently, approving the request implicitly approves all associated contexts, but this may change in future, allowing
-        // users to selectively approve certain contexts only.
-        self::update_request_contexts_with_status($requestid, contextlist_context::STATUS_APPROVED);
-
-        // Fire an ad hoc task to initiate the data request process.
-        $task = new process_data_request_task();
-        $task->set_custom_data(['requestid' => $requestid]);
-        if ($request->get('type') == self::DATAREQUEST_TYPE_EXPORT) {
-            $task->set_userid($request->get('userid'));
+        if ($request->get('type') != self::DATAREQUEST_TYPE_DELETE) {
+            $allowfiltering = get_config('tool_dataprivacy', 'allowfiltering');
+            if ($allowfiltering) {
+                if ($filtercoursecontexts) {
+                    // Only approve the context belong to selected courses.
+                    self::approve_contexts_belonging_to_request($requestid, $filtercoursecontexts);
+                } else {
+                    // Approve all the contexts attached to the request.
+                    self::update_request_contexts_with_status($requestid, contextlist_context::STATUS_APPROVED);
+                }
+            }
         }
-        manager::queue_adhoc_task($task, true);
+        // Fire an ad hoc task to initiate the data request process.
+        $userid = null;
+        if ($request->get('type') == self::DATAREQUEST_TYPE_EXPORT) {
+            $userid = $request->get('userid');
+        }
+        self::queue_data_request_task($requestid, $userid);
 
         return $result;
     }
@@ -524,6 +708,12 @@ class api {
         $request = new data_request($requestid);
         if ($request->get('status') != self::DATAREQUEST_STATUS_AWAITING_APPROVAL) {
             throw new moodle_exception('errorrequestnotwaitingforapproval', 'tool_dataprivacy');
+        }
+
+        // Check if current user has permission to reject delete data request.
+        if ($request->get('type') == self::DATAREQUEST_TYPE_DELETE && !self::can_create_data_deletion_request_for_other()) {
+            throw new required_capability_exception(context_system::instance(),
+                'tool/dataprivacy:requestdeleteforotheruser', 'nopermissions', '');
         }
 
         // Update the status and the DPO.
@@ -573,6 +763,8 @@ class api {
             'requestedby' => $requestedby->fullname,
             'requesttype' => $typetext,
             'requestdate' => userdate($requestdata->timecreated),
+            'requestorigin' => format_string($SITE->fullname, true, ['context' => context_system::instance()]),
+            'requestoriginurl' => new moodle_url('/'),
             'requestcomments' => $requestdata->messagehtml,
             'datarequestsurl' => $datarequestsurl
         ];
@@ -598,14 +790,84 @@ class api {
     /**
      * Checks whether a non-DPO user can make a data request for another user.
      *
-     * @param int $user The user ID of the target user.
-     * @param int $requester The user ID of the user making the request.
-     * @return bool
-     * @throws coding_exception
+     * @param   int     $user The user ID of the target user.
+     * @param   int     $requester The user ID of the user making the request.
+     * @return  bool
      */
     public static function can_create_data_request_for_user($user, $requester = null) {
         $usercontext = \context_user::instance($user);
+
         return has_capability('tool/dataprivacy:makedatarequestsforchildren', $usercontext, $requester);
+    }
+
+    /**
+     * Require that the current user can make a data request for the specified other user.
+     *
+     * @param   int     $user The user ID of the target user.
+     * @param   int     $requester The user ID of the user making the request.
+     * @return  bool
+     */
+    public static function require_can_create_data_request_for_user($user, $requester = null) {
+        $usercontext = \context_user::instance($user);
+
+        require_capability('tool/dataprivacy:makedatarequestsforchildren', $usercontext, $requester);
+
+        return true;
+    }
+
+    /**
+     * Check if user has permission to create data download request for themselves
+     *
+     * @param int|null $userid
+     * @return bool
+     */
+    public static function can_create_data_download_request_for_self(int $userid = null): bool {
+        global $USER;
+        $userid = $userid ?: $USER->id;
+        return has_capability('tool/dataprivacy:downloadownrequest', \context_user::instance($userid), $userid);
+    }
+
+    /**
+     * Check if user has permisson to create data deletion request for themselves.
+     *
+     * @param int|null $userid ID of the user.
+     * @return bool
+     * @throws coding_exception
+     */
+    public static function can_create_data_deletion_request_for_self(int $userid = null): bool {
+        global $USER;
+        $userid = $userid ?: $USER->id;
+        return has_capability('tool/dataprivacy:requestdelete', \context_user::instance($userid), $userid)
+            && !is_primary_admin($userid);
+    }
+
+    /**
+     * Check if user has permission to create data deletion request for another user.
+     *
+     * @param int|null $userid ID of the user.
+     * @return bool
+     * @throws coding_exception
+     * @throws dml_exception
+     */
+    public static function can_create_data_deletion_request_for_other(int $userid = null): bool {
+        global $USER;
+        $userid = $userid ?: $USER->id;
+        return has_capability('tool/dataprivacy:requestdeleteforotheruser', context_system::instance(), $userid);
+    }
+
+    /**
+     * Check if parent can create data deletion request for their children.
+     *
+     * @param int $userid ID of a user being requested.
+     * @param int|null $requesterid ID of a user making request.
+     * @return bool
+     * @throws coding_exception
+     */
+    public static function can_create_data_deletion_request_for_children(int $userid, int $requesterid = null): bool {
+        global $USER;
+        $requesterid = $requesterid ?: $USER->id;
+        return has_capability('tool/dataprivacy:makedatadeletionrequestsforchildren', \context_user::instance($userid),
+            $requesterid) && !is_primary_admin($userid);
     }
 
     /**
@@ -626,7 +888,7 @@ class api {
 
         $usercontext = \context_user::instance($userid);
         // If it's your own and you have the right capability, you can download it.
-        if ($userid == $downloaderid && has_capability('tool/dataprivacy:downloadownrequest', $usercontext, $downloaderid)) {
+        if ($userid == $downloaderid && self::can_create_data_download_request_for_self($downloaderid)) {
             return true;
         }
         // If you can download anyone's in that context, you can download it.
@@ -663,8 +925,6 @@ class api {
      * @return \tool_dataprivacy\purpose.
      */
     public static function create_purpose(stdClass $record) {
-        self::check_can_manage_data_registry();
-
         $purpose = new purpose(0, $record);
         $purpose->create();
 
@@ -678,8 +938,6 @@ class api {
      * @return \tool_dataprivacy\purpose.
      */
     public static function update_purpose(stdClass $record) {
-        self::check_can_manage_data_registry();
-
         if (!isset($record->sensitivedatareasons)) {
             $record->sensitivedatareasons = '';
         }
@@ -699,8 +957,6 @@ class api {
      * @return bool
      */
     public static function delete_purpose($id) {
-        self::check_can_manage_data_registry();
-
         $purpose = new purpose($id);
         if ($purpose->is_used()) {
             throw new \moodle_exception('Purpose with id ' . $id . ' can not be deleted because it is used.');
@@ -714,8 +970,6 @@ class api {
      * @return \tool_dataprivacy\purpose[]
      */
     public static function get_purposes() {
-        self::check_can_manage_data_registry();
-
         return purpose::get_records([], 'name', 'ASC');
     }
 
@@ -726,8 +980,6 @@ class api {
      * @return \tool_dataprivacy\category.
      */
     public static function create_category(stdClass $record) {
-        self::check_can_manage_data_registry();
-
         $category = new category(0, $record);
         $category->create();
 
@@ -741,8 +993,6 @@ class api {
      * @return \tool_dataprivacy\category.
      */
     public static function update_category(stdClass $record) {
-        self::check_can_manage_data_registry();
-
         $category = new category($record->id);
         $category->from_record($record);
 
@@ -758,8 +1008,6 @@ class api {
      * @return bool
      */
     public static function delete_category($id) {
-        self::check_can_manage_data_registry();
-
         $category = new category($id);
         if ($category->is_used()) {
             throw new \moodle_exception('Category with id ' . $id . ' can not be deleted because it is used.');
@@ -773,8 +1021,6 @@ class api {
      * @return \tool_dataprivacy\category[]
      */
     public static function get_categories() {
-        self::check_can_manage_data_registry();
-
         return category::get_records([], 'name', 'ASC');
     }
 
@@ -785,8 +1031,6 @@ class api {
      * @return \tool_dataprivacy\context_instance
      */
     public static function set_context_instance($record) {
-        self::check_can_manage_data_registry($record->contextid);
-
         if ($instance = context_instance::get_record_by_contextid($record->contextid, false)) {
             // Update.
             $instance->from_record($record);
@@ -813,7 +1057,6 @@ class api {
      * @return null
      */
     public static function unset_context_instance(context_instance $instance) {
-        self::check_can_manage_data_registry($instance->get('contextid'));
         $instance->delete();
     }
 
@@ -826,9 +1069,6 @@ class api {
      */
     public static function set_contextlevel($record) {
         global $DB;
-
-        // Only manager at system level can set this.
-        self::check_can_manage_data_registry();
 
         if ($record->contextlevel != CONTEXT_SYSTEM && $record->contextlevel != CONTEXT_USER) {
             throw new \coding_exception('Only context system and context user can set a contextlevel ' .
@@ -860,8 +1100,7 @@ class api {
      * @param int $forcedvalue Use this categoryid value as if this was this context instance category.
      * @return category|false
      */
-    public static function get_effective_context_category(\context $context, $forcedvalue=false) {
-        self::check_can_manage_data_registry($context->id);
+    public static function get_effective_context_category(\context $context, $forcedvalue = false) {
         if (!data_registry::defaults_set()) {
             return false;
         }
@@ -876,8 +1115,7 @@ class api {
      * @param int $forcedvalue Use this purposeid value as if this was this context instance purpose.
      * @return purpose|false
      */
-    public static function get_effective_context_purpose(\context $context, $forcedvalue=false) {
-        self::check_can_manage_data_registry($context->id);
+    public static function get_effective_context_purpose(\context $context, $forcedvalue = false) {
         if (!data_registry::defaults_set()) {
             return false;
         }
@@ -889,16 +1127,14 @@ class api {
      * Returns the effective category given a context level.
      *
      * @param int $contextlevel
-     * @param int $forcedvalue Use this categoryid value as if this was this context level category.
      * @return category|false
      */
-    public static function get_effective_contextlevel_category($contextlevel, $forcedvalue=false) {
-        self::check_can_manage_data_registry(\context_system::instance()->id);
+    public static function get_effective_contextlevel_category($contextlevel) {
         if (!data_registry::defaults_set()) {
             return false;
         }
 
-        return data_registry::get_effective_contextlevel_value($contextlevel, 'category', $forcedvalue);
+        return data_registry::get_effective_contextlevel_value($contextlevel, 'category');
     }
 
     /**
@@ -909,7 +1145,6 @@ class api {
      * @return purpose|false
      */
     public static function get_effective_contextlevel_purpose($contextlevel, $forcedvalue=false) {
-        self::check_can_manage_data_registry(\context_system::instance()->id);
         if (!data_registry::defaults_set()) {
             return false;
         }
@@ -924,8 +1159,6 @@ class api {
      * @return \tool_dataprivacy\expired_context
      */
     public static function create_expired_context($contextid) {
-        self::check_can_manage_data_registry();
-
         $record = (object)[
             'contextid' => $contextid,
             'status' => expired_context::STATUS_EXPIRED,
@@ -943,8 +1176,6 @@ class api {
      * @return bool True on success.
      */
     public static function delete_expired_context($id) {
-        self::check_can_manage_data_registry();
-
         $expiredcontext = new expired_context($id);
         return $expiredcontext->delete();
     }
@@ -957,35 +1188,213 @@ class api {
      * @return null
      */
     public static function set_expired_context_status(expired_context $expiredctx, $status) {
-        self::check_can_manage_data_registry();
-
         $expiredctx->set('status', $status);
         $expiredctx->save();
     }
 
     /**
+     * Finds all contextlists having at least one approved context, and returns them as in a contextlist_collection.
+     *
+     * @param   contextlist_collection  $collection The collection of unapproved contextlist objects.
+     * @param   \stdClass               $foruser The target user
+     * @param   int                     $type The purpose of the collection
+     * @return  contextlist_collection  The collection of approved_contextlist objects.
+     */
+    public static function get_approved_contextlist_collection_for_collection(contextlist_collection $collection,
+            \stdClass $foruser, int $type) : contextlist_collection {
+
+        // Create the approved contextlist collection object.
+        $approvedcollection = new contextlist_collection($collection->get_userid());
+        $isconfigured = data_registry::defaults_set();
+
+        foreach ($collection as $contextlist) {
+            $contextids = [];
+            foreach ($contextlist as $context) {
+                if ($isconfigured && self::DATAREQUEST_TYPE_DELETE == $type) {
+                    // Data can only be deleted from it if the context is either expired, or unprotected.
+                    // Note: We can only check whether a context is expired or unprotected if the site is configured and
+                    // defaults are set appropriately. If they are not, we treat all contexts as though they are
+                    // unprotected.
+                    $purpose = static::get_effective_context_purpose($context);
+                    if (!expired_contexts_manager::is_context_expired_or_unprotected_for_user($context, $foruser)) {
+                        continue;
+                    }
+                }
+
+                $contextids[] = $context->id;
+            }
+
+            // The data for the last component contextlist won't have been written yet, so write it now.
+            if (!empty($contextids)) {
+                $approvedcollection->add_contextlist(
+                        new approved_contextlist($foruser, $contextlist->get_component(), $contextids)
+                    );
+            }
+        }
+
+        return $approvedcollection;
+    }
+
+    /**
+     * Updates the default category and purpose for a given context level (and optionally, a plugin).
+     *
+     * @param int $contextlevel The context level.
+     * @param int $categoryid The ID matching the category.
+     * @param int $purposeid The ID matching the purpose record.
+     * @param int $activity The name of the activity that we're making a defaults configuration for.
+     * @param bool $override Whether to override the purpose/categories of existing instances to these defaults.
+     * @return boolean True if set/unset config succeeds. Otherwise, it throws an exception.
+     */
+    public static function set_context_defaults($contextlevel, $categoryid, $purposeid, $activity = null, $override = false) {
+        global $DB;
+
+        // Get the class name associated with this context level.
+        $classname = context_helper::get_class_for_level($contextlevel);
+        list($purposevar, $categoryvar) = data_registry::var_names_from_context($classname, $activity);
+
+        // Check the default category to be set.
+        if ($categoryid == context_instance::INHERIT) {
+            unset_config($categoryvar, 'tool_dataprivacy');
+
+        } else {
+            // Make sure the given category ID exists first.
+            $categorypersistent = new category($categoryid);
+            $categorypersistent->read();
+
+            // Then set the new default value.
+            set_config($categoryvar, $categoryid, 'tool_dataprivacy');
+        }
+
+        // Check the default purpose to be set.
+        if ($purposeid == context_instance::INHERIT) {
+            // If the defaults is set to inherit, just unset the config value.
+            unset_config($purposevar, 'tool_dataprivacy');
+
+        } else {
+            // Make sure the given purpose ID exists first.
+            $purposepersistent = new purpose($purposeid);
+            $purposepersistent->read();
+
+            // Then set the new default value.
+            set_config($purposevar, $purposeid, 'tool_dataprivacy');
+        }
+
+        // Unset instances that have been assigned with custom purpose and category, if override was specified.
+        if ($override) {
+            // We'd like to find context IDs that we want to unset.
+            $statements = ["SELECT c.id as contextid FROM {context} c"];
+            // Based on this context level.
+            $params = ['contextlevel' => $contextlevel];
+
+            if ($contextlevel == CONTEXT_MODULE) {
+                // If we're deleting module context instances, we need to make sure the instance ID is in the course modules table.
+                $statements[] = "JOIN {course_modules} cm ON cm.id = c.instanceid";
+                // And that the module is listed on the modules table.
+                $statements[] = "JOIN {modules} m ON m.id = cm.module";
+
+                if ($activity) {
+                    // If we're overriding for an activity module, make sure that the context instance matches that activity.
+                    $statements[] = "AND m.name = :modname";
+                    $params['modname'] = $activity;
+                }
+            }
+            // Make sure this context instance exists in the tool_dataprivacy_ctxinstance table.
+            $statements[] = "JOIN {tool_dataprivacy_ctxinstance} tdc ON tdc.contextid = c.id";
+            // And that the context level of this instance matches the given context level.
+            $statements[] = "WHERE c.contextlevel = :contextlevel";
+
+            // Build our SQL query by gluing the statements.
+            $sql = implode("\n", $statements);
+
+            // Get the context records matching our query.
+            $contextids = $DB->get_fieldset_sql($sql, $params);
+
+            // Delete the matching context instances.
+            foreach ($contextids as $contextid) {
+                if ($instance = context_instance::get_record_by_contextid($contextid, false)) {
+                    self::unset_context_instance($instance);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Format the supplied date interval as a retention period.
+     *
+     * @param   \DateInterval   $interval
+     * @return  string
+     */
+    public static function format_retention_period(\DateInterval $interval) : string {
+        // It is one or another.
+        if ($interval->y) {
+            $formattedtime = get_string('numyears', 'moodle', $interval->format('%y'));
+        } else if ($interval->m) {
+            $formattedtime = get_string('nummonths', 'moodle', $interval->format('%m'));
+        } else if ($interval->d) {
+            $formattedtime = get_string('numdays', 'moodle', $interval->format('%d'));
+        } else {
+            $formattedtime = get_string('retentionperiodzero', 'tool_dataprivacy');
+        }
+
+        return $formattedtime;
+    }
+
+    /**
+     * Whether automatic data request approval is turned on or not for the given request type.
+     *
+     * @param int $type The request type.
+     * @return bool
+     */
+    public static function is_automatic_request_approval_on(int $type): bool {
+        switch ($type) {
+            case self::DATAREQUEST_TYPE_EXPORT:
+                return !empty(get_config('tool_dataprivacy', 'automaticdataexportapproval'));
+            case self::DATAREQUEST_TYPE_DELETE:
+                return !empty(get_config('tool_dataprivacy', 'automaticdatadeletionapproval'));
+        }
+        return false;
+    }
+
+    /**
+     * Creates an ad-hoc task for the data request.
+     *
+     * @param int $requestid The data request ID.
+     * @param int $userid Optional. The user ID to run the task as, if necessary.
+     */
+    public static function queue_data_request_task(int $requestid, int $userid = null): void {
+        $task = new process_data_request_task();
+        $task->set_custom_data(['requestid' => $requestid]);
+        if ($userid) {
+            $task->set_userid($userid);
+        }
+        manager::queue_adhoc_task($task, true);
+    }
+
+    /**
      * Adds the contexts from the contextlist_collection to the request with the status provided.
      *
+     * @since Moodle 4.3
      * @param contextlist_collection $clcollection a collection of contextlists for all components.
      * @param int $requestid the id of the request.
      * @param int $status the status to set the contexts to.
      */
     public static function add_request_contexts_with_status(contextlist_collection $clcollection, int $requestid, int $status) {
-        $request = new data_request($requestid);
+        global $DB;
+
+        // Wrap the SQL queries in a transaction.
+        $transaction = $DB->start_delegated_transaction();
+
         foreach ($clcollection as $contextlist) {
-            // Convert the \core_privacy\local\request\contextlist into a contextlist persistent and store it.
-            $clp = \tool_dataprivacy\contextlist::from_contextlist($contextlist);
+            // Convert the \core_privacy\local\request\contextlist into a dataprivacy_contextlist persistent and store it.
+            $clp = \tool_dataprivacy\dataprivacy_contextlist::from_contextlist($contextlist);
             $clp->create();
             $contextlistid = $clp->get('id');
 
             // Store the associated contexts in the contextlist.
             foreach ($contextlist->get_contextids() as $contextid) {
-                if ($request->get('type') == static::DATAREQUEST_TYPE_DELETE) {
-                    $context = \context::instance_by_id($contextid);
-                    if (($purpose = static::get_effective_context_purpose($context)) && !empty($purpose->get('protected'))) {
-                        continue;
-                    }
-                }
+                mtrace('Pushing data for ' . \context::instance_by_id($contextid)->get_context_name());
                 $context = new contextlist_context();
                 $context->set('contextid', $contextid)
                     ->set('contextlistid', $contextlistid)
@@ -997,34 +1406,81 @@ class api {
             $requestcontextlist = request_contextlist::create_relation($requestid, $contextlistid);
             $requestcontextlist->create();
         }
+
+        $transaction->allow_commit();
+    }
+
+    /**
+     * Finds all request contextlists having at least on approved context, and returns them as in a contextlist_collection.
+     *
+     * @since Moodle 4.3
+     * @param data_request $request the data request with which the contextlists are associated.
+     * @return contextlist_collection the collection of approved_contextlist objects.
+     * @throws coding_exception
+     * @throws dml_exception
+     * @throws moodle_exception
+     */
+    public static function get_approved_contextlist_collection_for_request(data_request $request): contextlist_collection {
+        global $DB;
+        $foruser = core_user::get_user($request->get('userid'));
+
+        // Fetch all approved contextlists and create the core_privacy\local\request\contextlist objects here.
+        $sql = "SELECT cl.component, ctx.contextid
+                  FROM {" . request_contextlist::TABLE . "} rcl
+                  JOIN {" . dataprivacy_contextlist::TABLE . "} cl ON rcl.contextlistid = cl.id
+                  JOIN {" . contextlist_context::TABLE . "} ctx ON cl.id = ctx.contextlistid
+                 WHERE rcl.requestid = ? AND ctx.status = ?
+              ORDER BY cl.component, ctx.contextid";
+
+        // Create the approved contextlist collection object.
+        $lastcomponent = null;
+        $approvedcollection = new contextlist_collection($foruser->id);
+
+        $rs = $DB->get_recordset_sql($sql, [$request->get('id'), contextlist_context::STATUS_APPROVED]);
+        $contexts = [];
+        foreach ($rs as $record) {
+            // If we encounter a new component, and we've built up contexts for the last, then add the approved_contextlist for the
+            // last (the one we've just finished with) and reset the context array for the next one.
+            if ($lastcomponent != $record->component) {
+                if ($contexts) {
+                    $approvedcollection->add_contextlist(new approved_contextlist($foruser, $lastcomponent, $contexts));
+                }
+                $contexts = [];
+            }
+            $contexts[] = $record->contextid;
+            $lastcomponent = $record->component;
+        }
+        $rs->close();
+
+        // The data for the last component contextlist won't have been written yet, so write it now.
+        if ($contexts) {
+            $approvedcollection->add_contextlist(new approved_contextlist($foruser, $lastcomponent, $contexts));
+        }
+
+        return $approvedcollection;
     }
 
     /**
      * Sets the status of all contexts associated with the request.
      *
+     * @since Moodle 4.3
      * @param int $requestid the requestid to which the contexts belong.
      * @param int $status the status to set to.
      * @throws \dml_exception if the requestid is invalid.
-     * @throws \moodle_exception if the status is invalid.
+     * @throws \coding_exception if the status is invalid.
      */
     public static function update_request_contexts_with_status(int $requestid, int $status) {
         // Validate contextlist_context status using the persistent's attribute validation.
         $contextlistcontext = new contextlist_context();
         $contextlistcontext->set('status', $status);
         if (array_key_exists('status', $contextlistcontext->get_errors())) {
-            throw new moodle_exception("Invalid contextlist_context status: $status");
+            throw new coding_exception("Invalid contextlist_context status: $status");
         }
 
-        // Validate requestid using the persistent's record validation.
-        // A dml_exception is thrown if the record is missing.
-        $datarequest = new data_request($requestid);
-
-        // Bulk update the status of the request contexts.
         global $DB;
-
         $select = "SELECT ctx.id as id
                      FROM {" . request_contextlist::TABLE . "} rcl
-                     JOIN {" . contextlist::TABLE . "} cl ON rcl.contextlistid = cl.id
+                     JOIN {" . dataprivacy_contextlist::TABLE . "} cl ON rcl.contextlistid = cl.id
                      JOIN {" . contextlist_context::TABLE . "} ctx ON cl.id = ctx.contextlistid
                     WHERE rcl.requestid = ?";
 
@@ -1035,6 +1491,8 @@ class api {
         $idchunks = $idstoupdate;
         if ($count > $limit) {
             $idchunks = array_chunk($idstoupdate, $limit);
+        } else {
+            $idchunks  = [$idchunks];
         }
         $transaction = $DB->start_delegated_transaction();
         $initialparams = [$status];
@@ -1050,49 +1508,126 @@ class api {
     }
 
     /**
-     * Finds all request contextlists having at least on approved context, and returns them as in a contextlist_collection.
+     * Only approve the contexts which are children of the provided course contexts.
      *
-     * @param data_request $request the data request with which the contextlists are associated.
-     * @return contextlist_collection the collection of approved_contextlist objects.
+     * @since Moodle 4.3
+     * @param int $requestid Request identifier
+     * @param array $coursecontextids List of course context identifier.
+     * @throws \dml_transaction_exception
+     * @throws coding_exception
+     * @throws dml_exception
      */
-    public static function get_approved_contextlist_collection_for_request(data_request $request) : contextlist_collection {
-        $foruser = core_user::get_user($request->get('userid'));
-
-        // Fetch all approved contextlists and create the core_privacy\local\request\contextlist objects here.
+    public static function approve_contexts_belonging_to_request(int $requestid, array $coursecontextids = []) {
         global $DB;
-        $sql = "SELECT cl.component, ctx.contextid
-                  FROM {" . request_contextlist::TABLE . "} rcl
-                  JOIN {" . contextlist::TABLE . "} cl ON rcl.contextlistid = cl.id
-                  JOIN {" . contextlist_context::TABLE . "} ctx ON cl.id = ctx.contextlistid
-                 WHERE rcl.requestid = ?
-                   AND ctx.status = ?
-              ORDER BY cl.component, ctx.contextid";
-
-        // Create the approved contextlist collection object.
-        $lastcomponent = null;
-        $approvedcollection = new contextlist_collection($foruser->id);
-
-        $rs = $DB->get_recordset_sql($sql, [$request->get('id'), contextlist_context::STATUS_APPROVED]);
-        foreach ($rs as $record) {
-            // If we encounter a new component, and we've built up contexts for the last, then add the approved_contextlist for the
-            // last (the one we've just finished with) and reset the context array for the next one.
-            if ($lastcomponent != $record->component) {
-                if (!empty($contexts)) {
-                    $approvedcollection->add_contextlist(new approved_contextlist($foruser, $lastcomponent, $contexts));
-                }
-                $contexts = [];
+        $select = "SELECT clc.id as id, ctx.id as contextid, ctx.path, ctx.contextlevel
+                     FROM {" . request_contextlist::TABLE . "} rcl
+                     JOIN {" . dataprivacy_contextlist::TABLE . "} cl ON rcl.contextlistid = cl.id
+                     JOIN {" . contextlist_context::TABLE . "} clc ON cl.id = clc.contextlistid
+                     JOIN {context} ctx ON clc.contextid = ctx.id
+                    WHERE rcl.requestid = ?";
+        $items = $DB->get_records_sql($select, [$requestid]);
+        $acceptcourses = [];
+        $listidstoapprove = [];
+        $listidstoreject = [];
+        foreach ($items as $item) {
+            if (in_array($item->contextid, $coursecontextids) && ($item->contextlevel == CONTEXT_COURSE)
+                && !in_array($item->contextid, $acceptcourses)) {
+                $acceptcourses[$item->contextid] = $item;
             }
-
-            $contexts[] = $record->contextid;
-            $lastcomponent = $record->component;
-        }
-        $rs->close();
-
-        // The data for the last component contextlist won't have been written yet, so write it now.
-        if (!empty($contexts)) {
-            $approvedcollection->add_contextlist(new approved_contextlist($foruser, $lastcomponent, $contexts));
         }
 
-        return $approvedcollection;
+        foreach ($items as $item) {
+            if ($item->contextlevel >= CONTEXT_COURSE) {
+                $approve = false;
+                foreach ($acceptcourses as $acceptcourse) {
+                    if (strpos($item->path, $acceptcourse->path) === 0) {
+                        $approve = true;
+                        break;
+                    }
+                }
+                if ($approve) {
+                    $listidstoapprove[] = $item->id;
+                } else {
+                    $listidstoreject[] = $item->id;
+                }
+            } else {
+                $listidstoapprove[] = $item->id;
+            }
+        }
+
+        $limit = 1000;
+        $count = count($listidstoapprove);
+        if ($count > $limit) {
+            $listidstoapprove = array_chunk($listidstoapprove, $limit);
+        } else {
+            $listidstoapprove = [$listidstoapprove];
+        }
+        $count = count($listidstoreject);
+        if ($count > $limit) {
+            $listidstoreject = array_chunk($listidstoreject, $limit);
+        } else {
+            $listidstoreject = [$listidstoreject];
+        }
+        $transaction = $DB->start_delegated_transaction();
+
+        $initialparams = [contextlist_context::STATUS_APPROVED];
+        foreach ($listidstoapprove as $chunk) {
+            if (!empty($chunk)) {
+                list($insql, $inparams) = $DB->get_in_or_equal($chunk);
+                $update = "UPDATE {" . contextlist_context::TABLE . "}
+                              SET status = ?
+                            WHERE id $insql";
+                $params = array_merge($initialparams, $inparams);
+                $DB->execute($update, $params);
+            }
+        }
+
+        $initialparams = [contextlist_context::STATUS_REJECTED];
+        foreach ($listidstoreject as $chunk) {
+            if (!empty($chunk)) {
+                list($insql, $inparams) = $DB->get_in_or_equal($chunk);
+                $update = "UPDATE {" . contextlist_context::TABLE . "}
+                              SET status = ?
+                            WHERE id $insql";
+
+                $params = array_merge($initialparams, $inparams);
+                $DB->execute($update, $params);
+            }
+        }
+
+        $transaction->allow_commit();
+    }
+
+    /**
+     * Get list of course context for user to filter.
+     *
+     * @since Moodle 4.3
+     * @param int $requestid Request identifier.
+     * @return array
+     * @throws dml_exception
+     * @throws coding_exception
+     */
+    public static function get_course_contexts_for_view_filter(int $requestid): array {
+        global $DB;
+
+        $contexts = [];
+
+        $query = "SELECT DISTINCT c.id as ctxid, c.contextlevel as ctxlevel, c.instanceid as ctxinstance, c.path as ctxpath,
+                        c.depth as ctxdepth, c.locked as ctxlocked
+                    FROM {" . \tool_dataprivacy\request_contextlist::TABLE . "} rcl
+                    JOIN {" . \tool_dataprivacy\dataprivacy_contextlist::TABLE . "} cl ON rcl.contextlistid = cl.id
+                    JOIN {" . \tool_dataprivacy\contextlist_context::TABLE . "} ctx ON cl.id = ctx.contextlistid
+                    JOIN {context} c ON c.id = ctx.contextid
+                   WHERE rcl.requestid = ? AND c.contextlevel = ?
+                ORDER BY c.path ASC";
+
+        $result = $DB->get_records_sql($query, [$requestid, CONTEXT_COURSE]);
+        foreach ($result as $item) {
+            $ctxid = $item->ctxid;
+            context_helper::preload_from_record($item);
+            $contexts[$ctxid] = \context::instance_by_id($ctxid);
+        }
+
+        return $contexts;
     }
 }

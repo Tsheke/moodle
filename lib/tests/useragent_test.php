@@ -15,29 +15,27 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Tests the user agent class.
- *
- * @package    core
- * @copyright  2013 Sam Hemelryk
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
-/**
  * User agent test suite.
  *
  * @package    core
  * @copyright  2013 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers \core_useragent
  */
-class core_useragent_testcase extends advanced_testcase {
+class useragent_test extends advanced_testcase {
 
     /**
      * Restores the user agent to the default one.
      */
-    public function tearDown() {
+    public function tearDown(): void {
         core_useragent::instance(true);
     }
 
+    /**
+     * Data provider for known user agents.
+     *
+     * @return array
+     */
     public function user_agents_providers() {
         // Note: When adding new entries to this list, please ensure that any new browser versions are added to the corresponding list.
         // This ensures that regression tests are applied to all known user agents.
@@ -101,286 +99,6 @@ class core_useragent_testcase extends advanced_testcase {
                     ),
 
                     'devicetype'                    => 'mobile',
-                ),
-            ),
-            // Windows 98; Internet Explorer 5.0.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 5.00; Windows 98)',
-                array(
-                    // MSIE 5.0 is not considered a browser at all: known false results.
-                    'is_ie'                         => false,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        // IE 5.0 is not considered a browser.
-                    ),
-
-                    // IE 5.0 is a legacy browser.
-                    'devicetype'                    => 'legacy',
-
-                    'supports_svg'                  => false,
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows 2000; Internet Explorer 5.5.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT 5.0)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                    ),
-
-                    // IE 6.0 is a legacy browser.
-                    'devicetype'                    => 'legacy',
-
-                    'supports_svg'                  => false,
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows XP SP2; Internet Explorer 6.0.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie6',
-                    ),
-
-                    // IE 7.0 is a legacy browser.
-                    'devicetype'                    => 'legacy',
-
-                    'supports_svg'                  => false,
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows XP SP2; Internet Explorer 7.0.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; YPC 3.0.1; .NET CLR 1.1.4322; .NET CLR 2.0.50727)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie7',
-                    ),
-
-                    'supports_svg'                  => false,
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows XP SP2; Internet Explorer 7.0; Meridio extension.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; Meridio for Excel 5.0.251; Meridio for PowerPoint 5.0.251; Meridio for Word 5.0.251; Meridio Protocol; .NET CLR 1.1.4322; .NET CLR 2.0.50727; .NET CLR 3.0.04506.30; .NET CLR 3.0.04506.648; .NET CLR 3.0.4506.2152; .NET CLR 3.5.30729)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie7',
-                    ),
-
-                    'supports_svg'                  => false,
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows Vista; Internet Explorer 8.0.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0; .NET CLR 2.0.50727; .NET CLR 1.1.4322; .NET CLR 3.0.04506.30; .NET CLR 3.0.04506.648)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie8',
-                    ),
-
-                    'supports_svg'                  => false,
-                ),
-            ),
-
-            // Windows 7; Internet Explorer 9.0.
-            array(
-                'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie9',
-                    ),
-                ),
-            ),
-
-            // Windows 7; Internet Explorer 9.0i.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.1; WOW64; Trident/5.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie9',
-                    ),
-                    'iecompatibility'               => true,
-
-                    // IE 9 in Compatiblity mode does not support SVG.
-                    'supports_svg'                  => false,
-
-                    // IE in Compatiblity mode does not support JSON ContentType.
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows 8; Internet Explorer 10.0.
-            array(
-                'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0; Touch)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                        '10'                        => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie10',
-                    ),
-                ),
-            ),
-
-            // Windows 8; Internet Explorer 10.0i.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.2; Trident/6.0; Touch; .NET4.0E; .NET4.0C; Tablet PC 2.0)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                        '10'                        => true,
-                    ),
-                    'iecompatibility'               => true,
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie10',
-                    ),
-
-                    // IE in Compatiblity mode does not support JSON ContentType.
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows 8.1; Internet Explorer 11.0.
-            array(
-                'Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; rv:11.0)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                        '10'                        => true,
-                        '11'                        => true,
-                    ),
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie11',
-                    ),
-                ),
-            ),
-
-            // Windows 8.1; Internet Explorer 11.0i.
-            array(
-                ' Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.3; Trident/7.0; .NET4.0E; .NET4.0C)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                        '10'                        => true,
-                        '11'                        => true,
-                    ),
-                    'iecompatibility'               => true,
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie11',
-                    ),
-
-                    // IE in Compatiblity mode does not support JSON ContentType.
-                    'supports_json_contenttype'     => false,
                 ),
             ),
 
@@ -765,59 +483,6 @@ class core_useragent_testcase extends advanced_testcase {
                 ),
             ),
 
-            // Windows 7; MS Word 2010.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.1; WOW64; Trident/4.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0; InfoPath.3; .NET4.0C; .NET4.0E; ms-office)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                    ),
-                    'iecompatibility'               => true,
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie8',
-                    ),
-
-                    'is_msword'                     => true,
-
-                    'supports_svg'                  => false,
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
-            // Windows 7; MS Outlook 2010.
-            array(
-                'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.1; WOW64; Trident/4.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0; InfoPath.3; .NET4.0C; .NET4.0E; Microsoft Outlook 14.0.7113; ms-office; MSOffice 14)',
-                array(
-                    'is_ie'                         => true,
-                    'check_ie_version'              => array(
-                        '0'                         => true,
-                        '5.0'                       => true,
-                        '5.5'                       => true,
-                        '6.0'                       => true,
-                        '7.0'                       => true,
-                        '8.0'                       => true,
-                    ),
-                    'iecompatibility'               => true,
-                    'versionclasses'                => array(
-                        'ie',
-                        'ie8',
-                    ),
-
-                    // Note: Outlook is deliberately not considered to be MS Word.
-                    'is_msword'                     => false,
-
-                    'supports_svg'                  => false,
-                    'supports_json_contenttype'     => false,
-                ),
-            ),
-
             // Mac OS X; MS Word 14.
             array(
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Word/14.38.0',
@@ -1085,41 +750,6 @@ class core_useragent_testcase extends advanced_testcase {
                 ),
             ),
 
-            // Opera 8.51; Windows XP.
-            array(
-                'Opera/8.51 (Windows NT 5.1; U; en)',
-                array(
-                    'is_opera'                      => true,
-                    'check_opera_version'           => array(
-                        '8.0'                       => true,
-                    ),
-
-                    'versionclasses'                => array(
-                        'opera',
-                    ),
-
-                    'supports_svg'                  => false,
-               ),
-            ),
-
-            // Opera 9.0; Windows XP.
-            array(
-                'Opera/9.0 (Windows NT 5.1; U; en)',
-                array(
-                    'is_opera'                      => true,
-                    'check_opera_version'           => array(
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                    ),
-
-                    'versionclasses'                => array(
-                        'opera',
-                    ),
-
-                    'supports_svg'                  => false,
-               ),
-            ),
-
             // Opera 12.15 (Build 1748); Mac OS X.
             array(
                 'Opera/9.80 (Macintosh; Intel Mac OS X 10.10.0; Edition MAS) Presto/2.12.388 Version/12.15',
@@ -1135,26 +765,6 @@ class core_useragent_testcase extends advanced_testcase {
                     'versionclasses'                => array(
                         'opera',
                     ),
-
-                    'supports_svg'                  => false,
-               ),
-            ),
-
-            // Opera 9.0; Debian Linux.
-            array(
-                'Opera/9.01 (X11; Linux i686; U; en)',
-                array(
-                    'is_opera'                      => true,
-                    'check_opera_version'           => array(
-                        '8.0'                       => true,
-                        '9.0'                       => true,
-                    ),
-
-                    'versionclasses'                => array(
-                        'opera',
-                    ),
-
-                    'supports_svg'                  => false,
                ),
             ),
 
@@ -1386,6 +996,151 @@ class core_useragent_testcase extends advanced_testcase {
                     ),
                ),
             ),
+
+            // MoodleBot.
+            array(
+                'User-Agent: MoodleBot/3.8 (+https://moodle.org)',
+                array(
+                    'is_web_crawler'                => true,
+                    'versionclasses'                => array(
+                    ),
+               ),
+            ),
+
+            // Macos Desktop app.
+            array(
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) moodlemobile/3.6.0 Chrome/69.0.3497.106 Electron/4.0.1 Safari/537.36 MoodleMobile',
+                array(
+                    'is_moodle_app'                => true,
+                    'is_webkit'                    => true,
+                    'is_chrome'                    => true,
+                    'check_chrome_version'         => array(
+                        '7'                        => true,
+                        '8'                        => true,
+                        '10'                       => true,
+                        '39'                       => true,
+                    ),
+                    'versionclasses'               => array(
+                        'chrome',
+                    ),
+               ),
+            ),
+
+            // Linux Desktop app.
+            array(
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) moodledesktop/3.6.0 Chrome/69.0.3497.106 Electron/4.0.1 Safari/537.36 MoodleMobile',
+                array(
+                    'is_moodle_app'                => true,
+                    'is_webkit'                    => true,
+                    'is_chrome'                    => true,
+                    'check_chrome_version'         => array(
+                        '7'                        => true,
+                        '8'                        => true,
+                        '10'                       => true,
+                        '39'                       => true,
+                    ),
+                    'versionclasses'               => array(
+                        'chrome',
+                    ),
+               ),
+            ),
+
+            // Windows Desktop app.
+            array(
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) moodledesktop/3.6.0 Chrome/69.0.3497.106 Electron/4.0.1 Safari/537.36 MoodleMobile',
+                array(
+                    'is_moodle_app'                => true,
+                    'is_webkit'                    => true,
+                    'is_chrome'                    => true,
+                    'check_chrome_version'         => array(
+                        '7'                        => true,
+                        '8'                        => true,
+                        '10'                       => true,
+                        '39'                       => true,
+                    ),
+                    'versionclasses'               => array(
+                        'chrome',
+                    ),
+               ),
+            ),
+
+            // Android app.
+            array(
+                'Mozilla/5.0 (Linux; Android 7.1.1; Moto G Play Build/NPIS26.48-43-2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/71.0.3578.99 Mobile Safari/537.36 MoodleMobile',
+                array(
+                    'is_moodle_app'                => true,
+                    'is_webkit'                    => true,
+                    'is_webkit_android'            => true,
+                    'is_chrome'                    => true,
+                    'check_chrome_version'         => array(
+                        '7'                        => true,
+                        '8'                        => true,
+                        '10'                       => true,
+                        '39'                       => true,
+                    ),
+                    'devicetype'                   => 'mobile',
+                    'check_webkit_android_version' => array(
+                        '525'                       => true,
+                        '527'                       => true,
+                    ),
+                    'versionclasses'               => array(
+                        'android',
+                        'chrome'
+                    ),
+               ),
+            ),
+
+            // Android app, user agent lower case.
+            array(
+                'Mozilla/5.0 (Linux; Android 7.1.1; Moto G Play Build/NPIS26.48-43-2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/71.0.3578.99 Mobile Safari/537.36 moodlemobile',
+                array(
+                    'is_moodle_app'                => true,
+                    'is_webkit'                    => true,
+                    'is_webkit_android'            => true,
+                    'is_chrome'                    => true,
+                    'check_chrome_version'         => array(
+                        '7'                        => true,
+                        '8'                        => true,
+                        '10'                       => true,
+                        '39'                       => true,
+                    ),
+                    'devicetype'                   => 'mobile',
+                    'check_webkit_android_version' => array(
+                        '525'                       => true,
+                        '527'                       => true,
+                    ),
+                    'versionclasses'               => array(
+                        'android',
+                        'chrome'
+                    ),
+               ),
+            ),
+
+            // iOS (iPhone) app.
+            array(
+                'Mozilla/5.0 (iPhone; CPU OS 13_3_3 like Mac OS X) AppleWebKit/603.3.8 (KHTML, like Gecko) Mobile/14G60 MoodleMobile',
+                array(
+                    'is_moodle_app'                => true,
+                    'is_ios'                       => true,
+                    'is_webkit'                    => true,
+                    'devicetype'                   => 'mobile',
+                    'versionclasses'               => array(
+                    ),
+               ),
+            ),
+
+            // iOS (iPad) app.
+            array(
+                'Mozilla/5.0 (iPad; CPU OS 12_1_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/16D39 MoodleMobile',
+                array(
+                    'is_moodle_app'                => true,
+                    'is_ios'                       => true,
+                    'is_webkit'                    => true,
+                    'devicetype'                   => 'tablet',
+                    'versionclasses'               => array(
+                    ),
+               ),
+            ),
         );
     }
 
@@ -1492,7 +1247,6 @@ class core_useragent_testcase extends advanced_testcase {
             $this->assertFalse(core_useragent::is_msword());
         }
     }
-
 
     /**
      * @dataProvider user_agents_providers
@@ -1710,7 +1464,10 @@ class core_useragent_testcase extends advanced_testcase {
         if (isset($tests['is_ios']) && $tests['is_ios']) {
             $this->assertTrue(core_useragent::is_ios(),
                 "Browser was not identified as an iOS device browser");
-            $this->assertTrue(core_useragent::check_safari_ios_version());
+            // The iOS app is not Safari based.
+            if (!isset($tests['is_moodle_app']) || !$tests['is_moodle_app']) {
+                $this->assertTrue(core_useragent::check_safari_ios_version());
+            }
         } else {
             $this->assertFalse(core_useragent::is_ios(),
                 "Browser was incorrectly identified as an iOS device browser");
@@ -1879,5 +1636,16 @@ class core_useragent_testcase extends advanced_testcase {
 
         $expectation = isset($tests['is_web_crawler']) ? $tests['is_web_crawler'] : false;
         $this->assertSame($expectation, core_useragent::is_web_crawler());
+    }
+
+    /**
+     * @dataProvider user_agents_providers
+     */
+    public function test_useragent_moodle_app($useragent, $tests) {
+        // Setup the core_useragent instance.
+        core_useragent::instance(true, $useragent);
+
+        $expectation = isset($tests['is_moodle_app']) ? $tests['is_moodle_app'] : false;
+        $this->assertSame($expectation, core_useragent::is_moodle_app());
     }
 }

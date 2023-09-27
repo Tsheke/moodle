@@ -33,7 +33,7 @@ $classformode = array(
     'view' => 'core_role_allow_view_page'
 );
 if (!isset($classformode[$mode])) {
-    print_error('invalidmode', '', '', $mode);
+    throw new \moodle_exception('invalidmode', '', '', $mode);
 }
 
 $baseurl = new moodle_url('/admin/roles/allow.php', array('mode'=>$mode));
@@ -46,28 +46,11 @@ $controller = new $classformode[$mode]();
 
 if (optional_param('submit', false, PARAM_BOOL) && data_submitted() && confirm_sesskey()) {
     $controller->process_submission();
-    $syscontext->mark_dirty();
-    $event = null;
-    // Create event depending on mode.
-    switch ($mode) {
-        case 'assign':
-            $event = \core\event\role_allow_assign_updated::create(array('context' => $syscontext));
-            break;
-        case 'override':
-            $event = \core\event\role_allow_override_updated::create(array('context' => $syscontext));
-            break;
-        case 'switch':
-            $event = \core\event\role_allow_switch_updated::create(array('context' => $syscontext));
-            break;
-        case 'view':
-            $event = \core\event\role_allow_view_updated::create(array('context' => $syscontext));
-            break;
-    }
-    if ($event) {
-        $event->trigger();
-    }
     redirect($baseurl);
 }
+
+$PAGE->set_secondary_active_tab('users');
+$PAGE->set_primary_active_tab('siteadminnode');
 
 $controller->load_current_settings();
 

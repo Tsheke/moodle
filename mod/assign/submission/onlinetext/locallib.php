@@ -24,6 +24,9 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use core_external\external_single_structure;
+use core_external\external_value;
+
 defined('MOODLE_INTERNAL') || die();
 // File area for online text submission assignment.
 define('ASSIGNSUBMISSION_ONLINETEXT_FILEAREA', 'submissions_onlinetext');
@@ -59,6 +62,22 @@ class assign_submission_onlinetext extends assign_submission_plugin {
     }
 
     /**
+     * Remove a submission.
+     *
+     * @param stdClass $submission The submission
+     * @return boolean
+     */
+    public function remove(stdClass $submission) {
+        global $DB;
+
+        $submissionid = $submission ? $submission->id : 0;
+        if ($submissionid) {
+            $DB->delete_records('assignsubmission_onlinetext', array('submission' => $submissionid));
+        }
+        return true;
+    }
+
+    /**
      * Get the settings for onlinetext submission plugin
      *
      * @param MoodleQuickForm $mform The form to add elements to
@@ -85,6 +104,9 @@ class assign_submission_onlinetext extends assign_submission_plugin {
         $mform->disabledIf('assignsubmission_onlinetext_wordlimit',
                            'assignsubmission_onlinetext_wordlimit_enabled',
                            'notchecked');
+        $mform->hideIf('assignsubmission_onlinetext_wordlimit',
+                       'assignsubmission_onlinetext_enabled',
+                       'notchecked');
 
         // Add numeric rule to text field.
         $wordlimitgrprules = array();
@@ -95,9 +117,9 @@ class assign_submission_onlinetext extends assign_submission_plugin {
         $mform->setDefault('assignsubmission_onlinetext_wordlimit', $defaultwordlimit);
         $mform->setDefault('assignsubmission_onlinetext_wordlimit_enabled', $defaultwordlimitenabled);
         $mform->setType('assignsubmission_onlinetext_wordlimit', PARAM_INT);
-        $mform->disabledIf('assignsubmission_onlinetext_wordlimit_group',
-                           'assignsubmission_onlinetext_enabled',
-                           'notchecked');
+        $mform->hideIf('assignsubmission_onlinetext_wordlimit_group',
+                       'assignsubmission_onlinetext_enabled',
+                       'notchecked');
     }
 
     /**
@@ -231,6 +253,9 @@ class assign_submission_onlinetext extends assign_submission_plugin {
         );
         if (!empty($submission->userid) && ($submission->userid != $USER->id)) {
             $params['relateduserid'] = $submission->userid;
+        }
+        if ($this->assignment->is_blind_marking()) {
+            $params['anonymous'] = 1;
         }
         $event = \assignsubmission_onlinetext\event\assessable_uploaded::create($params);
         $event->trigger();
@@ -395,11 +420,12 @@ class assign_submission_onlinetext extends assign_submission_plugin {
         $files = array();
         $onlinetextsubmission = $this->get_onlinetext_submission($submission->id);
 
+        // Note that this check is the same logic as the result from the is_empty function but we do
+        // not call it directly because we already have the submission record.
         if ($onlinetextsubmission) {
-            $finaltext = $this->assignment->download_rewrite_pluginfile_urls($onlinetextsubmission->onlinetext, $user, $this);
-            $formattedtext = format_text($finaltext,
-                                         $onlinetextsubmission->onlineformat,
-                                         array('context'=>$this->assignment->get_context()));
+            // Do not pass the text through format_text. The result may not be displayed in Moodle and
+            // may be passed to external services such as document conversion or portfolios.
+            $formattedtext = $this->assignment->download_rewrite_pluginfile_urls($onlinetextsubmission->onlinetext, $user, $this);
             $head = '<head><meta charset="UTF-8"></head>';
             $submissioncontent = '<!DOCTYPE html><html>' . $head . '<body>'. $formattedtext . '</body></html>';
 
@@ -432,6 +458,7 @@ class assign_submission_onlinetext extends assign_submission_plugin {
     public function view(stdClass $submission) {
         global $CFG;
         $result = '';
+        $plagiarismlinks = '';
 
         $onlinetextsubmission = $this->get_onlinetext_submission($submission->id);
 
@@ -443,8 +470,6 @@ class assign_submission_onlinetext extends assign_submission_plugin {
                                                                 $this->get_type(),
                                                                 'onlinetext',
                                                                 'assignsubmission_onlinetext');
-
-            $plagiarismlinks = '';
 
             if (!empty($CFG->enableplagiarism)) {
                 require_once($CFG->libdir . '/plagiarismlib.php');
@@ -538,23 +563,6 @@ class assign_submission_onlinetext extends assign_submission_plugin {
     }
 
     /**
-     * Formatting for log info
-     *
-     * @param stdClass $submission The new submission
-     * @return string
-     */
-    public function format_for_log(stdClass $submission) {
-        // Format the info for each submission plugin (will be logged).
-        $onlinetextsubmission = $this->get_onlinetext_submission($submission->id);
-        $onlinetextloginfo = '';
-        $onlinetextloginfo .= get_string('numwordsforlog',
-                                         'assignsubmission_onlinetext',
-                                         count_words($onlinetextsubmission->onlinetext));
-
-        return $onlinetextloginfo;
-    }
-
-    /**
      * The assignment has been deleted - cleanup
      *
      * @return bool
@@ -575,8 +583,18 @@ class assign_submission_onlinetext extends assign_submission_plugin {
      */
     public function is_empty(stdClass $submission) {
         $onlinetextsubmission = $this->get_onlinetext_submission($submission->id);
+        $wordcount = 0;
+        $hasinsertedresources = false;
 
-        return empty($onlinetextsubmission->onlinetext);
+        if (isset($onlinetextsubmission->onlinetext)) {
+            $wordcount = count_words(trim($onlinetextsubmission->onlinetext));
+            // Check if the online text submission contains video, audio or image elements
+            // that can be ignored and stripped by count_words().
+            $hasinsertedresources = preg_match('/<\s*((video|audio)[^>]*>(.*?)<\s*\/\s*(video|audio)>)|(img[^>]*>(.*?))/',
+                    trim($onlinetextsubmission->onlinetext));
+        }
+
+        return $wordcount == 0 && !$hasinsertedresources;
     }
 
     /**
@@ -592,7 +610,18 @@ class assign_submission_onlinetext extends assign_submission_plugin {
         if (!isset($data->onlinetext_editor)) {
             return true;
         }
-        return !strlen((string)$data->onlinetext_editor['text']);
+        $wordcount = 0;
+        $hasinsertedresources = false;
+
+        if (isset($data->onlinetext_editor['text'])) {
+            $wordcount = count_words(trim((string)$data->onlinetext_editor['text']));
+            // Check if the online text submission contains video, audio or image elements
+            // that can be ignored and stripped by count_words().
+            $hasinsertedresources = preg_match('/<\s*((video|audio)[^>]*>(.*?)<\s*\/\s*(video|audio)>)|(img[^>]*>(.*?))/',
+                    trim((string)$data->onlinetext_editor['text']));
+        }
+
+        return $wordcount == 0 && !$hasinsertedresources;
     }
 
     /**
@@ -635,7 +664,7 @@ class assign_submission_onlinetext extends assign_submission_plugin {
     /**
      * Return a description of external params suitable for uploading an onlinetext submission from a webservice.
      *
-     * @return external_description|null
+     * @return \core_external\external_description|null
      */
     public function get_external_parameters() {
         $editorparams = array('text' => new external_value(PARAM_RAW, 'The text for this submission.'),
@@ -682,5 +711,3 @@ class assign_submission_onlinetext extends assign_submission_plugin {
         return (array) $this->get_config();
     }
 }
-
-

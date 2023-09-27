@@ -76,7 +76,9 @@ class restore_course_task extends restore_task {
             }
         }
 
-        $this->add_step(new restore_course_legacy_files_step('legacy_files'));
+        if ($this->get_setting_value('legacyfiles')) {
+            $this->add_step(new restore_course_legacy_files_step('legacy_files'));
+        }
 
         // Deal with enrolment methods and user enrolments.
         if ($this->plan->get_mode() == backup::MODE_IMPORT) {
@@ -126,6 +128,11 @@ class restore_course_task extends restore_task {
         // Activity completion defaults.
         $this->add_step(new restore_completion_defaults_structure_step('course_completion_defaults', 'completiondefaults.xml'));
 
+        // Content bank content (conditionally).
+        if ($this->get_setting_value('contentbankcontent')) {
+            $this->add_step(new restore_contentbankcontent_structure_step('course_contentbank', 'contentbank.xml'));
+        }
+
         // At the end, mark it as built
         $this->built = true;
     }
@@ -159,6 +166,7 @@ class restore_course_task extends restore_task {
         $rules[] = new restore_decode_rule('GRADEREPORTINDEXBYID', '/grade/report/index.php?id=$1', 'course');
         $rules[] = new restore_decode_rule('BADGESVIEWBYID',       '/badges/view.php?type=2&id=$1', 'course');
         $rules[] = new restore_decode_rule('USERINDEXVIEWBYID',    '/user/index.php?id=$1',         'course');
+        $rules[] = new restore_decode_rule('PLUGINFILEBYCONTEXT',  '/pluginfile.php/$1',            'context');
 
         return $rules;
     }

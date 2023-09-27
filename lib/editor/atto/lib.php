@@ -140,15 +140,16 @@ class atto_texteditor extends texteditor {
             $jsplugins[] = array('group'=>$group, 'plugins'=>$groupplugins);
         }
 
-        $PAGE->requires->strings_for_js(array(
+        $PAGE->requires->strings_for_js([
                 'editor_command_keycode',
                 'editor_control_keycode',
                 'plugin_title_shortcut',
                 'textrecovered',
                 'autosavefailed',
                 'autosavesucceeded',
-                'errortextrecovery'
-            ), 'editor_atto');
+                'errortextrecovery',
+                'richtexteditor',
+            ], 'editor_atto');
         $PAGE->requires->strings_for_js(array(
                 'warning',
                 'info'
@@ -180,8 +181,8 @@ class atto_texteditor extends texteditor {
         }
         $contentcss     = $PAGE->theme->editor_css_url()->out(false);
 
-        // Autosave disabled for guests.
-        if (isguestuser()) {
+        // Autosave disabled for guests and not logged in users.
+        if (isguestuser() OR !isloggedin()) {
             $autosave = false;
         }
         // Note <> is a safe separator, because it will not appear in the output of s().

@@ -14,14 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Search manager unit tests.
- *
- * @package     core_search
- * @category    phpunit
- * @copyright   2015 David Monllao {@link http://www.davidmonllao.com}
- * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace core_search;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -36,19 +29,31 @@ require_once(__DIR__ . '/fixtures/mock_search_area.php');
  * @copyright   2015 David Monllao {@link http://www.davidmonllao.com}
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class search_manager_testcase extends advanced_testcase {
+class manager_test extends \advanced_testcase {
+
+    /**
+     * Forum area id.
+     *
+     * @var string
+     */
 
     protected $forumpostareaid = null;
-    protected $mycoursesareaid = null;
 
-    public function setUp() {
+    /**
+     * Courses area id.
+     *
+     * @var string
+     */
+    protected $coursesareaid = null;
+
+    public function setUp(): void {
         $this->forumpostareaid = \core_search\manager::generate_areaid('mod_forum', 'post');
-        $this->mycoursesareaid = \core_search\manager::generate_areaid('core_course', 'mycourse');
+        $this->coursesareaid = \core_search\manager::generate_areaid('core_course', 'course');
     }
 
-    protected function tearDown() {
+    protected function tearDown(): void {
         // Stop it from faking time in the search manager (if set by test).
-        testable_core_search::fake_current_time();
+        \testable_core_search::fake_current_time();
         parent::tearDown();
     }
 
@@ -64,6 +69,104 @@ class search_manager_testcase extends advanced_testcase {
 
         set_config('enableglobalsearch', false);
         $this->assertFalse(\core_search\manager::is_global_search_enabled());
+    }
+
+    /**
+     * Tests the course search url is correct.
+     *
+     * @param bool|null $gsenabled Enable global search (null to leave as the default).
+     * @param bool|null $allcourses Enable searching all courses (null to leave as the default).
+     * @param bool|null $enablearea Enable the course search area (null to leave as the default).
+     * @param string $expected The expected course search url.
+     * @dataProvider data_course_search_url
+     */
+    public function test_course_search_url(?bool $gsenabled, ?bool $allcourses, ?bool $enablearea, string $expected) {
+        $this->resetAfterTest();
+
+        if (!is_null($gsenabled)) {
+            set_config('enableglobalsearch', $gsenabled);
+        }
+
+        if (!is_null($allcourses)) {
+            set_config('searchincludeallcourses', $allcourses);
+        }
+
+        if (!is_null($enablearea)) {
+            // Setup the course search area.
+            $areaid = \core_search\manager::generate_areaid('core_course', 'course');
+            $area = \core_search\manager::get_search_area($areaid);
+            $area->set_enabled($enablearea);
+        }
+
+        $this->assertEquals(new \moodle_url($expected), \core_search\manager::get_course_search_url());
+    }
+
+    /**
+     * Data for the test_course_search_url test.
+     *
+     * @return array[]
+     */
+    public function data_course_search_url(): array {
+        return [
+            'defaults' => [null, null, null, '/course/search.php'],
+            'enabled' => [true, true, true, '/search/index.php'],
+            'no all courses, no search area' => [true, false, false, '/course/search.php'],
+            'no search area' => [true, true, false, '/course/search.php'],
+            'no all courses' => [true, false, true, '/course/search.php'],
+            'disabled' => [false, false, false, '/course/search.php'],
+            'no global search' => [false, true, false, '/course/search.php'],
+            'no global search, no all courses' => [false, false, true, '/course/search.php'],
+            'no global search, no search area' => [false, true, false, '/course/search.php'],
+        ];
+    }
+
+    /**
+     * Tests that we detect that global search can replace frontpage course search.
+     *
+     * @param bool|null $gsenabled Enable global search (null to leave as the default).
+     * @param bool|null $allcourses Enable searching all courses (null to leave as the default).
+     * @param bool|null $enablearea Enable the course search area (null to leave as the default).
+     * @param bool $expected The expected result.
+     * @dataProvider data_can_replace_course_search
+     */
+    public function test_can_replace_course_search(?bool $gsenabled, ?bool $allcourses, ?bool $enablearea, bool $expected) {
+        $this->resetAfterTest();
+
+        if (!is_null($gsenabled)) {
+            set_config('enableglobalsearch', $gsenabled);
+        }
+
+        if (!is_null($allcourses)) {
+            set_config('searchincludeallcourses', $allcourses);
+        }
+
+        if (!is_null($enablearea)) {
+            // Setup the course search area.
+            $areaid = \core_search\manager::generate_areaid('core_course', 'course');
+            $area = \core_search\manager::get_search_area($areaid);
+            $area->set_enabled($enablearea);
+        }
+
+        $this->assertEquals($expected, \core_search\manager::can_replace_course_search());
+    }
+
+    /**
+     * Data for the test_can_replace_course_search test.
+     *
+     * @return array[]
+     */
+    public function data_can_replace_course_search(): array {
+        return [
+            'defaults' => [null, null, null, false],
+            'enabled' => [true, true, true, true],
+            'no all courses, no search area' => [true, false, false, false],
+            'no search area' => [true, true, false, false],
+            'no all courses' => [true, false, true, false],
+            'disabled' => [false, false, false, false],
+            'no global search' => [false, true, false, false],
+            'no global search, no all courses' => [false, false, true, false],
+            'no global search, no search area' => [false, true, false, false],
+        ];
     }
 
     public function test_search_areas() {
@@ -106,7 +209,7 @@ class search_manager_testcase extends advanced_testcase {
 
         $this->resetAfterTest();
 
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
 
         // We should test both plugin types and core subsystems. No core subsystems available yet.
         $searcharea = $search->get_search_area($this->forumpostareaid);
@@ -128,8 +231,8 @@ class search_manager_testcase extends advanced_testcase {
             $fakeareaid = \core_search\manager::generate_areaid('mod_unexisting', 'chihuaquita');
             $search->reset_config($fakeareaid);
             $this->fail('An exception should be triggered if the provided search area does not exist.');
-        } catch (moodle_exception $ex) {
-            $this->assertContains($fakeareaid . ' search area is not available.', $ex->getMessage());
+        } catch (\moodle_exception $ex) {
+            $this->assertStringContainsString($fakeareaid . ' search area is not available.', $ex->getMessage());
         }
 
         // We clean it all but enabled components.
@@ -165,7 +268,7 @@ class search_manager_testcase extends advanced_testcase {
     public function test_get_last_indexing_duration() {
         $this->resetAfterTest();
 
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
 
         $searcharea = $search->get_search_area($this->forumpostareaid);
 
@@ -200,7 +303,7 @@ class search_manager_testcase extends advanced_testcase {
         // Index everything up to current. Ensure the course is older than current second so it
         // definitely doesn't get indexed again next time.
         $this->waitForSecond();
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
         $search->index(false, 0);
 
         $searcharea = $search->get_search_area($this->forumpostareaid);
@@ -230,7 +333,7 @@ class search_manager_testcase extends advanced_testcase {
         $search->get_engine()->set_add_delay(1.2);
 
         // Use fake time, starting from now.
-        testable_core_search::fake_current_time(time());
+        \testable_core_search::fake_current_time(time());
 
         // Index with a limit of 2 seconds - it should index 2 of the documents (after the second
         // one, it will have taken 2.4 seconds so it will stop).
@@ -250,7 +353,7 @@ class search_manager_testcase extends advanced_testcase {
         // Wait to next second (so as to not reindex the label more than once, as it will now
         // be timed before the indexing run).
         $this->waitForSecond();
-        testable_core_search::fake_current_time(time());
+        \testable_core_search::fake_current_time(time());
 
         // Next index with 1 second limit should do the label and not the forum - the logic is,
         // if it spent ages indexing an area last time, do that one last on next run.
@@ -291,7 +394,7 @@ class search_manager_testcase extends advanced_testcase {
         $generator = $this->getDataGenerator();
 
         // Set up the fake search area.
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
         $area = new \core_mocksearch\search\mock_search_area();
         $search->add_search_area('whatever', $area);
         $searchgenerator = $generator->get_plugin_generator('core_search');
@@ -311,24 +414,24 @@ class search_manager_testcase extends advanced_testcase {
         $search->get_engine()->set_add_delay(15.789);
 
         // Run search indexing and check output.
-        $progress = new progress_trace_buffer(new text_progress_trace(), false);
+        $progress = new \progress_trace_buffer(new \text_progress_trace(), false);
         $search->index(false, 75, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
 
         // Check for the standard text.
-        $this->assertContains('Processing area: Mock search area', $out);
-        $this->assertContains('Stopping indexing due to time limit', $out);
+        $this->assertStringContainsString('Processing area: Mock search area', $out);
+        $this->assertStringContainsString('Stopping indexing due to time limit', $out);
 
         // Check for initial query performance indication.
-        $this->assertContains('Initial query took 10.1 seconds.', $out);
+        $this->assertStringContainsString('Initial query took 10.1 seconds.', $out);
 
         // Check for the two (approximately) every-30-seconds messages.
-        $this->assertContains('01:00:41: Done to 1/11/17, 01:01', $out);
-        $this->assertContains('01:01:13: Done to 1/11/17, 01:03', $out);
+        $this->assertStringContainsString('01:00:41: Done to 1/11/17, 01:01', $out);
+        $this->assertStringContainsString('01:01:13: Done to 1/11/17, 01:03', $out);
 
         // Check for the 'not complete' indicator showing when it was done until.
-        $this->assertContains('Processed 5 records containing 5 documents, in 89.1 seconds ' .
+        $this->assertStringContainsString('Processed 5 records containing 5 documents, in 89.1 seconds ' .
                 '(not complete; done to 1/11/17, 01:04)', $out);
 
         // Make the initial query delay less than 5 seconds, so it won't appear. Make the documents
@@ -337,29 +440,29 @@ class search_manager_testcase extends advanced_testcase {
         $search->get_engine()->set_add_delay(1);
 
         // Run search indexing (still partial) and check output.
-        $progress = new progress_trace_buffer(new text_progress_trace(), false);
+        $progress = new \progress_trace_buffer(new \text_progress_trace(), false);
         $search->index(false, 5, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
 
-        $this->assertContains('Processing area: Mock search area', $out);
-        $this->assertContains('Stopping indexing due to time limit', $out);
-        $this->assertNotContains('Initial query took', $out);
-        $this->assertNotContains(': Done to', $out);
-        $this->assertContains('Processed 2 records containing 2 documents, in 6.9 seconds ' .
+        $this->assertStringContainsString('Processing area: Mock search area', $out);
+        $this->assertStringContainsString('Stopping indexing due to time limit', $out);
+        $this->assertStringNotContainsString('Initial query took', $out);
+        $this->assertStringNotContainsString(': Done to', $out);
+        $this->assertStringContainsString('Processed 2 records containing 2 documents, in 6.9 seconds ' .
                 '(not complete; done to 1/11/17, 01:05).', $out);
 
         // Run the remaining items to complete it.
-        $progress = new progress_trace_buffer(new text_progress_trace(), false);
+        $progress = new \progress_trace_buffer(new \text_progress_trace(), false);
         $search->index(false, 100, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
 
-        $this->assertContains('Processing area: Mock search area', $out);
-        $this->assertNotContains('Stopping indexing due to time limit', $out);
-        $this->assertNotContains('Initial query took', $out);
-        $this->assertNotContains(': Done to', $out);
-        $this->assertContains('Processed 3 records containing 3 documents, in 7.9 seconds.', $out);
+        $this->assertStringContainsString('Processing area: Mock search area', $out);
+        $this->assertStringNotContainsString('Stopping indexing due to time limit', $out);
+        $this->assertStringNotContainsString('Initial query took', $out);
+        $this->assertStringNotContainsString(': Done to', $out);
+        $this->assertStringContainsString('Processed 3 records containing 3 documents, in 7.9 seconds.', $out);
 
         $searchgenerator->tearDown();
     }
@@ -380,7 +483,7 @@ class search_manager_testcase extends advanced_testcase {
         // Index everything up to current. Ensure the course is older than current second so it
         // definitely doesn't get indexed again next time.
         $this->waitForSecond();
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
         $search->index(false, 0);
         $search->get_engine()->get_and_clear_added_documents();
 
@@ -446,8 +549,8 @@ class search_manager_testcase extends advanced_testcase {
         $generator->create_module('forum', ['course' => $course->id]);
 
         // Index forum 1 only.
-        $search = testable_core_search::instance();
-        $buffer = new progress_trace_buffer(new text_progress_trace(), false);
+        $search = \testable_core_search::instance();
+        $buffer = new \progress_trace_buffer(new \text_progress_trace(), false);
         $result = $search->index_context(\context_module::instance($forum1->cmid), '', 0, $buffer);
         $this->assertTrue($result->complete);
         $log = $buffer->get_buffer();
@@ -459,7 +562,7 @@ class search_manager_testcase extends advanced_testcase {
 
         // Confirm that some areas for different types of context were skipped.
         $this->assertNotFalse(strpos($log, "area: Users\n  Skipping"));
-        $this->assertNotFalse(strpos($log, "area: My courses\n  Skipping"));
+        $this->assertNotFalse(strpos($log, "area: Courses\n  Skipping"));
 
         // Confirm that another module area had no results.
         $this->assertNotFalse(strpos($log, "area: Page\n  No documents"));
@@ -475,7 +578,7 @@ class search_manager_testcase extends advanced_testcase {
         $this->assertNotFalse(strpos($log, "area: Forum - posts\n  Processed 3 "));
 
         // The course area was also included this time.
-        $this->assertNotFalse(strpos($log, "area: My courses\n  Processed 1 "));
+        $this->assertNotFalse(strpos($log, "area: Courses\n  Processed 1 "));
 
         // Confirm that another module area had results too.
         $this->assertNotFalse(strpos($log, "area: Page\n  Processed 1 "));
@@ -526,17 +629,19 @@ class search_manager_testcase extends advanced_testcase {
         $this->resetAfterTest();
 
         $frontpage = $DB->get_record('course', array('id' => SITEID));
-        $frontpagectx = context_course::instance($frontpage->id);
+        $frontpagectx = \context_course::instance($frontpage->id);
         $course1 = $this->getDataGenerator()->create_course();
-        $course1ctx = context_course::instance($course1->id);
+        $course1ctx = \context_course::instance($course1->id);
         $course2 = $this->getDataGenerator()->create_course();
-        $course2ctx = context_course::instance($course2->id);
+        $course2ctx = \context_course::instance($course2->id);
+        $course3 = $this->getDataGenerator()->create_course();
+        $course3ctx = \context_course::instance($course3->id);
         $teacher = $this->getDataGenerator()->create_user();
-        $teacherctx = context_user::instance($teacher->id);
+        $teacherctx = \context_user::instance($teacher->id);
         $student = $this->getDataGenerator()->create_user();
-        $studentctx = context_user::instance($student->id);
+        $studentctx = \context_user::instance($student->id);
         $noaccess = $this->getDataGenerator()->create_user();
-        $noaccessctx = context_user::instance($noaccess->id);
+        $noaccessctx = \context_user::instance($noaccess->id);
         $this->getDataGenerator()->enrol_user($teacher->id, $course1->id, 'teacher');
         $this->getDataGenerator()->enrol_user($student->id, $course1->id, 'student');
 
@@ -544,15 +649,17 @@ class search_manager_testcase extends advanced_testcase {
         $forum1 = $this->getDataGenerator()->create_module('forum', array('course' => $course1->id));
         $forum2 = $this->getDataGenerator()->create_module('forum', array('course' => $course1->id));
         $forum3 = $this->getDataGenerator()->create_module('forum', array('course' => $course2->id));
-        $frontpageforumcontext = context_module::instance($frontpageforum->cmid);
-        $context1 = context_module::instance($forum1->cmid);
-        $context2 = context_module::instance($forum2->cmid);
-        $context3 = context_module::instance($forum3->cmid);
+        $frontpageforumcontext = \context_module::instance($frontpageforum->cmid);
+        $context1 = \context_module::instance($forum1->cmid);
+        $context2 = \context_module::instance($forum2->cmid);
+        $context3 = \context_module::instance($forum3->cmid);
+        $forum4 = $this->getDataGenerator()->create_module('forum', array('course' => $course3->id));
+        $context4 = \context_module::instance($forum4->cmid);
 
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
         $mockareaid = \core_search\manager::generate_areaid('core_mocksearch', 'mock_search_area');
         $search->add_core_search_areas();
-        $search->add_search_area($mockareaid, new core_mocksearch\search\mock_search_area());
+        $search->add_search_area($mockareaid, new \core_mocksearch\search\mock_search_area());
 
         $this->setAdminUser();
         $this->assertEquals((object)['everything' => true], $search->get_areas_user_accesses());
@@ -563,7 +670,7 @@ class search_manager_testcase extends advanced_testcase {
         $this->setUser($noaccess);
         $contexts = $search->get_areas_user_accesses()->usercontexts;
         $this->assertEquals(array($frontpageforumcontext->id => $frontpageforumcontext->id), $contexts[$this->forumpostareaid]);
-        $this->assertEquals(array($sitectx->id => $sitectx->id), $contexts[$this->mycoursesareaid]);
+        $this->assertEquals(array($sitectx->id => $sitectx->id), $contexts[$this->coursesareaid]);
         $mockctxs = array($noaccessctx->id => $noaccessctx->id, $frontpagectx->id => $frontpagectx->id);
         $this->assertEquals($mockctxs, $contexts[$mockareaid]);
 
@@ -573,7 +680,7 @@ class search_manager_testcase extends advanced_testcase {
             $context2->id => $context2->id);
         $this->assertEquals($frontpageandcourse1, $contexts[$this->forumpostareaid]);
         $this->assertEquals(array($sitectx->id => $sitectx->id, $course1ctx->id => $course1ctx->id),
-            $contexts[$this->mycoursesareaid]);
+            $contexts[$this->coursesareaid]);
         $mockctxs = array($teacherctx->id => $teacherctx->id,
                 $frontpagectx->id => $frontpagectx->id, $course1ctx->id => $course1ctx->id);
         $this->assertEquals($mockctxs, $contexts[$mockareaid]);
@@ -582,7 +689,7 @@ class search_manager_testcase extends advanced_testcase {
         $contexts = $search->get_areas_user_accesses()->usercontexts;
         $this->assertEquals($frontpageandcourse1, $contexts[$this->forumpostareaid]);
         $this->assertEquals(array($sitectx->id => $sitectx->id, $course1ctx->id => $course1ctx->id),
-            $contexts[$this->mycoursesareaid]);
+            $contexts[$this->coursesareaid]);
         $mockctxs = array($studentctx->id => $studentctx->id,
                 $frontpagectx->id => $frontpagectx->id, $course1ctx->id => $course1ctx->id);
         $this->assertEquals($mockctxs, $contexts[$mockareaid]);
@@ -601,23 +708,23 @@ class search_manager_testcase extends advanced_testcase {
             $context2->id => $context2->id, $context3->id => $context3->id);
         $this->assertEquals($allcontexts, $contexts[$this->forumpostareaid]);
         $this->assertEquals(array($sitectx->id => $sitectx->id, $course1ctx->id => $course1ctx->id,
-            $course2ctx->id => $course2ctx->id), $contexts[$this->mycoursesareaid]);
+            $course2ctx->id => $course2ctx->id), $contexts[$this->coursesareaid]);
 
         $contexts = $search->get_areas_user_accesses(array($course1->id, $course2->id))->usercontexts;
         $allcontexts = array($context1->id => $context1->id, $context2->id => $context2->id, $context3->id => $context3->id);
         $this->assertEquals($allcontexts, $contexts[$this->forumpostareaid]);
         $this->assertEquals(array($course1ctx->id => $course1ctx->id,
-            $course2ctx->id => $course2ctx->id), $contexts[$this->mycoursesareaid]);
+            $course2ctx->id => $course2ctx->id), $contexts[$this->coursesareaid]);
 
         $contexts = $search->get_areas_user_accesses(array($course2->id))->usercontexts;
         $allcontexts = array($context3->id => $context3->id);
         $this->assertEquals($allcontexts, $contexts[$this->forumpostareaid]);
-        $this->assertEquals(array($course2ctx->id => $course2ctx->id), $contexts[$this->mycoursesareaid]);
+        $this->assertEquals(array($course2ctx->id => $course2ctx->id), $contexts[$this->coursesareaid]);
 
         $contexts = $search->get_areas_user_accesses(array($course1->id))->usercontexts;
         $allcontexts = array($context1->id => $context1->id, $context2->id => $context2->id);
         $this->assertEquals($allcontexts, $contexts[$this->forumpostareaid]);
-        $this->assertEquals(array($course1ctx->id => $course1ctx->id), $contexts[$this->mycoursesareaid]);
+        $this->assertEquals(array($course1ctx->id => $course1ctx->id), $contexts[$this->coursesareaid]);
 
         // Test context limited search with no course limit.
         $contexts = $search->get_areas_user_accesses(false,
@@ -625,25 +732,39 @@ class search_manager_testcase extends advanced_testcase {
         $this->assertEquals([$frontpageforumcontext->id => $frontpageforumcontext->id],
                 $contexts[$this->forumpostareaid]);
         $this->assertEquals([$course2ctx->id => $course2ctx->id],
-                $contexts[$this->mycoursesareaid]);
+                $contexts[$this->coursesareaid]);
 
         // Test context limited search with course limit.
         $contexts = $search->get_areas_user_accesses([$course1->id, $course2->id],
                 [$frontpageforumcontext->id, $course2ctx->id])->usercontexts;
         $this->assertArrayNotHasKey($this->forumpostareaid, $contexts);
         $this->assertEquals([$course2ctx->id => $course2ctx->id],
-                $contexts[$this->mycoursesareaid]);
+                $contexts[$this->coursesareaid]);
 
         // Single context and course.
         $contexts = $search->get_areas_user_accesses([$course1->id], [$context1->id])->usercontexts;
         $this->assertEquals([$context1->id => $context1->id], $contexts[$this->forumpostareaid]);
-        $this->assertArrayNotHasKey($this->mycoursesareaid, $contexts);
+        $this->assertArrayNotHasKey($this->coursesareaid, $contexts);
+
+        // Enable "Include all visible courses" feature.
+        set_config('searchincludeallcourses', 1);
+        $contexts = $search->get_areas_user_accesses()->usercontexts;
+        $expected = [
+            $sitectx->id => $sitectx->id,
+            $course1ctx->id => $course1ctx->id,
+            $course2ctx->id => $course2ctx->id,
+            $course3ctx->id => $course3ctx->id
+        ];
+        // Check that a student has assess to all courses data when "searchincludeallcourses" is enabled.
+        $this->assertEquals($expected, $contexts[$this->coursesareaid]);
+        // But at the same time doesn't have access to activities in the courses that the student can't access.
+        $this->assertFalse(key_exists($context4->id, $contexts[$this->forumpostareaid]));
 
         // For admins, this is still limited only if we specify the things, so it should be same.
         $this->setAdminUser();
         $contexts = $search->get_areas_user_accesses([$course1->id], [$context1->id])->usercontexts;
         $this->assertEquals([$context1->id => $context1->id], $contexts[$this->forumpostareaid]);
-        $this->assertArrayNotHasKey($this->mycoursesareaid, $contexts);
+        $this->assertArrayNotHasKey($this->coursesareaid, $contexts);
     }
 
     /**
@@ -682,7 +803,7 @@ class search_manager_testcase extends advanced_testcase {
         $page->blocks->add_block_at_end_of_default_region('html');
 
         $forum = $this->getDataGenerator()->create_module('forum', array('course' => $course2->id));
-        $forumcontext = context_module::instance($forum->cmid);
+        $forumcontext = \context_module::instance($forum->cmid);
         $page = new \moodle_page();
         $page->set_context($forumcontext);
         $page->set_course($course2);
@@ -717,7 +838,7 @@ class search_manager_testcase extends advanced_testcase {
         $student3 = $generator->create_user();
         $generator->enrol_user($student3->id, $course3->id, 'student');
 
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
         $search->add_core_search_areas();
 
         // Admin gets 'true' result to function regardless of blocks.
@@ -747,7 +868,6 @@ class search_manager_testcase extends advanced_testcase {
         $this->assertEquals($contexts['block_html-content'], $limitedcontexts['block_html-content']);
 
         // Get block context ids for the blocks that appear.
-        global $DB;
         $blockcontextids = $DB->get_fieldset_sql('
             SELECT x.id
               FROM {block_instances} bi
@@ -768,6 +888,43 @@ class search_manager_testcase extends advanced_testcase {
     }
 
     /**
+     * Tests retrieval of users search areas when limiting to a course the user is not enrolled in
+     */
+    public function test_search_users_accesses_limit_non_enrolled_course() {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
+
+        $search = \testable_core_search::instance();
+        $search->add_core_search_areas();
+
+        $course = $this->getDataGenerator()->create_course();
+        $context = \context_course::instance($course->id);
+
+        // Limit courses to search to only those the user is enrolled in.
+        set_config('searchallavailablecourses', 0);
+
+        $usercontexts = $search->get_areas_user_accesses([$course->id])->usercontexts;
+        $this->assertNotEmpty($usercontexts);
+        $this->assertArrayNotHasKey('core_course-course', $usercontexts);
+
+        // This config ensures the search will also include courses the user can view.
+        set_config('searchallavailablecourses', 1);
+
+        // Allow "Authenticated user" role to view the course without being enrolled in it.
+        $userrole = $DB->get_record('role', ['shortname' => 'user'], '*', MUST_EXIST);
+        role_change_permission($userrole->id, $context, 'moodle/course:view', CAP_ALLOW);
+
+        $usercontexts = $search->get_areas_user_accesses([$course->id])->usercontexts;
+        $this->assertNotEmpty($usercontexts);
+        $this->assertArrayHasKey('core_course-course', $usercontexts);
+        $this->assertEquals($context->id, reset($usercontexts['core_course-course']));
+    }
+
+    /**
      * Test get_areas_user_accesses with regard to the 'all available courses' config option.
      *
      * @return void
@@ -780,22 +937,22 @@ class search_manager_testcase extends advanced_testcase {
         // Front page, including a forum.
         $frontpage = $DB->get_record('course', array('id' => SITEID));
         $forumfront = $this->getDataGenerator()->create_module('forum', array('course' => $frontpage->id));
-        $forumfrontctx = context_module::instance($forumfront->cmid);
+        $forumfrontctx = \context_module::instance($forumfront->cmid);
 
         // Course 1 does not allow guest access.
         $course1 = $this->getDataGenerator()->create_course((object)array(
                 'enrol_guest_status_0' => ENROL_INSTANCE_DISABLED,
                 'enrol_guest_password_0' => ''));
         $forum1 = $this->getDataGenerator()->create_module('forum', array('course' => $course1->id));
-        $forum1ctx = context_module::instance($forum1->cmid);
+        $forum1ctx = \context_module::instance($forum1->cmid);
 
         // Course 2 does not allow guest but is accessible by all users.
         $course2 = $this->getDataGenerator()->create_course((object)array(
                 'enrol_guest_status_0' => ENROL_INSTANCE_DISABLED,
                 'enrol_guest_password_0' => ''));
-        $course2ctx = context_course::instance($course2->id);
+        $course2ctx = \context_course::instance($course2->id);
         $forum2 = $this->getDataGenerator()->create_module('forum', array('course' => $course2->id));
-        $forum2ctx = context_module::instance($forum2->cmid);
+        $forum2ctx = \context_module::instance($forum2->cmid);
         assign_capability('moodle/course:view', CAP_ALLOW, $CFG->defaultuserroleid, $course2ctx->id);
 
         // Course 3 allows guest access without password.
@@ -803,7 +960,7 @@ class search_manager_testcase extends advanced_testcase {
                 'enrol_guest_status_0' => ENROL_INSTANCE_ENABLED,
                 'enrol_guest_password_0' => ''));
         $forum3 = $this->getDataGenerator()->create_module('forum', array('course' => $course2->id));
-        $forum3ctx = context_module::instance($forum3->cmid);
+        $forum3ctx = \context_module::instance($forum3->cmid);
 
         // Student user is enrolled in course 1.
         $student = $this->getDataGenerator()->create_user();
@@ -813,7 +970,7 @@ class search_manager_testcase extends advanced_testcase {
         $noaccess = $this->getDataGenerator()->create_user();
 
         // First test without the all available option.
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
 
         // Admin user can access everything.
         $this->setAdminUser();
@@ -868,16 +1025,16 @@ class search_manager_testcase extends advanced_testcase {
         $group3 = $generator->create_group(['courseid' => $course2->id]);
         $group4 = $generator->create_group(['courseid' => $course2->id]);
         $forum1s = $generator->create_module('forum', ['course' => $course1->id, 'groupmode' => SEPARATEGROUPS]);
-        $id1s = context_module::instance($forum1s->cmid)->id;
+        $id1s = \context_module::instance($forum1s->cmid)->id;
         $forum1v = $generator->create_module('forum', ['course' => $course1->id, 'groupmode' => VISIBLEGROUPS]);
-        $id1v = context_module::instance($forum1v->cmid)->id;
+        $id1v = \context_module::instance($forum1v->cmid)->id;
         $forum2s = $generator->create_module('forum', ['course' => $course2->id, 'groupmode' => SEPARATEGROUPS]);
-        $id2s = context_module::instance($forum2s->cmid)->id;
+        $id2s = \context_module::instance($forum2s->cmid)->id;
         $forum2n = $generator->create_module('forum', ['course' => $course2->id, 'groupmode' => NOGROUPS]);
-        $id2n = context_module::instance($forum2n->cmid)->id;
+        $id2n = \context_module::instance($forum2n->cmid)->id;
 
         // Get search instance.
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
         $search->add_core_search_areas();
 
         // User 1 is a manager in one course and a student in the other one. They belong to
@@ -955,12 +1112,12 @@ class search_manager_testcase extends advanced_testcase {
      */
     public function test_is_search_area() {
 
-        $this->assertFalse(testable_core_search::is_search_area('\asd\asd'));
-        $this->assertFalse(testable_core_search::is_search_area('\mod_forum\search\posta'));
-        $this->assertFalse(testable_core_search::is_search_area('\core_search\base_mod'));
-        $this->assertTrue(testable_core_search::is_search_area('\mod_forum\search\post'));
-        $this->assertTrue(testable_core_search::is_search_area('\\mod_forum\\search\\post'));
-        $this->assertTrue(testable_core_search::is_search_area('mod_forum\\search\\post'));
+        $this->assertFalse(\testable_core_search::is_search_area('\asd\asd'));
+        $this->assertFalse(\testable_core_search::is_search_area('\mod_forum\search\posta'));
+        $this->assertFalse(\testable_core_search::is_search_area('\core_search\base_mod'));
+        $this->assertTrue(\testable_core_search::is_search_area('\mod_forum\search\post'));
+        $this->assertTrue(\testable_core_search::is_search_area('\\mod_forum\\search\\post'));
+        $this->assertTrue(\testable_core_search::is_search_area('mod_forum\\search\\post'));
     }
 
     /**
@@ -974,13 +1131,13 @@ class search_manager_testcase extends advanced_testcase {
         $this->resetAfterTest();
 
         $course1 = $this->getDataGenerator()->create_course();
-        $course1ctx = context_course::instance($course1->id);
+        $course1ctx = \context_course::instance($course1->id);
         $course2 = $this->getDataGenerator()->create_course();
-        $course2ctx = context_course::instance($course2->id);
+        $course2ctx = \context_course::instance($course2->id);
         $forum1 = $this->getDataGenerator()->create_module('forum', ['course' => $course1->id]);
-        $forum1ctx = context_module::instance($forum1->cmid);
+        $forum1ctx = \context_module::instance($forum1->cmid);
         $forum2 = $this->getDataGenerator()->create_module('forum', ['course' => $course2->id]);
-        $forum2ctx = context_module::instance($forum2->cmid);
+        $forum2ctx = \context_module::instance($forum2->cmid);
 
         // Initially no requests.
         $this->assertEquals(0, $DB->count_records('search_index_requests'));
@@ -1082,10 +1239,10 @@ class search_manager_testcase extends advanced_testcase {
 
         $this->resetAfterTest();
 
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
 
         // When there are no index requests, nothing gets logged.
-        $progress = new progress_trace_buffer(new text_progress_trace(), false);
+        $progress = new \progress_trace_buffer(new \text_progress_trace(), false);
         $search->process_index_requests(0.0, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
@@ -1106,10 +1263,10 @@ class search_manager_testcase extends advanced_testcase {
         $forum2time = $now - 20;
 
         // Make 2 index requests.
-        testable_core_search::fake_current_time($now - 3);
-        $search::request_index(context_course::instance($course->id), 'mod_label-activity');
-        testable_core_search::fake_current_time($now - 2);
-        $search::request_index(context_module::instance($forum1->cmid));
+        \testable_core_search::fake_current_time($now - 3);
+        $search::request_index(\context_course::instance($course->id), 'mod_label-activity');
+        \testable_core_search::fake_current_time($now - 2);
+        $search::request_index(\context_module::instance($forum1->cmid));
 
         // Run with no time limit.
         $search->process_index_requests(0.0, $progress);
@@ -1117,23 +1274,23 @@ class search_manager_testcase extends advanced_testcase {
         $progress->reset_buffer();
 
         // Check that it's done both areas.
-        $this->assertContains(
+        $this->assertStringContainsString(
                 'Indexing requested context: Course: TCourse (search area: mod_label-activity)',
                 $out);
-        $this->assertContains(
+        $this->assertStringContainsString(
                 'Completed requested context: Course: TCourse (search area: mod_label-activity)',
                 $out);
-        $this->assertContains('Indexing requested context: Forum: TForum1', $out);
-        $this->assertContains('Completed requested context: Forum: TForum1', $out);
+        $this->assertStringContainsString('Indexing requested context: Forum: TForum1', $out);
+        $this->assertStringContainsString('Completed requested context: Forum: TForum1', $out);
 
         // Check the requests database table is now empty.
         $this->assertEquals(0, $DB->count_records('search_index_requests'));
 
         // Request indexing the course a couple of times.
-        testable_core_search::fake_current_time($now - 3);
-        $search::request_index(context_course::instance($course->id), 'mod_forum-activity');
-        testable_core_search::fake_current_time($now - 2);
-        $search::request_index(context_course::instance($course->id), 'mod_forum-post');
+        \testable_core_search::fake_current_time($now - 3);
+        $search::request_index(\context_course::instance($course->id), 'mod_forum-activity');
+        \testable_core_search::fake_current_time($now - 2);
+        $search::request_index(\context_course::instance($course->id), 'mod_forum-post');
 
         // Do the processing again with a time limit and indexing delay. The time limit is too
         // small; because of the way the logic works, this means it will index 2 activities.
@@ -1143,11 +1300,11 @@ class search_manager_testcase extends advanced_testcase {
         $progress->reset_buffer();
 
         // Confirm the right wrapper information was logged.
-        $this->assertContains(
+        $this->assertStringContainsString(
                 'Indexing requested context: Course: TCourse (search area: mod_forum-activity)',
                 $out);
-        $this->assertContains('Stopping indexing due to time limit', $out);
-        $this->assertContains(
+        $this->assertStringContainsString('Stopping indexing due to time limit', $out);
+        $this->assertStringContainsString(
                 'Ending requested context: Course: TCourse (search area: mod_forum-activity)',
                 $out);
 
@@ -1160,10 +1317,10 @@ class search_manager_testcase extends advanced_testcase {
         $search->process_index_requests(2.0, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
-        $this->assertContains(
+        $this->assertStringContainsString(
                 'Completed requested context: Course: TCourse (search area: mod_forum-activity)',
                 $out);
-        $this->assertContains(
+        $this->assertStringContainsString(
                 'Completed requested context: Course: TCourse (search area: mod_forum-post)',
                 $out);
 
@@ -1171,29 +1328,29 @@ class search_manager_testcase extends advanced_testcase {
         $this->assertEquals(0, $DB->count_records('search_index_requests'));
 
         // Make 2 requests - first one is low priority.
-        testable_core_search::fake_current_time($now - 3);
-        $search::request_index(context_module::instance($forum1->cmid), 'mod_forum-activity',
+        \testable_core_search::fake_current_time($now - 3);
+        $search::request_index(\context_module::instance($forum1->cmid), 'mod_forum-activity',
                 \core_search\manager::INDEX_PRIORITY_REINDEXING);
-        testable_core_search::fake_current_time($now - 2);
-        $search::request_index(context_module::instance($forum2->cmid), 'mod_forum-activity');
+        \testable_core_search::fake_current_time($now - 2);
+        $search::request_index(\context_module::instance($forum2->cmid), 'mod_forum-activity');
 
         // Process with short time limit and confirm it does the second one first.
         $search->process_index_requests(0.1, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
-        $this->assertContains(
+        $this->assertStringContainsString(
                 'Completed requested context: Forum: TForum2 (search area: mod_forum-activity)',
                 $out);
         $search->process_index_requests(0.1, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
-        $this->assertContains(
+        $this->assertStringContainsString(
                 'Completed requested context: Forum: TForum1 (search area: mod_forum-activity)',
                 $out);
 
         // Make a request for a course context...
         $course = $generator->create_course();
-        $context = context_course::instance($course->id);
+        $context = \context_course::instance($course->id);
         $search::request_index($context);
 
         // ...but then delete it (note: delete_course spews output, so we throw it away).
@@ -1205,9 +1362,266 @@ class search_manager_testcase extends advanced_testcase {
         $search->process_index_requests(10, $progress);
         $out = $progress->get_buffer();
         $progress->reset_buffer();
-        $this->assertContains('Skipped deleted context: ' . $context->id, $out);
+        $this->assertStringContainsString('Skipped deleted context: ' . $context->id, $out);
 
         // Confirm request table is now empty.
         $this->assertEquals(0, $DB->count_records('search_index_requests'));
+    }
+
+    /**
+     * Test search area categories.
+     */
+    public function test_get_search_area_categories() {
+        $categories = \core_search\manager::get_search_area_categories();
+
+        $this->assertTrue(is_array($categories));
+        $this->assertTrue(count($categories) >= 4); // We always should have 4 core categories.
+        $this->assertArrayHasKey('core-all', $categories);
+        $this->assertArrayHasKey('core-course-content', $categories);
+        $this->assertArrayHasKey('core-courses', $categories);
+        $this->assertArrayHasKey('core-users', $categories);
+
+        foreach ($categories as $category) {
+            $this->assertInstanceOf('\core_search\area_category', $category);
+        }
+    }
+
+    /**
+     * Test that we can find out if search area categories functionality is enabled.
+     */
+    public function test_is_search_area_categories_enabled() {
+        $this->resetAfterTest();
+
+        $this->assertFalse(\core_search\manager::is_search_area_categories_enabled());
+        set_config('searchenablecategories', 1);
+        $this->assertTrue(\core_search\manager::is_search_area_categories_enabled());
+        set_config('searchenablecategories', 0);
+        $this->assertFalse(\core_search\manager::is_search_area_categories_enabled());
+    }
+
+    /**
+     * Test that we can find out if hiding all results category is enabled.
+     */
+    public function test_should_hide_all_results_category() {
+        $this->resetAfterTest();
+
+        $this->assertEquals(0, \core_search\manager::should_hide_all_results_category());
+        set_config('searchhideallcategory', 1);
+        $this->assertEquals(1, \core_search\manager::should_hide_all_results_category());
+        set_config('searchhideallcategory', 0);
+        $this->assertEquals(0, \core_search\manager::should_hide_all_results_category());
+    }
+
+    /**
+     * Test that we can get default search category name.
+     */
+    public function test_get_default_area_category_name() {
+        $this->resetAfterTest();
+
+        $expected = 'core-all';
+        $this->assertEquals($expected, \core_search\manager::get_default_area_category_name());
+
+        set_config('searchhideallcategory', 1);
+        $expected = 'core-course-content';
+        $this->assertEquals($expected, \core_search\manager::get_default_area_category_name());
+
+        set_config('searchhideallcategory', 0);
+        $expected = 'core-all';
+        $this->assertEquals($expected, \core_search\manager::get_default_area_category_name());
+    }
+
+    /**
+     * Test that we can get correct search area category by its name.
+     */
+    public function test_get_search_area_category_by_name() {
+        $this->resetAfterTest();
+
+        $testcategory = \core_search\manager::get_search_area_category_by_name('test_random_name');
+        $this->assertEquals('core-all', $testcategory->get_name());
+
+        $testcategory = \core_search\manager::get_search_area_category_by_name('core-courses');
+        $this->assertEquals('core-courses', $testcategory->get_name());
+
+        set_config('searchhideallcategory', 1);
+        $testcategory = \core_search\manager::get_search_area_category_by_name('test_random_name');
+        $this->assertEquals('core-course-content', $testcategory->get_name());
+    }
+
+    /**
+     * Test that we can check that "Include all visible courses" feature is enabled.
+     */
+    public function test_include_all_courses_enabled() {
+        $this->resetAfterTest();
+        $this->assertFalse(\core_search\manager::include_all_courses());
+        set_config('searchincludeallcourses', 1);
+        $this->assertTrue(\core_search\manager::include_all_courses());
+    }
+
+    /**
+     * Test that we can correctly build a list of courses for a course filter for the search results.
+     */
+    public function test_build_limitcourseids() {
+        global $USER;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $course1 = $this->getDataGenerator()->create_course();
+        $course2 = $this->getDataGenerator()->create_course();
+        $course3 = $this->getDataGenerator()->create_course();
+        $course4 = $this->getDataGenerator()->create_course();
+
+        $this->getDataGenerator()->enrol_user($USER->id, $course1->id);
+        $this->getDataGenerator()->enrol_user($USER->id, $course3->id);
+
+        $search = \testable_core_search::instance();
+
+        $formdata = new \stdClass();
+        $formdata->courseids = [];
+        $formdata->mycoursesonly = false;
+        $limitcourseids = $search->build_limitcourseids($formdata);
+        $this->assertEquals(false, $limitcourseids);
+
+        $formdata->courseids = [];
+        $formdata->mycoursesonly = true;
+        $limitcourseids = $search->build_limitcourseids($formdata);
+        $this->assertEquals([$course1->id, $course3->id], $limitcourseids);
+
+        $formdata->courseids = [$course1->id, $course2->id, $course4->id];
+        $formdata->mycoursesonly = false;
+        $limitcourseids = $search->build_limitcourseids($formdata);
+        $this->assertEquals([$course1->id, $course2->id, $course4->id], $limitcourseids);
+
+        $formdata->courseids = [$course1->id, $course2->id, $course4->id];
+        $formdata->mycoursesonly = true;
+        $limitcourseids = $search->build_limitcourseids($formdata);
+        $this->assertEquals([$course1->id], $limitcourseids);
+    }
+
+    /**
+     * Test data for test_parse_areaid test fucntion.
+     *
+     * @return array
+     */
+    public function parse_search_area_id_data_provider() {
+        return [
+            ['mod_book-chapter', ['mod_book', 'search_chapter']],
+            ['mod_customcert-activity', ['mod_customcert', 'search_activity']],
+            ['core_course-mycourse', ['core_search', 'core_course_mycourse']],
+        ];
+    }
+
+    /**
+     * Test that manager class can parse area id correctly.
+     * @dataProvider parse_search_area_id_data_provider
+     *
+     * @param string $areaid Area id to parse.
+     * @param array $expected Expected result of parsing.
+     */
+    public function test_parse_search_area_id($areaid, $expected) {
+        $this->assertEquals($expected, \core_search\manager::parse_areaid($areaid));
+    }
+
+    /**
+     * Test that manager class will throw an exception when parsing an invalid area id.
+     */
+    public function test_parse_invalid_search_area_id() {
+        $this->expectException('coding_exception');
+        $this->expectExceptionMessage('Trying to parse invalid search area id invalid_area');
+        \core_search\manager::parse_areaid('invalid_area');
+    }
+
+    /**
+     * Test getting a coding exception when trying to lean up existing search area.
+     */
+    public function test_cleaning_up_existing_search_area() {
+        $expectedmessage = "Area mod_assign-activity exists. Please use appropriate search area class to manipulate the data.";
+
+        $this->expectException('coding_exception');
+        $this->expectExceptionMessage($expectedmessage);
+
+        \core_search\manager::clean_up_non_existing_area('mod_assign-activity');
+    }
+
+    /**
+     * Test clean up of non existing search area.
+     */
+    public function test_clean_up_non_existing_search_area() {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $areaid = 'core_course-mycourse';
+        $plugin = 'core_search';
+
+        // Get all settings to DB and make sure they are there.
+        foreach (\core_search\base::get_settingnames() as $settingname) {
+            $record = new \stdClass();
+            $record->plugin = $plugin;
+            $record->name = 'core_course_mycourse'. $settingname;
+            $record->value = 'test';
+
+            $DB->insert_record('config_plugins', $record);
+            $this->assertTrue($DB->record_exists('config_plugins', ['plugin' => $plugin, 'name' => $record->name]));
+        }
+
+        // Clean up the search area.
+        \core_search\manager::clean_up_non_existing_area($areaid);
+
+        // Check that records are not in DB after we ran clean up.
+        foreach (\core_search\base::get_settingnames() as $settingname) {
+            $plugin = 'core_search';
+            $name = 'core_course_mycourse'. $settingname;
+            $this->assertFalse($DB->record_exists('config_plugins', ['plugin' => $plugin, 'name' => $name]));
+        }
+    }
+
+    /**
+     * Tests the context_deleted, course_deleting_start, and course_deleting_finish methods.
+     */
+    public function test_context_deletion() {
+        $this->resetAfterTest();
+
+        // Create one course with 4 activities, and another with one.
+        $generator = $this->getDataGenerator();
+        $course1 = $generator->create_course();
+        $page1 = $generator->create_module('page', ['course' => $course1]);
+        $context1 = \context_module::instance($page1->cmid);
+        $page2 = $generator->create_module('page', ['course' => $course1]);
+        $page3 = $generator->create_module('page', ['course' => $course1]);
+        $context3 = \context_module::instance($page3->cmid);
+        $page4 = $generator->create_module('page', ['course' => $course1]);
+        $course2 = $generator->create_course();
+        $page5 = $generator->create_module('page', ['course' => $course2]);
+        $context5 = \context_module::instance($page5->cmid);
+
+        // Also create a user.
+        $user = $generator->create_user();
+        $usercontext = \context_user::instance($user->id);
+
+        $search = \testable_core_search::instance();
+
+        // Delete two of the pages individually.
+        course_delete_module($page1->cmid);
+        course_delete_module($page3->cmid);
+
+        // Delete the course with another two.
+        delete_course($course1->id, false);
+
+        // Delete the user.
+        delete_user($user);
+
+        // Delete the page from the other course.
+        course_delete_module($page5->cmid);
+
+        // It should have deleted the contexts and the course, but not the contexts in the course.
+        $expected = [
+            ['context', $context1->id],
+            ['context', $context3->id],
+            ['course', $course1->id],
+            ['context', $usercontext->id],
+            ['context', $context5->id]
+        ];
+        $this->assertEquals($expected, $search->get_engine()->get_and_clear_deletes());
     }
 }

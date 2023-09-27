@@ -61,7 +61,7 @@ class file_info_context_coursecat extends file_info {
     public function get_file_info($component, $filearea, $itemid, $filepath, $filename) {
         global $DB;
 
-        if (!$this->category->visible and !has_capability('moodle/category:viewhiddencategories', $this->context)) {
+        if (!core_course_category::can_view_category($this->category)) {
             if (empty($component)) {
                 // we can not list the category contents, so try parent, or top system
                 if ($this->category->parent and $pc = $DB->get_record('course_categories', array('id'=>$this->category->parent))) {
@@ -101,7 +101,7 @@ class file_info_context_coursecat extends file_info {
             // No coursecat description area for "system".
             return null;
         }
-        if (!$this->category->visible and !has_capability('moodle/category:viewhiddencategories', $this->context)) {
+        if (!core_course_category::can_view_category($this->category)) {
             return null;
         }
         if (!has_capability('moodle/category:manage', $this->context)) {
@@ -192,23 +192,49 @@ class file_info_context_coursecat extends file_info {
         global $DB, $CFG;
         require_once($CFG->libdir.'/modinfolib.php');
 
-        $params = array('category' => $this->category->id, 'contextlevel' => CONTEXT_COURSE);
-        $sql = 'c.category = :category';
+        // Let's retrieve only minimum number of fields from course table -
+        // what is needed to check access or call get_fast_modinfo().
+        $coursefields = array_merge(['id', 'visible', 'sortorder'], \course_modinfo::$cachedfields);
+        $fields = 'c.' . join(',c.', $coursefields) . ', ' .
+            \context_helper::get_preload_record_columns_sql('ctx');
 
+        // First statement uses only category.
+        $sql1 = "SELECT $fields
+                   FROM {course} c
+                   JOIN {context} ctx ON (ctx.instanceid = c.id) AND (ctx.contextlevel = :contextlevel1)
+                  WHERE c.category = :categoryid";
+
+        $params = ['categoryid' => $this->category->id, 'contextlevel1' => CONTEXT_COURSE];
+
+        if (empty($hiddencats)) {
+            return $DB->get_records_sql($sql1, $params);
+        }
+
+        // Second statement uses only context paths.
+        $orcond = [];
         foreach ($hiddencats as $category) {
             $catcontext = context_coursecat::instance($category->id);
-            $sql .= ' OR ' . $DB->sql_like('ctx.path', ':path' . $category->id);
+
+            // Case- and accent-sensitive search is not necessary for paths.
+            // If we do without it, this will lead to an enormous performance boost on large scale tables.
+            $orcond[] = $DB->sql_like('path', ':path' . $category->id, false, false);
+
             $params['path' . $category->id] = $catcontext->path . '/%';
         }
 
-        // Let's retrieve only minimum number of fields from course table -
-        // what is needed to check access or call get_fast_modinfo().
-        $coursefields = array_merge(['id', 'visible'], course_modinfo::$cachedfields);
-        $fields = 'c.' . join(',c.', $coursefields) . ', ' .
-            context_helper::get_preload_record_columns_sql('ctx');
-        return $DB->get_records_sql('SELECT ' . $fields . ' FROM {course} c
-                JOIN {context} ctx ON (ctx.instanceid = c.id AND ctx.contextlevel = :contextlevel)
-                WHERE ('.$sql.') ORDER BY c.sortorder', $params);
+        $sql2 = "SELECT $fields
+                   FROM {course} c
+                   JOIN {context} ctx ON (ctx.instanceid = c.id) AND (ctx.contextlevel = :contextlevel2)
+                  WHERE (" . implode(' OR ', $orcond) . ")";
+
+        $params['contextlevel2'] = CONTEXT_COURSE;
+
+        // Combine with UNION.
+        $sql = "SELECT *
+                  FROM (($sql1) UNION ($sql2)) d
+              ORDER BY d.sortorder";
+
+        return $DB->get_records_sql($sql, $params);
     }
 
     /**
@@ -228,8 +254,7 @@ class file_info_context_coursecat extends file_info {
 
         foreach ($coursecats as $id => &$category) {
             context_helper::preload_from_record($category);
-            $context = context_coursecat::instance($category->id);
-            if (!$category->visible && !has_capability('moodle/category:viewhiddencategories', $context)) {
+            if (!core_course_category::can_view_category($category)) {
                 $hiddencats[$id] = $coursecats[$id];
                 unset($coursecats[$id]);
             }

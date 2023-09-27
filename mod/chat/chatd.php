@@ -97,6 +97,45 @@ class ChatDaemon {
     public $setsinfo = array(); // Keyed by sessionid exactly like conn_sets, one of these for each of those.
     public $chatrooms = array(); // Keyed by chatid, holding arrays of data.
 
+    /** @var int error reporting level. */
+    public $_trace_level;
+
+    /** @var bool true if function_name exists and is a function, false otherwise. */
+    public $_pcntl_exists;
+
+    /** @var int */
+    public $_time_rest_socket;
+
+    /** @var string beep file location. */
+    public $_beepsoundsrc;
+
+    /** @var int update frequency records. */
+    public $_freq_update_records;
+
+    /** @var int upper limit value in seconds to detect a user has disconnected or not. */
+    public $_freq_poll_idle_chat;
+
+    /** @var resource|false a file pointer resource on success, or false on error. */
+    public $_stdout;
+
+    /** @var array user data with session ID as the key. */
+    public $sets_info = [];
+
+    /** @var array connection data with session ID as the key. */
+    public $conn_sets = [];
+
+    /** @var array connection data. */
+    public $conn_side = [];
+
+    /** @var array connection data. */
+    public $conn_half = [];
+
+    /** @var array connection data. */
+    public $conn_ufo = [];
+
+    /** @var resource|Socket socket resource. */
+    public $listen_socket;
+
     // IMPORTANT: $connectionssets, $setsinfo and $chatrooms must remain synchronized!
     //            Pay extra attention when you write code that affects any of them!
 
@@ -1007,7 +1046,7 @@ while (true) {
                         if (!preg_match('/beep=([^&]*)[& ]/', $data, $info)) {
                             $daemon->trace('Beep sidekick did not contain a valid userid', E_USER_WARNING);
                             $daemon->dismiss_ufo($handle, true, 'Request with malformed data; connection closed');
-                            continue;
+                            continue 2;
                         } else {
                             $customdata = array('beep' => intval($info[1]));
                         }
@@ -1017,7 +1056,7 @@ while (true) {
                         if (!preg_match('/chat_message=([^&]*)[& ]chat_msgidnr=([^&]*)[& ]/', $data, $info)) {
                             $daemon->trace('Message sidekick did not contain a valid message', E_USER_WARNING);
                             $daemon->dismiss_ufo($handle, true, 'Request with malformed data; connection closed');
-                            continue;
+                            continue 2;
                         } else {
                             $customdata = array('message' => $info[1], 'index' => $info[2]);
                         }
@@ -1025,7 +1064,7 @@ while (true) {
                     default:
                         $daemon->trace('UFO with '.$handle.': Request with unknown type; connection closed', E_USER_WARNING);
                         $daemon->dismiss_ufo($handle, true, 'Request with unknown type; connection closed');
-                        continue;
+                        continue 2;
                     break;
                 }
 

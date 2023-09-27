@@ -2,7 +2,7 @@
 /**
  * Copyright 2005-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -499,8 +499,16 @@ extends Horde_Imap_Client_Cache_Backend
      */
     public function serialize()
     {
+        return $this->__serialize();
+    }
+
+    /**
+     * @return array
+     */
+    public function __serialize()
+    {
         $this->save();
-        return parent::serialize();
+        return parent::__serialize();
     }
 
 }

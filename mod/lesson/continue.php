@@ -76,13 +76,16 @@ if ($result->nodefaultresponse || $result->inmediatejump) {
 
 // Set Messages.
 $lesson->add_messages_on_page_process($page, $result, $reviewmode);
-
+$PAGE->set_secondary_active_tab('modulepage');
 $PAGE->set_url('/mod/lesson/view.php', array('id' => $cm->id, 'pageid' => $page->id));
 $PAGE->set_subpage($page->id);
 
 /// Print the header, heading and tabs
 lesson_add_fake_blocks($PAGE, $cm, $lesson, $timer);
 echo $lessonoutput->header($lesson, $cm, 'view', true, $page->id, get_string('continue', 'lesson'));
+
+$editbuttons = new \mod_lesson\output\edit_action_buttons($lesson, $page->id ?? null);
+echo $lessonoutput->render($editbuttons);
 
 if ($lesson->displayleft) {
     echo '<a name="maincontent" id="maincontent" title="'.get_string('anchortitle', 'lesson').'"></a>';
@@ -92,34 +95,33 @@ if ($lesson->ongoing && !$reviewmode) {
     echo $lessonoutput->ongoing_score($lesson);
 }
 if (!$reviewmode) {
-    echo format_text($result->feedback, FORMAT_MOODLE, array('context' => $context));
+    echo format_text($result->feedback, FORMAT_MOODLE, array('context' => $context, 'noclean' => true));
 }
 
 // User is modifying attempts - save button and some instructions
 if (isset($USER->modattempts[$lesson->id])) {
-    $url = $CFG->wwwroot.'/mod/lesson/view.php';
     $content = $OUTPUT->box(get_string("gotoendoflesson", "lesson"), 'center');
     $content .= $OUTPUT->box(get_string("or", "lesson"), 'center');
     $content .= $OUTPUT->box(get_string("continuetonextpage", "lesson"), 'center');
-    $content .= html_writer::empty_tag('input', array('type'=>'hidden', 'name'=>'id', 'value'=>$cm->id));
-    $content .= html_writer::empty_tag('input', array('type'=>'hidden', 'name'=>'pageid', 'value'=>LESSON_EOL));
-    $content .= html_writer::empty_tag('input', array('type'=>'submit', 'name'=>'submit', 'value'=>get_string('finish', 'lesson')));
-    echo html_writer::tag('form', "<div>$content</div>", array('method'=>'post', 'action'=>$url));
+    $url = new moodle_url('/mod/lesson/view.php', array('id' => $cm->id, 'pageid' => LESSON_EOL));
+    echo $content . $OUTPUT->single_button($url, get_string('finish', 'lesson'));
 }
 
 // Review button back
 if (!$result->correctanswer && !$result->noanswer && !$result->isessayquestion && !$reviewmode && $lesson->review && !$result->maxattemptsreached) {
-    $url = $CFG->wwwroot.'/mod/lesson/view.php';
-    $content = html_writer::empty_tag('input', array('type'=>'hidden', 'name'=>'id', 'value'=>$cm->id));
-    $content .= html_writer::empty_tag('input', array('type'=>'hidden', 'name'=>'pageid', 'value'=>$page->id));
-    $content .= html_writer::empty_tag('input', array('type'=>'submit', 'name'=>'submit', 'value'=>get_string('reviewquestionback', 'lesson')));
-    echo html_writer::tag('form', "<div class=\"singlebutton\">$content</div>", array('method'=>'post', 'action'=>$url));
+    $url = new moodle_url('/mod/lesson/view.php', array('id' => $cm->id, 'pageid' => $page->id));
+    echo $OUTPUT->single_button($url, get_string('reviewquestionback', 'lesson'));
 }
 
 $url = new moodle_url('/mod/lesson/view.php', array('id'=>$cm->id, 'pageid'=>$result->newpageid));
+
 if ($lesson->review && !$result->correctanswer && !$result->noanswer && !$result->isessayquestion && !$result->maxattemptsreached) {
-    // Button to continue the lesson (the page to go is configured by the teacher).
-    echo $OUTPUT->single_button($url, get_string('reviewquestioncontinue', 'lesson'));
+    // If both the "Yes, I'd like to try again" and "No, I just want to go on  to the next question" point to the same
+    // page then don't show the "No, I just want to go on to the next question" button. It's confusing.
+    if ($page->id != $result->newpageid) {
+        // Button to continue the lesson (the page to go is configured by the teacher).
+        echo $OUTPUT->single_button($url, get_string('reviewquestioncontinue', 'lesson'));
+    }
 } else {
     // Normal continue button
     echo $OUTPUT->single_button($url, get_string('continue', 'lesson'));

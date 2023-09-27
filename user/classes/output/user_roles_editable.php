@@ -14,22 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Contains class core_user\output\user_roles_editable
- *
- * @package   core_user
- * @copyright 2017 Damyon Wiese
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
 namespace core_user\output;
 
 use context_course;
 use core_user;
-use core_external;
+use core_external\external_api;
 use coding_exception;
-
-defined('MOODLE_INTERNAL') || die();
 
 /**
  * Class to display list of user roles.
@@ -128,7 +118,7 @@ class user_roles_editable extends \core\output\inplace_editable {
         }
 
         if (!empty($listofroles)) {
-            $this->displayvalue = implode($listofroles, ', ');
+            $this->displayvalue = implode(', ', $listofroles);
         } else if (!empty($roleids) && empty($viewableroleids)) {
             $this->displayvalue = get_string('novisibleroles', 'role');
         } else {
@@ -145,9 +135,8 @@ class user_roles_editable extends \core\output\inplace_editable {
      * @return \self
      */
     public static function update($itemid, $newvalue) {
-        global $DB, $CFG;
+        global $DB;
 
-        require_once($CFG->libdir . '/external/externallib.php');
         // Check caps.
         // Do the thing.
         // Return one of me.
@@ -163,7 +152,7 @@ class user_roles_editable extends \core\output\inplace_editable {
 
         // Check user is enrolled in the course.
         $context = context_course::instance($courseid);
-        core_external::validate_context($context);
+        external_api::validate_context($context);
 
         // Check permissions.
         require_capability('moodle/role:assign', $context);
@@ -173,8 +162,8 @@ class user_roles_editable extends \core\output\inplace_editable {
         }
 
         // Check that all the groups belong to the course.
-        $allroles = role_fix_names(get_all_roles($context), $context);
-        $assignableroles = get_assignable_roles($context, ROLENAME_ALIAS, false);
+        $allroles = role_fix_names(get_all_roles($context), $context, ROLENAME_BOTH);
+        $assignableroles = get_assignable_roles($context, ROLENAME_BOTH, false);
         $viewableroles = get_viewable_roles($context);
         $userrolesbyid = get_user_roles($context, $userid, true, 'c.contextlevel DESC, r.sortorder ASC');
         $profileroles = get_profile_roles($context);

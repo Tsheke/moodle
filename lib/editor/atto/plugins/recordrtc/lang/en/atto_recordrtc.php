@@ -25,7 +25,7 @@
  */
 
 $string['allowedtypes'] = 'Allowed types';
-$string['allowedtypes_desc'] = 'Which recording buttons should appear in Atto';
+$string['allowedtypes_desc'] = 'Which recording buttons should appear in Atto. In addition to this setting, there are also capabilities which can control access to the buttons to particular users in particular contexts.';
 $string['attachrecording'] = 'Attach recording';
 $string['audioandvideo'] = 'Audio and video';
 $string['audiobitrate'] = 'Audio bitrate';
@@ -61,11 +61,16 @@ $string['pluginname'] = 'RecordRTC';
 $string['privacy:metadata'] = 'The RecordRTC plugin does not store any personal data.';
 $string['recordagain'] = 'Record again';
 $string['recordingfailed'] = 'Recording failed, try again';
+$string['recordrtc:recordaudio'] = 'Record audio directly into the text editor';
+$string['recordrtc:recordvideo'] = 'Record video directly into the text editor';
 $string['settings'] = 'RecordRTC settings';
 $string['startrecording'] = 'Start recording';
 $string['stoprecording'] = 'Stop recording';
-$string['timelimit'] = 'Time limit in seconds';
-$string['timelimit_desc'] = 'Maximum recording length allowed for the audio/video clips';
+$string['audiotimelimit'] = 'Audio time limit in seconds';
+$string['audiotimelimit_desc'] = 'Maximum recording length allowed for the audio clips';
+$string['videotimelimit'] = 'Video time limit in seconds';
+$string['videotimelimit_desc'] = 'Maximum recording length allowed for the video clips';
+$string['timelimitwarning'] = 'You must enter a number that is greater than 0.';
 $string['uploadaborted'] = 'Upload aborted:';
 $string['uploadfailed'] = 'Upload failed:';
 $string['uploadfailed404'] = 'Upload failed: file too large';
@@ -73,3 +78,7 @@ $string['uploadprogress'] = 'completed';
 $string['videobitrate'] = 'Video bitrate';
 $string['videobitrate_desc'] = 'Quality of video recording (larger number means higher quality)';
 $string['videortc'] = 'Record video';
+
+// Deprecated since Moodle 4.0.
+$string['timelimit'] = 'Time limit in seconds';
+$string['timelimit_desc'] = 'Maximum recording length allowed for the audio/video clips';

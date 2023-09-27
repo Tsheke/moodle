@@ -42,11 +42,14 @@ $navurl = new moodle_url('/badges/index.php', array('type' => $badge->type));
 
 if ($badge->type == BADGE_TYPE_COURSE) {
     require_login($badge->courseid);
+    $course = get_course($badge->courseid);
+    $heading = format_string($course->fullname, true, ['context' => $context]);
     $navurl = new moodle_url('/badges/index.php', array('type' => $badge->type, 'id' => $badge->courseid));
     $PAGE->set_pagelayout('standard');
     navigation_node::override_active_url($navurl);
 } else {
     $PAGE->set_pagelayout('admin');
+    $heading = get_string('administrationsite');
     navigation_node::override_active_url($navurl, true);
 }
 
@@ -67,7 +70,7 @@ if ($copy) {
     $cloneid = $badge->make_clone();
     // If a user can edit badge details, they will be redirected to the edit page.
     if (has_capability('moodle/badges:configuredetails', $context)) {
-        redirect(new moodle_url('/badges/edit.php', array('id' => $cloneid, 'action' => 'details')));
+        redirect(new moodle_url('/badges/edit.php', array('id' => $cloneid, 'action' => 'badge')));
     }
     redirect(new moodle_url('/badges/overview.php', array('id' => $cloneid)));
 }
@@ -107,7 +110,7 @@ if ($activate) {
     $strheading = get_string('reviewbadge', 'badges');
     $PAGE->navbar->add($strheading);
     $PAGE->set_title($strheading);
-    $PAGE->set_heading($badge->name);
+    $PAGE->set_heading($heading);
     echo $OUTPUT->header();
     echo $OUTPUT->heading($strheading);
 

@@ -30,8 +30,20 @@ require_once('lib.php');
 redirect_if_major_upgrade_required();
 
 $testsession = optional_param('testsession', 0, PARAM_INT); // test session works properly
-$anchor      = optional_param('anchor', '', PARAM_RAW);      // Used to restore hash anchor to wantsurl.
+$anchor      = optional_param('anchor', '', PARAM_RAW);     // Used to restore hash anchor to wantsurl.
+
 $resendconfirmemail = optional_param('resendconfirmemail', false, PARAM_BOOL);
+
+// It might be safe to do this for non-Behat sites, or there might
+// be a security risk. For now we only allow it on Behat sites.
+// If you wants to do the analysis, you may be able to remove the
+// if (BEHAT_SITE_RUNNING).
+if (defined('BEHAT_SITE_RUNNING') && BEHAT_SITE_RUNNING) {
+    $wantsurl    = optional_param('wantsurl', '', PARAM_LOCALURL);   // Overrides $SESSION->wantsurl if given.
+    if ($wantsurl !== '') {
+        $SESSION->wantsurl = (new moodle_url($wantsurl))->out(false);
+    }
+}
 
 $context = context_system::instance();
 $PAGE->set_url("$CFG->wwwroot/login/index.php");
@@ -40,6 +52,7 @@ $PAGE->set_pagelayout('login');
 
 /// Initialize variables
 $errormsg = '';
+$infomsg = '';
 $errorcode = 0;
 
 // login page requested session test
@@ -67,13 +80,13 @@ if (!empty($SESSION->has_timed_out)) {
     $session_has_timed_out = false;
 }
 
-/// auth plugins may override these - SSO anyone?
 $frm  = false;
 $user = false;
 
-$authsequence = get_enabled_auth_plugins(true); // auths, in sequence
+$authsequence = get_enabled_auth_plugins(); // Auths, in sequence.
 foreach($authsequence as $authname) {
     $authplugin = get_auth_plugin($authname);
+    // The auth plugin's loginpage_hook() can eventually set $frm and/or $user.
     $authplugin->loginpage_hook();
 }
 
@@ -132,13 +145,15 @@ if ($frm and isset($frm->username)) {                             // Login WITH 
     }
 
     if ($user) {
-        //user already supplied by aut plugin prelogin hook
+        // The auth plugin has already provided the user via the loginpage_hook() called above.
     } else if (($frm->username == 'guest') and empty($CFG->guestloginbutton)) {
         $user = false;    /// Can't log in as guest if guest button is disabled
         $frm = false;
     } else {
         if (empty($errormsg)) {
-            $user = authenticate_user_login($frm->username, $frm->password, false, $errorcode);
+            $logintoken = isset($frm->logintoken) ? $frm->logintoken : '';
+            $loginrecaptcha = $frm->{'g-recaptcha-response'} ?? false;
+            $user = authenticate_user_login($frm->username, $frm->password, false, $errorcode, $logintoken, $loginrecaptcha);
         }
     }
 
@@ -180,12 +195,13 @@ if ($frm and isset($frm->username)) {                             // Login WITH 
                     echo $OUTPUT->notification(get_string('emailconfirmsentsuccess'), \core\output\notification::NOTIFY_SUCCESS);
                 }
             }
-            echo $OUTPUT->box(get_string("emailconfirmsent", "", $user->email), "generalbox boxaligncenter");
+            echo $OUTPUT->box(get_string("emailconfirmsent", "", s($user->email)), "generalbox boxaligncenter");
             $resendconfirmurl = new moodle_url('/login/index.php',
                 [
                     'username' => $frm->username,
                     'password' => $frm->password,
-                    'resendconfirmemail' => true
+                    'resendconfirmemail' => true,
+                    'logintoken' => \core\session\manager::get_login_token()
                 ]
             );
             echo $OUTPUT->single_button($resendconfirmurl, get_string('emailconfirmationresend'));
@@ -204,7 +220,7 @@ if ($frm and isset($frm->username)) {                             // Login WITH 
             // auth plugins can temporarily override this from loginpage_hook()
             // do not save $CFG->nolastloggedin in database!
 
-        } else if (empty($CFG->rememberusername) or ($CFG->rememberusername == 2 and empty($frm->rememberusername))) {
+        } else if (empty($CFG->rememberusername)) {
             // no permanent cookies, delete old one if exists
             set_moodle_cookie('');
 
@@ -230,7 +246,7 @@ if ($frm and isset($frm->username)) {                             // Login WITH 
                 $passwordchangeurl = $CFG->wwwroot.'/login/change_password.php';
             }
             $days2expire = $userauth->password_expire($USER->username);
-            $PAGE->set_title("$site->fullname: $loginsite");
+            $PAGE->set_title($loginsite);
             $PAGE->set_heading("$site->fullname");
             if (intval($days2expire) > 0 && intval($days2expire) < intval($userauth->config->expiration_warning)) {
                 echo $OUTPUT->header();
@@ -256,6 +272,7 @@ if ($frm and isset($frm->username)) {                             // Login WITH 
 
         // Discard any errors before the last redirect.
         unset($SESSION->loginerrormsg);
+        unset($SESSION->logininfomsg);
 
         // test the session actually works by redirecting to self
         $SESSION->wantsurl = $urltogo;
@@ -265,6 +282,8 @@ if ($frm and isset($frm->username)) {                             // Login WITH 
         if (empty($errormsg)) {
             if ($errorcode == AUTH_LOGIN_UNAUTHORISED) {
                 $errormsg = get_string("unauthorisedlogin", "", $frm->username);
+            } else if ($errorcode == AUTH_LOGIN_FAILED_RECAPTCHA) {
+                $errormsg = get_string('missingrecaptchachallengefield');
             } else {
                 $errormsg = get_string("invalidlogin");
                 $errorcode = 3;
@@ -300,7 +319,7 @@ if (!empty($CFG->alternateloginurl)) {
 
     $loginurlstr = $loginurl->out(false);
 
-    if (strpos($SESSION->wantsurl, $loginurlstr) === 0) {
+    if ($SESSION->wantsurl != '' && strpos($SESSION->wantsurl, $loginurlstr) === 0) {
         // We do not want to return to alternate url.
         $SESSION->wantsurl = null;
     }
@@ -330,14 +349,17 @@ if (empty($frm->username) && $authsequence[0] != 'shibboleth') {  // See bug 518
     $frm->password = "";
 }
 
-if (!empty($SESSION->loginerrormsg)) {
-    // We had some errors before redirect, show them now.
-    $errormsg = $SESSION->loginerrormsg;
+if (!empty($SESSION->loginerrormsg) || !empty($SESSION->logininfomsg)) {
+    // We had some messages before redirect, show them now.
+    $errormsg = $SESSION->loginerrormsg ?? '';
+    $infomsg = $SESSION->logininfomsg ?? '';
     unset($SESSION->loginerrormsg);
+    unset($SESSION->logininfomsg);
 
 } else if ($testsession) {
     // No need to redirect here.
     unset($SESSION->loginerrormsg);
+    unset($SESSION->logininfomsg);
 
 } else if ($errormsg or !empty($frm->password)) {
     // We must redirect after every password submission.
@@ -347,7 +369,7 @@ if (!empty($SESSION->loginerrormsg)) {
     redirect(new moodle_url('/login/index.php'));
 }
 
-$PAGE->set_title("$site->fullname: $loginsite");
+$PAGE->set_title($loginsite);
 $PAGE->set_heading("$site->fullname");
 
 echo $OUTPUT->header();
@@ -362,6 +384,7 @@ if (isloggedin() and !isguestuser()) {
 } else {
     $loginform = new \core_auth\output\login($authsequence, $frm->username);
     $loginform->set_error($errormsg);
+    $loginform->set_info($infomsg);
     echo $OUTPUT->render($loginform);
 }
 

@@ -33,8 +33,6 @@ use core_calendar\local\event\factories\action_factory_interface;
 use core_calendar\local\event\factories\event_factory_interface;
 use core_calendar\local\event\strategies\raw_event_retrieval_strategy_interface;
 
-require_once($CFG->libdir . '/coursecatlib.php');
-
 /**
  * Event vault class.
  *
@@ -100,11 +98,9 @@ class event_vault implements event_vault_interface {
         array $categoriesfilter = null,
         $withduration = true,
         $ignorehidden = true,
-        callable $filter = null
+        callable $filter = null,
+        ?string $searchvalue = null
     ) {
-        if ($limitnum < 1 || $limitnum > 200) {
-            throw new limit_invalid_parameter_exception("Limit must be between 1 and 200 (inclusive)");
-        }
 
         $fromquery = function($field, $timefrom, $lastseenmethod, $afterevent, $withduration) {
             if (!$timefrom) {
@@ -142,12 +138,15 @@ class event_vault implements event_vault_interface {
             return [];
         }
 
+        $searchquery = $this->generate_search_subquery($searchvalue);
+
         $params = array_merge(
             $type ? ['type' => $type] : [],
             $timesortfromquery ? $timesortfromquery['params'] : [],
             $timesorttoquery ? $timesorttoquery['params'] : [],
             $timestartfromquery ? $timestartfromquery['params'] : [],
-            $timestarttoquery ? $timestarttoquery['params'] : []
+            $timestarttoquery ? $timestarttoquery['params'] : [],
+            $searchquery ? $searchquery['params'] : [],
         );
 
         $where = array_merge(
@@ -155,7 +154,8 @@ class event_vault implements event_vault_interface {
             $timesortfromquery ? $timesortfromquery['where'] : [],
             $timesorttoquery ? $timesorttoquery['where'] : [],
             $timestartfromquery ? $timestartfromquery['where'] : [],
-            $timestarttoquery ? $timestarttoquery['where'] : []
+            $timestarttoquery ? $timestarttoquery['where'] : [],
+            $searchquery ? [$searchquery['where']] : [],
         );
 
         $offset = 0;
@@ -188,7 +188,11 @@ class event_vault implements event_vault_interface {
                 }
             }
 
-            $offset += $limitnum;
+            if (!$limitnum) {
+                break;
+            } else {
+                $offset += $limitnum;
+            }
         }
 
         return $events;
@@ -199,17 +203,22 @@ class event_vault implements event_vault_interface {
         $timesortfrom = null,
         $timesortto = null,
         event_interface $afterevent = null,
-        $limitnum = 20
+        $limitnum = 20,
+        $limittononsuspendedevents = false,
+        ?string $searchvalue = null
     ) {
         $courseids = array_map(function($course) {
             return $course->id;
-        }, enrol_get_all_users_courses($user->id));
+        }, enrol_get_all_users_courses($user->id, $limittononsuspendedevents));
 
         $groupids = array_reduce($courseids, function($carry, $courseid) use ($user) {
             $groupings = groups_get_user_groups($courseid, $user->id);
             // Grouping 0 is all groups.
             return array_merge($carry, $groupings[0]);
         }, []);
+
+        // Always include the site events.
+        $courseids = $courseids ? array_merge($courseids, [SITEID]) : $courseids;
 
         return $this->get_events(
             null,
@@ -228,7 +237,8 @@ class event_vault implements event_vault_interface {
             true,
             function ($event) {
                 return $event instanceof action_event_interface;
-            }
+            },
+            $searchvalue
         );
     }
 
@@ -238,7 +248,8 @@ class event_vault implements event_vault_interface {
         $timesortfrom = null,
         $timesortto = null,
         event_interface $afterevent = null,
-        $limitnum = 20
+        $limitnum = 20,
+        ?string $searchvalue = null
     ) {
         $groupings = groups_get_user_groups($course->id, $user->id);
         return array_values(
@@ -259,7 +270,8 @@ class event_vault implements event_vault_interface {
                 true,
                 function ($event) use ($course) {
                     return $event instanceof action_event_interface && $event->get_course()->get('id') == $course->id;
-                }
+                },
+                $searchvalue
             )
         );
     }
@@ -361,7 +373,7 @@ class event_vault implements event_vault_interface {
      * Fetches records from DB.
      *
      * @param int    $userid
-     * @param string $whereconditions
+     * @param array|null $whereconditions
      * @param array  $whereparams
      * @param string $ordersql
      * @param int    $offset
@@ -389,5 +401,56 @@ class event_vault implements event_vault_interface {
                 $limitnum
             )
         );
+    }
+
+    /**
+     * Generates SQL subquery and parameters for event searching.
+     *
+     * @param string|null $searchvalue Search value.
+     * @return array|null
+     */
+    protected function generate_search_subquery(?string $searchvalue): ?array {
+        global $CFG, $DB;
+        if (!$searchvalue) {
+            return null;
+        }
+
+        $parts = preg_split('/\s+/', $searchvalue);
+        $wherecoursenameconditions = [];
+        $whereactivitynameconditions = [];
+        foreach ($parts as $index => $part) {
+            // Course name searching.
+            $wherecoursenameconditions[] = $DB->sql_like('c.fullname', ':cfullname' . $index, false);
+            $params['cfullname'. $index] = '%' . $DB->sql_like_escape($part) . '%';
+
+            // Activity name searching.
+            $whereactivitynameconditions[] = $DB->sql_like('e.name', ':eventname' . $index, false);
+            $params['eventname'. $index] = '%' . $DB->sql_like_escape($part) . '%';
+        }
+
+        // Activity type searching.
+        $whereconditions[] = $DB->sql_like('e.modulename', ':modulename', false);
+        $params['modulename'] = '%' . $DB->sql_like_escape($searchvalue) . '%';
+
+        // Activity type searching (localised type name).
+        require_once($CFG->dirroot . '/course/lib.php');
+        // Search in modules' singular and plural names.
+        $modules = array_keys(array_merge(
+            preg_grep('/' . $searchvalue . '/i', get_module_types_names()) ?: [],
+            preg_grep('/' . $searchvalue . '/i', get_module_types_names(true)) ?: [],
+        ));
+        if ($modules) {
+            [$insql, $inparams] = $DB->get_in_or_equal($modules, SQL_PARAMS_NAMED, 'exactmodulename');
+            $whereconditions[] = 'e.modulename ' . $insql;
+            $params += $inparams;
+        }
+
+        $whereclause = '(';
+        $whereclause .= implode(' OR ', $whereconditions);
+        $whereclause .= ' OR (' . implode(' AND ', $wherecoursenameconditions) . ')';
+        $whereclause .= ' OR (' . implode(' AND ', $whereactivitynameconditions) . ')';
+        $whereclause .= ')';
+
+        return ['where' => $whereclause, 'params' => $params];
     }
 }

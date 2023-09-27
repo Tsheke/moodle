@@ -132,15 +132,6 @@ $tasks = array(
         'month' => '*'
     ),
     array(
-        'classname' => 'core\task\legacy_plugin_cron_task',
-        'blocking' => 0,
-        'minute' => '*',
-        'hour' => '*',
-        'day' => '*',
-        'dayofweek' => '*',
-        'month' => '*'
-    ),
-    array(
         'classname' => 'core\task\grade_cron_task',
         'blocking' => 0,
         'minute' => '*',
@@ -150,10 +141,10 @@ $tasks = array(
         'month' => '*'
     ),
     array(
-        'classname' => 'core\task\events_cron_task',
+        'classname' => 'core\task\grade_history_cleanup_task',
         'blocking' => 0,
         'minute' => '*',
-        'hour' => '*',
+        'hour' => '0',
         'day' => '*',
         'dayofweek' => '*',
         'month' => '*'
@@ -213,7 +204,7 @@ $tasks = array(
         'month' => '*'
     ),
     array(
-        'classname' => 'core\task\question_cron_task',
+        'classname' => 'core\task\question_preview_cleanup_task',
         'blocking' => 0,
         'minute' => '*',
         'hour' => '*',
@@ -233,8 +224,8 @@ $tasks = array(
     array(
         'classname' => 'core\task\check_for_updates_task',
         'blocking' => 0,
-        'minute' => '0',
-        'hour' => '*/2',
+        'minute' => 'R',
+        'hour' => 'R',
         'day' => '*',
         'dayofweek' => '*',
         'month' => '*'
@@ -259,6 +250,15 @@ $tasks = array(
     ),
     array(
         'classname' => 'core\task\badges_cron_task',
+        'blocking' => 0,
+        'minute' => '*/5',
+        'hour' => '*',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*'
+    ),
+    array(
+        'classname' => 'core\task\badges_message_task',
         'blocking' => 0,
         'minute' => '*/5',
         'hour' => '*',
@@ -365,4 +365,87 @@ $tasks = array(
         'dayofweek' => '*',
         'month' => '*'
     ),
+    array(
+        'classname' => 'core\task\task_log_cleanup_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => 'R',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*'
+    ),
+    array(
+        'classname' => 'core\task\h5p_get_content_types_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => 'R',
+        'day' => '1',
+        'dayofweek' => '*',
+        'month' => '*'
+    ),
+    array(
+        'classname' => 'core\task\h5p_clean_orphaned_records_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => '0',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*'
+    ),
+    array(
+        'classname' => 'core\task\antivirus_cleanup_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => '0',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+    ),
+    array(
+        'classname' => 'core_reportbuilder\task\send_schedules',
+        'blocking' => 0,
+        'minute' => '*',
+        'hour' => '*',
+        'day' => '*',
+        'month' => '*',
+        'dayofweek' => '*',
+    ),
+    [
+        'classname' => 'core\task\task_lock_cleanup_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => '0',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*'
+    ],
+    [
+        'classname' => 'core_xapi\task\state_cleanup_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => '0',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*'
+    ],
+    [
+        'classname' => 'core\task\show_started_courses_task',
+        'blocking' => 0,
+        'minute' => '00',
+        'hour' => '01',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+        'disabled' => true,
+    ],
+    [
+        'classname' => 'core\task\hide_ended_courses_task',
+        'blocking' => 0,
+        'minute' => '00',
+        'hour' => '01',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+        'disabled' => true,
+    ],
 );

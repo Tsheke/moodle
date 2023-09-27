@@ -14,6 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace core_tag;
+
+use core_tag_area;
+use core_tag_collection;
+use core_tag_tag;
+
 /**
  * Tag related unit tests.
  *
@@ -22,132 +28,48 @@
  * @copyright 2014 Mark Nelson <markn@moodle.com>
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
-
-global $CFG;
-
-class core_tag_taglib_testcase extends advanced_testcase {
+class taglib_test extends \advanced_testcase {
 
     /**
      * Test set up.
      *
      * This is executed before running any test in this file.
      */
-    public function setUp() {
+    public function setUp(): void {
         $this->resetAfterTest();
     }
 
     /**
-     * Test the tag_set function.
+     * Test that the tag_set function throws an exception.
      * This function was deprecated in 3.1
      */
     public function test_tag_set_get() {
-        global $DB;
-
-        // Create a course to tag.
-        $course = $this->getDataGenerator()->create_course();
-
-        // Create the tag and tag instance.
-        tag_set('course', $course->id, array('A random tag'), 'core', context_course::instance($course->id)->id);
-        $this->assertDebuggingCalled();
-
-        // Get the tag instance that should have been created.
-        $taginstance = $DB->get_record('tag_instance', array('itemtype' => 'course', 'itemid' => $course->id), '*', MUST_EXIST);
-        $this->assertEquals('core', $taginstance->component);
-        $this->assertEquals(context_course::instance($course->id)->id, $taginstance->contextid);
-
-        $tagbyname = tag_get('name', 'A random tag');
-        $this->assertDebuggingCalled();
-        $this->assertEquals('A random tag', $tagbyname->rawname);
-
-        $this->assertEmpty(tag_get('name', 'Non existing tag'));
-        $this->assertDebuggingCalled();
-
-        $tagbyid = tag_get('id', $tagbyname->id);
-        $this->assertDebuggingCalled();
-        $this->assertEquals('A random tag', $tagbyid->rawname);
-        $tagid = $tagbyname->id;
-
-        $this->assertEmpty(tag_get('id', $tagid + 1));
-        $this->assertDebuggingCalled();
-
-        tag_set('tag', $tagid, array('Some related tag'));
-        $this->assertDebuggingCalled();
-        $relatedtags = tag_get_related_tags($tagid);
-        $this->assertDebuggingCalled();
-        $this->assertCount(1, $relatedtags);
-        $this->assertEquals('Some related tag', $relatedtags[0]->rawname);
-
-        $tagids = tag_get_id(array('A random tag', 'Some related tag'));
-        $this->assertDebuggingCalled();
-        $this->assertCount(2, $tagids);
-        $this->assertEquals($tagid, $tagids['a random tag']);
-        $this->assertEquals($relatedtags[0]->id, $tagids['some related tag']);
+        $this->expectException('coding_exception');
+        $this->expectExceptionMessage('tag_set() can not be used anymore. Please use ' .
+            'core_tag_tag::set_item_tags().');
+        tag_set();
     }
 
     /**
-     * Test the tag_set_add function.
+     * Test that tag_set_add function throws an exception.
      * This function was deprecated in 3.1
      */
     public function test_tag_set_add() {
-        global $DB;
-
-        // Create a course to tag.
-        $course = $this->getDataGenerator()->create_course();
-
-        // Create the tag and tag instance.
-        tag_set_add('course', $course->id, 'A random tag', 'core', context_course::instance($course->id)->id);
-        $this->assertDebuggingCalled();
-
-        // Get the tag instance that should have been created.
-        $taginstance = $DB->get_record('tag_instance', array('itemtype' => 'course', 'itemid' => $course->id), '*', MUST_EXIST);
-        $this->assertEquals('core', $taginstance->component);
-        $this->assertEquals(context_course::instance($course->id)->id, $taginstance->contextid);
-        $tagid = $taginstance->tagid;
-
-        tag_set_add('tag', $tagid, 'Some related tag');
-        $this->assertDebuggingCalled();
-        $relatedtags = tag_get_related_tags($tagid);
-        $this->assertDebuggingCalled();
-        $this->assertCount(1, $relatedtags);
-        $this->assertEquals('Some related tag', $relatedtags[0]->rawname);
+        $this->expectException('coding_exception');
+        $this->expectExceptionMessage('tag_set_add() can not be used anymore. Please use ' .
+            'core_tag_tag::add_item_tag().');
+        tag_set_add();
     }
 
     /**
-     * Test the tag_set_delete function.
+     * Test that tag_set_delete function returns an exception.
      * This function was deprecated in 3.1
      */
     public function test_tag_set_delete() {
-        global $DB;
-
-        // Create a course to tag.
-        $course = $this->getDataGenerator()->create_course();
-
-        // Create the tag and tag instance we are going to delete.
-        tag_set_add('course', $course->id, 'A random tag', 'core', context_course::instance($course->id)->id);
-        $this->assertDebuggingCalled();
-
-        // Call the tag_set_delete function.
-        tag_set_delete('course', $course->id, 'a random tag', 'core', context_course::instance($course->id)->id);
-        $this->assertDebuggingCalled();
-
-        // Now check that there are no tags or tag instances.
-        $this->assertEquals(0, $DB->count_records('tag'));
-        $this->assertEquals(0, $DB->count_records('tag_instance'));
-
-        // Add tag again, add and remove related tag.
-        tag_set_add('course', $course->id, 'A random tag', 'core', context_course::instance($course->id)->id);
-        $this->assertDebuggingCalled();
-        $taginstance = $DB->get_record('tag_instance', array('itemtype' => 'course', 'itemid' => $course->id), '*', MUST_EXIST);
-        $tagid = $taginstance->tagid;
-        tag_set_add('tag', $tagid, 'Some related tag');
-        $this->assertDebuggingCalled();
-        tag_set_delete('tag', $tagid, 'Some related tag');
-        $this->assertDebuggingCalled();
-        $relatedtags = tag_get_related_tags($tagid);
-        $this->assertDebuggingCalled();
-        $this->assertCount(0, $relatedtags);
+        $this->expectException('coding_exception');
+        $this->expectExceptionMessage('tag_set_delete() can not be used anymore. Please use ' .
+            'core_tag_tag::remove_item_tag().');
+        tag_set_delete();
     }
 
     /**
@@ -160,7 +82,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $course = $this->getDataGenerator()->create_course();
 
         // Create the tag and tag instance we are going to delete.
-        core_tag_tag::add_item_tag('core', 'course', $course->id, context_course::instance($course->id), 'A random tag');
+        core_tag_tag::add_item_tag('core', 'course', $course->id, \context_course::instance($course->id), 'A random tag');
 
         $this->assertEquals(1, $DB->count_records('tag'));
         $this->assertEquals(1, $DB->count_records('tag_instance'));
@@ -174,32 +96,61 @@ class core_tag_taglib_testcase extends advanced_testcase {
     }
 
     /**
-     * Test the tag_assign function.
+     * Test add_item_tag function correctly calculates the ordering for a new tag.
+     */
+    public function test_add_tag_ordering_calculation() {
+        global $DB;
+
+        $user1 = $this->getDataGenerator()->create_user();
+        $course1 = $this->getDataGenerator()->create_course();
+        $course2 = $this->getDataGenerator()->create_course();
+        $book1 = $this->getDataGenerator()->create_module('book', array('course' => $course1->id));
+        $now = time();
+        $chapter1id = $DB->insert_record('book_chapters', (object) [
+            'bookid' => $book1->id,
+            'hidden' => 0,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'importsrc' => '',
+            'content' => '',
+            'contentformat' => FORMAT_HTML,
+        ]);
+
+        // Create a tag (ordering should start at 1).
+        $ti1 = core_tag_tag::add_item_tag('core', 'course', $course1->id,
+            \context_course::instance($course1->id), 'A random tag for course 1');
+        $this->assertEquals(1, $DB->get_field('tag_instance', 'ordering', ['id' => $ti1]));
+
+        // Create another tag with a common component, itemtype and itemid (should increase the ordering by 1).
+        $ti2 = core_tag_tag::add_item_tag('core', 'course', $course1->id,
+            \context_course::instance($course1->id), 'Another random tag for course 1');
+        $this->assertEquals(2, $DB->get_field('tag_instance', 'ordering', ['id' => $ti2]));
+
+        // Create a new tag with the same component and itemtype, but different itemid (should start counting from 1 again).
+        $ti3 = core_tag_tag::add_item_tag('core', 'course', $course2->id,
+            \context_course::instance($course2->id), 'A random tag for course 2');
+        $this->assertEquals(1, $DB->get_field('tag_instance', 'ordering', ['id' => $ti3]));
+
+        // Create a new tag with a different itemtype (should start counting from 1 again).
+        $ti4 = core_tag_tag::add_item_tag('core', 'user', $user1->id,
+            \context_user::instance($user1->id), 'A random tag for user 1');
+        $this->assertEquals(1, $DB->get_field('tag_instance', 'ordering', ['id' => $ti4]));
+
+        // Create a new tag with a different component (should start counting from 1 again).
+        $ti5 = core_tag_tag::add_item_tag('mod_book', 'book_chapters', $chapter1id,
+            \context_module::instance($book1->cmid), 'A random tag for a book chapter');
+        $this->assertEquals(1, $DB->get_field('tag_instance', 'ordering', ['id' => $ti5]));
+    }
+
+    /**
+     * Test that tag_assign function throws an exception.
      * This function was deprecated in 3.1
      */
     public function test_tag_assign() {
-        global $DB;
-
-        // Create a course to tag.
-        $course = $this->getDataGenerator()->create_course();
-
-        // Create the tag.
-        $tag = $this->getDataGenerator()->create_tag();
-        $tag2 = $this->getDataGenerator()->create_tag();
-
-        // Tag the course with the tag we created.
-        tag_assign('course', $course->id, $tag->id, 0, 0, 'core', context_course::instance($course->id)->id);
-        $this->assertDebuggingCalled();
-
-        // Get the tag instance that should have been created.
-        $taginstance = $DB->get_record('tag_instance', array('itemtype' => 'course', 'itemid' => $course->id), '*', MUST_EXIST);
-        $this->assertEquals('core', $taginstance->component);
-        $this->assertEquals(context_course::instance($course->id)->id, $taginstance->contextid);
-
-        // Now call the tag_assign function without specifying the component or
-        // contextid and ensure the function debugging is called twice.
-        tag_assign('course', $course->id, $tag2->id, 0, 0);
-        $this->assertDebuggingCalled();
+        $this->expectException(\coding_exception::class);
+        $this->expectExceptionMessage('tag_assign() can not be used anymore. Please use core_tag_tag::set_item_tags() ' .
+            'or core_tag_tag::add_item_tag() instead.');
+        tag_assign();
     }
 
     /**
@@ -218,7 +169,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
 
         // Create a course to tag.
         $course = $this->getDataGenerator()->create_course();
-        $context = context_course::instance($course->id);
+        $context = \context_course::instance($course->id);
 
         // Test clean up instances with tags that no longer exist.
         $tags = array();
@@ -249,7 +200,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         // Test clean up with users that have been deleted.
         // Create a tag for this course.
         foreach ($users as $user) {
-            $context = context_user::instance($user->id);
+            $context = \context_user::instance($user->id);
             core_tag_tag::set_item_tags('core', 'user', $user->id, $context, array($tags[0]->rawname));
         }
         $usertags = $DB->count_records('tag_instance', array('itemtype' => 'user'));
@@ -276,11 +227,11 @@ class core_tag_taglib_testcase extends advanced_testcase {
 
         // Test clean up where a post has been removed.
         // Create default post.
-        $post = new stdClass();
+        $post = new \stdClass();
         $post->userid = $users[1]->id;
         $post->content = 'test post content text';
         $post->id = $DB->insert_record('post', $post);
-        $context = context_system::instance();
+        $context = \context_system::instance();
         core_tag_tag::set_item_tags('core', 'post', $post->id, $context, array($tags[0]->rawname));
 
         // Add another one with a fake post id to be removed.
@@ -305,7 +256,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         // Setup.
         $user = $this->getDataGenerator()->create_user();
         $course = $this->getDataGenerator()->create_course();
-        $context = context_course::instance($course->id);
+        $context = \context_course::instance($course->id);
 
         // Create some tag instances.
         for ($i = 0; $i < 10; $i++) {
@@ -323,6 +274,17 @@ class core_tag_taglib_testcase extends advanced_testcase {
         // Make sure they are gone.
         $instancecount = $DB->count_records('tag_instance');
         $this->assertEquals(0, $instancecount);
+    }
+
+    /**
+     * Test that setting a list of tags for "tag" item type throws exception if userid specified
+     */
+    public function test_set_item_tags_with_invalid_userid(): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $this->expectException(\coding_exception::class);
+        $this->expectExceptionMessage('Related tags can not have tag instance userid');
+        core_tag_tag::set_item_tags('core', 'tag', 1, \context_system::instance(), ['all', 'night', 'long'], $user->id);
     }
 
     /**
@@ -345,13 +307,12 @@ class core_tag_taglib_testcase extends advanced_testcase {
         // Several records have both 'cat' and 'cats' tags attached to them.
         // This will make those tags automatically correlated.
         // Same with 'dog', 'dogs' and 'puppy.
-        core_tag_tag::set_item_tags('core', 'user', $user1->id, context_user::instance($user1->id), array('cat', 'cats'));
-        core_tag_tag::set_item_tags('core', 'user', $user2->id, context_user::instance($user2->id), array('cat', 'cats', 'kitten'));
-        core_tag_tag::set_item_tags('core', 'user', $user3->id, context_user::instance($user3->id), array('cat', 'cats'));
-        core_tag_tag::set_item_tags('core', 'user', $user4->id, context_user::instance($user4->id), array('dog', 'dogs', 'puppy'));
-        core_tag_tag::set_item_tags('core', 'user', $user5->id, context_user::instance($user5->id), array('dog', 'dogs', 'puppy'));
-        core_tag_tag::set_item_tags('core', 'user', $user6->id, context_user::instance($user6->id), array('dog', 'dogs', 'puppy'));
-
+        core_tag_tag::set_item_tags('core', 'user', $user1->id, \context_user::instance($user1->id), array('cat', 'cats'));
+        core_tag_tag::set_item_tags('core', 'user', $user2->id, \context_user::instance($user2->id), array('cat', 'cats', 'kitten'));
+        core_tag_tag::set_item_tags('core', 'user', $user3->id, \context_user::instance($user3->id), array('cat', 'cats'));
+        core_tag_tag::set_item_tags('core', 'user', $user4->id, \context_user::instance($user4->id), array('dog', 'dogs', 'puppy'));
+        core_tag_tag::set_item_tags('core', 'user', $user5->id, \context_user::instance($user5->id), array('dog', 'dogs', 'puppy'));
+        core_tag_tag::set_item_tags('core', 'user', $user6->id, \context_user::instance($user6->id), array('dog', 'dogs', 'puppy'));
         $tags = core_tag_tag::get_by_name_bulk(core_tag_collection::get_default(),
             array('cat', 'cats', 'dog', 'dogs', 'kitten', 'puppy'), '*');
 
@@ -362,7 +323,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
     }
 
     /**
-     * Test for function tag_compute_correlations() that is part of tag cron
+     * Test for function compute_correlations() that is part of tag cron
      */
     public function test_correlations() {
         global $DB;
@@ -401,7 +362,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $this->assertCount(1, $correlatedtags); // Duplicates are filtered out here.
         $this->assertEquals('cats', $correlatedtags[0]->rawname);
 
-        // Make sure tag_get_correlated() returns 'dogs' and 'puppy' as the correlated tags to the 'dog'.
+        // Make sure get_correlated_tags() returns 'dogs' and 'puppy' as the correlated tags to the 'dog'.
         $correlatedtags = core_tag_tag::get($tags['dog'])->get_correlated_tags(true);
         $this->assertCount(6, $correlatedtags); // 2 tags times 3 instances.
 
@@ -416,31 +377,26 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $this->assertEquals('kitten', $relatedtags[0]->rawname);
         $this->assertEquals('cats', $relatedtags[1]->rawname);
 
-        // Also test deprecated method tag_get_related_tags() and tag_get_correlated().
-        $correlatedtags = array_values(tag_get_correlated($tags['cat']));
-        $this->assertDebuggingCalled();
+        // Also test get_correlated_tags().
+        $correlatedtags = array_values(core_tag_tag::get($tags['cat'])->get_correlated_tags(true));
         $this->assertCount(3, $correlatedtags); // This will return all existing instances but they all point to the same tag.
         $this->assertEquals('cats', $correlatedtags[0]->rawname);
         $this->assertEquals('cats', $correlatedtags[1]->rawname);
         $this->assertEquals('cats', $correlatedtags[2]->rawname);
 
-        $correlatedtags = array_values(tag_get_related_tags($tags['cat'], TAG_RELATED_CORRELATED));
-        $this->assertDebuggingCalled();
+        $correlatedtags = array_values(core_tag_tag::get($tags['cat'])->get_correlated_tags());
         $this->assertCount(1, $correlatedtags); // Duplicates are filtered out here.
         $this->assertEquals('cats', $correlatedtags[0]->rawname);
 
-        $correlatedtags = array_values(tag_get_correlated($tags['dog']));
-        $this->assertDebuggingCalled();
+        $correlatedtags = array_values(core_tag_tag::get($tags['dog'])->get_correlated_tags(true));
         $this->assertCount(6, $correlatedtags); // 2 tags times 3 instances.
 
-        $correlatedtags = array_values(tag_get_related_tags($tags['dog'], TAG_RELATED_CORRELATED));
-        $this->assertDebuggingCalled();
+        $correlatedtags = array_values(core_tag_tag::get($tags['dog'])->get_correlated_tags());
         $this->assertCount(2, $correlatedtags);
         $this->assertEquals('dogs', $correlatedtags[0]->rawname);
         $this->assertEquals('puppy', $correlatedtags[1]->rawname);
 
-        $relatedtags = array_values(tag_get_related_tags($tags['cat']));
-        $this->assertDebuggingCalled();
+        $relatedtags = array_values(core_tag_tag::get($tags['cat'])->get_related_tags());
         $this->assertCount(2, $relatedtags);
         $this->assertEquals('kitten', $relatedtags[0]->rawname);
         $this->assertEquals('cats', $relatedtags[1]->rawname);
@@ -461,19 +417,15 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $correlatedtag = reset($correlatedtags);
         $this->assertEquals(array_keys((array)$relatedtag->to_object()), array_keys((array)$correlatedtag->to_object()));
 
-        // Make sure tag_get_correlated() and tag_get_tags() return the same set of fields.
-        // Both functions were deprecated in 3.1.
-        $relatedtags = tag_get_tags('tag', $tags['cat']);
-        $this->assertDebuggingCalled();
+        $relatedtags = core_tag_tag::get_item_tags(null, 'tag', $tags['cat']);
         $relatedtag = reset($relatedtags);
-        $correlatedtags = tag_get_correlated($tags['cat']);
-        $this->assertDebuggingCalled();
+        $correlatedtags = core_tag_tag::get($tags['cat'])->get_correlated_tags();
         $correlatedtag = reset($correlatedtags);
         $this->assertEquals(array_keys((array)$relatedtag), array_keys((array)$correlatedtag));
     }
 
     /**
-     * Test for function tag_cleanup() that is part of tag cron
+     * Test for function cleanup() that is part of tag cron
      */
     public function test_cleanup() {
         global $DB;
@@ -483,7 +435,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $defaultcoll = core_tag_collection::get_default();
 
         // Setting tags will create non-standard tags 'cat', 'dog' and 'fish'.
-        core_tag_tag::set_item_tags('core', 'user', $user->id, context_user::instance($user->id), array('cat', 'dog', 'fish'));
+        core_tag_tag::set_item_tags('core', 'user', $user->id, \context_user::instance($user->id), array('cat', 'dog', 'fish'));
 
         $this->assertTrue($DB->record_exists('tag', array('name' => 'cat')));
         $this->assertTrue($DB->record_exists('tag', array('name' => 'dog')));
@@ -497,7 +449,6 @@ class core_tag_taglib_testcase extends advanced_testcase {
         // Manually remove the instances pointing on tags 'dog' and 'fish'.
         $DB->execute('DELETE FROM {tag_instance} WHERE tagid in (?,?)', array($dogtag->id, $fishtag->id));
 
-        // Call tag_cleanup().
         $task->cleanup();
 
         // Tag 'cat' is still present because it's used. Tag 'dog' is present because it's standard.
@@ -509,17 +460,15 @@ class core_tag_taglib_testcase extends advanced_testcase {
         // Delete user without using API function.
         $DB->update_record('user', array('id' => $user->id, 'deleted' => 1));
 
-        // Call tag_cleanup().
         $task->cleanup();
 
         // Tag 'cat' was now deleted too.
         $this->assertFalse($DB->record_exists('tag', array('name' => 'cat')));
 
         // Assign tag to non-existing record. Make sure tag was created in the DB.
-        core_tag_tag::set_item_tags('core', 'course', 1231231, context_system::instance(), array('bird'));
+        core_tag_tag::set_item_tags('core', 'course', 1231231, \context_system::instance(), array('bird'));
         $this->assertTrue($DB->record_exists('tag', array('name' => 'bird')));
 
-        // Call tag_cleanup().
         $task->cleanup();
 
         // Tag 'bird' was now deleted because the related record does not exist in the DB.
@@ -527,7 +476,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
 
         // Now we have a tag instance pointing on 'sometag' tag.
         $user = $this->getDataGenerator()->create_user();
-        core_tag_tag::set_item_tags('core', 'user', $user->id, context_user::instance($user->id), array('sometag'));
+        core_tag_tag::set_item_tags('core', 'user', $user->id, \context_user::instance($user->id), array('sometag'));
         $sometag = core_tag_tag::get_by_name($defaultcoll, 'sometag');
 
         $this->assertTrue($DB->record_exists('tag_instance', array('tagid' => $sometag->id)));
@@ -535,7 +484,6 @@ class core_tag_taglib_testcase extends advanced_testcase {
         // Some hacker removes the tag without using API.
         $DB->delete_records('tag', array('id' => $sometag->id));
 
-        // Call tag_cleanup().
         $task->cleanup();
 
         // The tag instances were also removed.
@@ -561,7 +509,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
 
         // Create a course to tag.
         $course = $this->getDataGenerator()->create_course();
-        $context = context_course::instance($course->id);
+        $context = \context_course::instance($course->id);
 
         $initialtagscount = $DB->count_records('tag');
 
@@ -706,14 +654,14 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid2 = core_tag_collection::create(array('name' => 'newcoll'))->id;
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $blogpost = new blog_entry(null, array('subject' => 'test'), null);
-        $states = blog_entry::get_applicable_publish_states();
+        $blogpost = new \blog_entry(null, array('subject' => 'test'), null);
+        $states = \blog_entry::get_applicable_publish_states();
         $blogpost->publishstate = reset($states);
         $blogpost->add();
 
-        core_tag_tag::set_item_tags('core', 'user', $user1->id, context_user::instance($user1->id),
+        core_tag_tag::set_item_tags('core', 'user', $user1->id, \context_user::instance($user1->id),
                 array('Tag1', 'Tag2'));
-        core_tag_tag::set_item_tags('core', 'user', $user2->id, context_user::instance($user2->id),
+        core_tag_tag::set_item_tags('core', 'user', $user2->id, \context_user::instance($user2->id),
                 array('Tag2', 'Tag3'));
         $this->getDataGenerator()->create_tag(array('rawname' => 'Tag4',
             'tagcollid' => $collid1, 'isstandard' => 1));
@@ -749,7 +697,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         global $DB;
         list($collid1, $collid2, $user1, $user2, $blogpost) = $this->prepare_move_tags();
 
-        core_tag_tag::set_item_tags('core', 'post', $blogpost->id, context_system::instance(),
+        core_tag_tag::set_item_tags('core', 'post', $blogpost->id, \context_system::instance(),
                 array('Tag1', 'Tag3'));
 
         // Move 'user' area from collection 1 to collection 2, make sure tag Tag2 was moved and tags Tag1 and Tag3 were duplicated.
@@ -779,7 +727,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tagareablog = $DB->get_record('tag_area', array('itemtype' => 'post', 'component' => 'core'));
         core_tag_area::update($tagareablog, array('tagcollid' => $collid2));
 
-        core_tag_tag::set_item_tags('core', 'post', $blogpost->id, context_system::instance(),
+        core_tag_tag::set_item_tags('core', 'post', $blogpost->id, \context_system::instance(),
                 array('TAG1', 'Tag3'));
 
         // Move 'user' area from collection 1 to collection 2,
@@ -813,7 +761,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tagareablog = $DB->get_record('tag_area', array('itemtype' => 'post', 'component' => 'core'));
         core_tag_area::update($tagareablog, array('tagcollid' => $collid2));
 
-        core_tag_tag::set_item_tags('core', 'post', $blogpost->id, context_system::instance(),
+        core_tag_tag::set_item_tags('core', 'post', $blogpost->id, \context_system::instance(),
                 array('TAG1', 'Tag3'));
 
         // Move 'user' area from collection 1 to collection 2, make sure tags were moved completely.
@@ -834,15 +782,13 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $this->assertEquals(array('Tag2', 'Tag3'), array_values(core_tag_tag::get_item_tags_array('core', 'user', $user2->id)));
 
         $tag11 = core_tag_tag::get_by_name($collid1, 'Tag1');
-        $related11 = tag_get_related_tags($tag11->id, TAG_RELATED_MANUAL);
-        $this->assertDebuggingCalled();
+        $related11 = core_tag_tag::get($tag11->id)->get_manual_related_tags();
         $related11 = array_map('core_tag_tag::make_display_name', $related11);
         sort($related11); // Order of related tags may be random.
         $this->assertEquals('Tag2, Tag4', join(', ', $related11));
 
         $tag21 = core_tag_tag::get_by_name($collid2, 'TAG1');
-        $related21 = tag_get_related_tags($tag21->id, TAG_RELATED_MANUAL);
-        $this->assertDebuggingCalled();
+        $related21 = core_tag_tag::get($tag21->id)->get_manual_related_tags();
         $related21 = array_map('core_tag_tag::make_display_name', $related21);
         sort($related21); // Order of related tags may be random.
         $this->assertEquals('Tag2, Tag4', join(', ', $related21));
@@ -887,22 +833,15 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $this->assertEquals($collid2, $user2tags[2]->tagcollid);
     }
 
+    /**
+     * Tests that tag_normalize function throws an exception.
+     * This function was deprecated in 3.1
+     */
     public function test_normalize() {
-        $tagset = array('Cat', ' Dog  ', '<Mouse', '<>', 'mouse', 'Dog');
-
-        // Test function tag_normalize() that was deprecated in 3.1.
-        $this->assertEquals(array('Cat' => 'Cat', 'Dog' => 'Dog', '<Mouse' => 'Mouse', '<>' => '', 'mouse' => 'mouse'),
-            tag_normalize($tagset, TAG_CASE_ORIGINAL));
-        $this->assertDebuggingCalled();
-        $this->assertEquals(array('Cat' => 'cat', 'Dog' => 'dog', '<Mouse' => 'mouse', '<>' => '', 'mouse' => 'mouse'),
-            tag_normalize($tagset, TAG_CASE_LOWER));
-        $this->assertDebuggingCalled();
-
-        // Test replacement function core_tag_tag::normalize().
-        $this->assertEquals(array('Cat' => 'Cat', 'Dog' => 'Dog', '<Mouse' => 'Mouse', '<>' => '', 'mouse' => 'mouse'),
-            core_tag_tag::normalize($tagset, false));
-        $this->assertEquals(array('Cat' => 'cat', 'Dog' => 'dog', '<Mouse' => 'mouse', '<>' => '', 'mouse' => 'mouse'),
-            core_tag_tag::normalize($tagset, true));
+        $this->expectException(\coding_exception::class);
+        $this->expectExceptionMessage('tag_normalize() can not be used anymore. Please use ' .
+            'core_tag_tag::normalize().');
+        tag_normalize();
     }
 
     /**
@@ -961,7 +900,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         );
 
         $collid = core_tag_collection::get_default();
-        $context = context_system::instance();
+        $context = \context_system::instance();
         foreach ($initialtags as $id => $taglist) {
             core_tag_tag::set_item_tags('core', 'course', $id + 10, $context, $initialtags[$id]);
         }
@@ -992,7 +931,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
      */
     public function test_combine_tags_with_related() {
         $collid = core_tag_collection::get_default();
-        $context = context_system::instance();
+        $context = \context_system::instance();
         core_tag_tag::set_item_tags('core', 'course', 10, $context, array('Cat', 'Cats', 'Dog'));
         core_tag_tag::get_by_name($collid, 'Cat', '*')->set_related_tags(array('Kitty'));
         core_tag_tag::get_by_name($collid, 'Cats', '*')->set_related_tags(array('Cat', 'Kitten', 'Kitty'));
@@ -1036,7 +975,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
 
         // Add tag that does not have any correlations.
         $user7 = $this->getDataGenerator()->create_user();
-        core_tag_tag::set_item_tags('core', 'user', $user7->id, context_user::instance($user7->id), array('hippo'));
+        core_tag_tag::set_item_tags('core', 'user', $user7->id, \context_user::instance($user7->id), array('hippo'));
         $tags['hippo'] = core_tag_tag::get_by_name(core_tag_collection::get_default(), 'hippo', '*');
 
         // Combine tag 'cat' into 'hippo'. Now 'hippo' should have the same correlations 'cat' used to have and also
@@ -1062,7 +1001,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
 
@@ -1080,7 +1019,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         core_tag_tag::set_item_tags($component, $itemtype, $user->id, $context, $tagnames);
@@ -1109,7 +1048,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         core_tag_tag::set_item_tags($component, $itemtype, $user->id, $context, array_slice($tagnames, 0, 2));
@@ -1141,9 +1080,9 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
         $user3 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
-        $context3 = context_user::instance($user3->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
+        $context3 = \context_user::instance($user3->id);
         $component = 'core';
         $itemtype = 'user';
 
@@ -1179,7 +1118,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         global $CFG;
 
         $user1 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
+        $context1 = \context_user::instance($user1->id);
         $component = 'core';
         $itemtype = 'user';
         $itemids = [$user1->id];
@@ -1198,7 +1137,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
      */
     public function test_get_items_tags_empty_itemids() {
         $user1 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
+        $context1 = \context_user::instance($user1->id);
         $component = 'core';
         $itemtype = 'user';
 
@@ -1256,8 +1195,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
         $user3 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemids = [$user1->id, $user2->id, $user3->id];
@@ -1298,7 +1237,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user1->id);
+        $context = \context_user::instance($user1->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1340,8 +1279,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1379,8 +1318,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1429,8 +1368,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1481,8 +1420,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1525,8 +1464,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1566,7 +1505,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
      */
     public function test_delete_instances_as_record_empty_set() {
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1589,7 +1528,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1614,7 +1553,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1637,7 +1576,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1659,7 +1598,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
      */
     public function test_delete_instances_by_id_empty_set() {
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1682,7 +1621,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1706,7 +1645,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1729,7 +1668,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1757,7 +1696,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype1 = 'user';
         $itemtype2 = 'course';
@@ -1787,7 +1726,7 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $collid = core_tag_collection::get_default();
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user = $this->getDataGenerator()->create_user();
-        $context = context_user::instance($user->id);
+        $context = \context_user::instance($user->id);
         $component = 'core';
         $itemtype1 = 'user';
         $itemtype2 = 'course';
@@ -1821,8 +1760,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype1 = 'user';
         $itemtype2 = 'course';
@@ -1857,8 +1796,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype1 = 'user';
         $itemtype2 = 'course';
@@ -1902,8 +1841,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1930,8 +1869,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -1962,9 +1901,9 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
         $user3 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
-        $context3 = context_user::instance($user3->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
+        $context3 = \context_user::instance($user3->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -2002,8 +1941,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
         $tags = core_tag_tag::create_if_missing($collid, $tagnames);
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
-        $context1 = context_user::instance($user1->id);
-        $context2 = context_user::instance($user2->id);
+        $context1 = \context_user::instance($user1->id);
+        $context2 = \context_user::instance($user2->id);
         $component = 'core';
         $itemtype = 'user';
         $itemid = 1;
@@ -2038,8 +1977,8 @@ class core_tag_taglib_testcase extends advanced_testcase {
      * @param string $component
      * @param string $itemtype
      * @param int $itemid
-     * @param context $context
-     * @return stdClass
+     * @param \context $context
+     * @return \stdClass
      */
     protected function add_tag_instance(core_tag_tag $tag, $component, $itemtype, $itemid, $context) {
         global $DB;

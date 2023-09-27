@@ -29,10 +29,6 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Any element analysers can analyse.
  *
- * Analysers get_analysers method return all analysable elements in the site;
- * it is important that analysable elements implement lazy loading to avoid
- * big memory footprints. See \core_analytics\course example.
- *
  * @package   core_analytics
  * @copyright 2016 David Monllao {@link http://www.davidmonllao.com}
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -41,8 +37,9 @@ interface analysable {
 
     /**
      * Max timestamp.
+     * We are limited by both PHP's max int value and DB (cross-db) max int allowed. Use the smallest one.
      */
-    const MAX_TIME = 9999999999;
+    const MAX_TIME = PHP_INT_MAX < 9999999999 ? PHP_MAX_INT : 9999999999;
 
     /**
      * The analysable unique identifier in the site.

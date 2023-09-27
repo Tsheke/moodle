@@ -2,7 +2,7 @@
 /**
  * Copyright 2012-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -110,7 +110,7 @@ class Horde_Imap_Client_Socket_ClientSort
         }
 
         $mbox = $this->_socket->currentMailbox();
-        $fetch_res = $this->_socket->fetch($mbox['mailbox'], $query, array(
+        $fetch_res = $this->_socket->fetch(isset($mbox['mailbox']) ? $mbox['mailbox'] : null, $query, array(
             'ids' => $res
         ));
 

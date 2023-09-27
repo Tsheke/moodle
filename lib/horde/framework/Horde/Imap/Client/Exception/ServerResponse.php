@@ -2,7 +2,7 @@
 /**
  * Copyright 2012-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -44,14 +44,14 @@ class Horde_Imap_Client_Exception_ServerResponse extends Horde_Imap_Client_Excep
     /**
      * Constructor.
      *
-     * @param string $msg                                       Error message.
+     * @param string|null $msg                                  Error message.
      * @param integer $code                                     Error code.
      * @param Horde_Imap_Client_Interaction_Server $server      Server ob.
      * @param Horde_Imap_Client_Interaction_Pipeline $pipeline  Pipeline ob.
      */
     public function __construct(
-        $msg = null,
-        $code = 0,
+        $msg,
+        $code,
         Horde_Imap_Client_Interaction_Server $server,
         Horde_Imap_Client_Interaction_Pipeline $pipeline
     )

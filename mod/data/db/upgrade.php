@@ -22,51 +22,47 @@
 defined('MOODLE_INTERNAL') || die();
 
 function xmldb_data_upgrade($oldversion) {
-    global $CFG, $DB;
+    global $DB;
 
-    $dbman = $DB->get_manager();
+    $dbman = $DB->get_manager(); // Loads ddl manager and xmldb classes.
 
-    if ($oldversion < 2016090600) {
+    // Automatically generated Moodle v3.9.0 release upgrade line.
+    // Put any upgrade step following this.
 
-        // Define field config to be added to data.
-        $table = new xmldb_table('data');
-        $field = new xmldb_field('config', XMLDB_TYPE_TEXT, null, null, null, null, null, 'timemodified');
+    // Automatically generated Moodle v4.0.0 release upgrade line.
+    // Put any upgrade step following this.
+    if ($oldversion < 2022081600) {
+        // Define key userid (foreign) to be added to data_records.
+        $table = new xmldb_table('data_records');
+        $key = new xmldb_key('userid', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+        // Launch add key userid.
+        $dbman->add_key($table, $key);
 
-        // Conditionally launch add field config.
-        if (!$dbman->field_exists($table, $field)) {
-            $dbman->add_field($table, $field);
+        // Data savepoint reached.
+        upgrade_mod_savepoint(true, 2022081600, 'data');
+    }
+
+    // Automatically generated Moodle v4.1.0 release upgrade line.
+    // Put any upgrade step following this.
+
+    // Automatically generated Moodle v4.2.0 release upgrade line.
+    // Put any upgrade step following this.
+
+    if ($oldversion < 2023061300) {
+        // Clean orphan data_records.
+        $sql = "SELECT d.id FROM {data} d
+            LEFT JOIN {data_fields} f ON d.id = f.dataid
+            WHERE f.id IS NULL";
+        $emptydatas = $DB->get_records_sql($sql);
+        if (!empty($emptydatas)) {
+            $dataids = array_keys($emptydatas);
+            list($datainsql, $dataparams) = $DB->get_in_or_equal($dataids, SQL_PARAMS_NAMED, 'data');
+            $DB->delete_records_select('data_records', "dataid $datainsql", $dataparams);
         }
 
         // Data savepoint reached.
-        upgrade_mod_savepoint(true, 2016090600, 'data');
+        upgrade_mod_savepoint(true, 2023061300, 'data');
     }
-
-    // Automatically generated Moodle v3.2.0 release upgrade line.
-    // Put any upgrade step following this.
-
-    if ($oldversion < 2017032800) {
-
-        // Define field completionentries to be added to data. Require a number of entries to be considered complete.
-        $table = new xmldb_table('data');
-        $field = new xmldb_field('completionentries', XMLDB_TYPE_INTEGER, '10', null, null, null, '0', 'config');
-
-        // Conditionally launch add field timemodified.
-        if (!$dbman->field_exists($table, $field)) {
-            $dbman->add_field($table, $field);
-        }
-
-        // Data savepoint reached.
-        upgrade_mod_savepoint(true, 2017032800, 'data');
-    }
-
-    // Automatically generated Moodle v3.3.0 release upgrade line.
-    // Put any upgrade step following this.
-
-    // Automatically generated Moodle v3.4.0 release upgrade line.
-    // Put any upgrade step following this.
-
-    // Automatically generated Moodle v3.5.0 release upgrade line.
-    // Put any upgrade step following this.
 
     return true;
 }

@@ -2,7 +2,7 @@
 /**
  * Copyright 2011-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -618,14 +618,14 @@ class Horde_Imap_Client_Data_Fetch
 
                 case Horde_Imap_Client::FETCH_HEADERTEXT:
                 case Horde_Imap_Client::FETCH_MIMEHEADER:
-                    $hdrs = $this->_data[$key][$id];
-                    break;
+                    return Horde_Mime_Headers::parseHeaders($this->_data[$key][$id]);
                 }
             } else {
                 $hdrs = $this->_getHeaders($id, self::HEADER_STREAM, $key);
+                $parsed = Horde_Mime_Headers::parseHeaders($hdrs);
+                fclose($hdrs);
+                return $parsed;
             }
-
-            return Horde_Mime_Headers::parseHeaders($hdrs);
         }
 
         if (!isset($this->_data[$key][$id])) {

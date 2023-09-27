@@ -30,7 +30,6 @@ $category = required_param('category', PARAM_SAFEDIR);
 $return = optional_param('return','', PARAM_ALPHA);
 $adminediting = optional_param('adminedit', -1, PARAM_BOOL);
 
-/// no guest autologin
 require_login(0, false);
 $PAGE->set_context(context_system::instance());
 $PAGE->set_url('/admin/category.php', array('category' => $category));
@@ -42,13 +41,19 @@ $adminroot = admin_get_root(); // need all settings
 $settingspage = $adminroot->locate($category, true);
 
 if (empty($settingspage) or !($settingspage instanceof admin_category)) {
-    print_error('categoryerror', 'admin', "$CFG->wwwroot/$CFG->admin/");
+    throw new \moodle_exception('categoryerror', 'error', "$CFG->wwwroot/$CFG->admin/");
 }
 
 if (!($settingspage->check_access())) {
-    print_error('accessdenied', 'admin');
+    throw new \moodle_exception('accessdenied', 'admin');
 }
 
+$hassiteconfig = has_capability('moodle/site:config', $PAGE->context);
+if ($hassiteconfig) {
+    $PAGE->add_header_action($OUTPUT->render_from_template('core_admin/header_search_input', [
+        'action' => new moodle_url('/admin/search.php'),
+    ]));
+}
 
 $statusmsg = '';
 $errormsg  = '';
@@ -76,7 +81,7 @@ if ($PAGE->user_allowed_editing() && $adminediting != -1) {
     $USER->editing = $adminediting;
 }
 $buttons = null;
-if ($PAGE->user_allowed_editing()) {
+if ($PAGE->user_allowed_editing() && !$PAGE->theme->haseditswitch) {
     $url = clone($PAGE->url);
     if ($PAGE->user_is_editing()) {
         $caption = get_string('blockseditoff');
@@ -126,8 +131,7 @@ if ($savebutton) {
     $outputhtml .= html_writer::end_tag('div');
 }
 
-$visiblepathtosection = array_reverse($settingspage->visiblepath);
-$PAGE->set_title("$SITE->shortname: " . implode(": ",$visiblepathtosection));
+$PAGE->set_title(implode(moodle_page::TITLE_SEPARATOR, $settingspage->visiblepath));
 $PAGE->set_heading($SITE->fullname);
 if ($buttons) {
     $PAGE->set_button($buttons);
@@ -141,13 +145,7 @@ if ($errormsg !== '') {
     echo $OUTPUT->notification($statusmsg, 'notifysuccess');
 }
 
-$path = array_reverse($settingspage->visiblepath);
-if (is_array($path)) {
-    $visiblename = join(' / ', $path);
-} else {
-    $visiblename = $path;
-}
-echo $OUTPUT->heading(get_string('admincategory', 'admin', $visiblename), 2);
+echo $OUTPUT->heading(get_string('admincategory', 'admin', $settingspage->visiblename), 2);
 
 echo html_writer::start_tag('form', array('action' => '', 'method' => 'post', 'id' => 'adminsettings'));
 echo html_writer::start_tag('div');
@@ -158,5 +156,8 @@ echo html_writer::tag('div', '<!-- -->', array('class' => 'clearer'));
 echo $outputhtml;
 echo html_writer::end_tag('fieldset');
 echo html_writer::end_tag('form');
+
+// Add the form change checker.
+$PAGE->requires->js_call_amd('core_form/changechecker', 'watchFormById', ['adminsettings']);
 
 echo $OUTPUT->footer();

@@ -72,13 +72,21 @@ if (!empty($data) || (!empty($p) && !empty($s))) {
         // The user has confirmed successfully, let's log them in
 
         if (!$user = get_complete_user_data('username', $username)) {
-            print_error('cannotfinduser', '', '', s($username));
+            throw new \moodle_exception('cannotfinduser', '', '', s($username));
         }
 
         if (!$user->suspended) {
             complete_user_login($user);
 
             \core\session\manager::apply_concurrent_login_limit($user->id, session_id());
+
+            // Check where to go, $redirect has a higher preference.
+            if (!empty($redirect)) {
+                if (!empty($SESSION->wantsurl)) {
+                    unset($SESSION->wantsurl);
+                }
+                redirect($redirect);
+            }
         }
 
         $PAGE->navbar->add(get_string("confirmed"));
@@ -93,10 +101,10 @@ if (!empty($data) || (!empty($p) && !empty($s))) {
         echo $OUTPUT->footer();
         exit;
     } else {
-        print_error('invalidconfirmdata');
+        throw new \moodle_exception('invalidconfirmdata');
     }
 } else {
-    print_error("errorwhenconfirming");
+    throw new \moodle_exception("errorwhenconfirming");
 }
 
 redirect("$CFG->wwwroot/");

@@ -9,7 +9,6 @@ require_once($CFG->libdir.'/adminlib.php');
 
 $confirm = optional_param('confirm', 0, PARAM_BOOL);
 
-require_login();
 admin_externalpage_setup('userbulk');
 require_capability('moodle/user:update', context_system::instance());
 
@@ -18,6 +17,9 @@ $return = $CFG->wwwroot.'/'.$CFG->admin.'/user/user_bulk.php';
 if (empty($SESSION->bulk_users)) {
     redirect($return);
 }
+
+$PAGE->set_primary_active_tab('siteadminnode');
+$PAGE->set_secondary_active_tab('users');
 
 echo $OUTPUT->header();
 

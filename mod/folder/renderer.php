@@ -47,13 +47,39 @@ class mod_folder_renderer extends plugin_renderer_base {
         }
 
         if (trim($folder->intro)) {
-            if ($folder->display != FOLDER_DISPLAY_INLINE) {
-                $output .= $this->output->box(format_module_intro('folder', $folder, $cm->id),
-                        'generalbox', 'intro');
-            } else if ($cm->showdescription) {
+            if ($folder->display == FOLDER_DISPLAY_INLINE && $cm->showdescription) {
                 // for "display inline" do not filter, filters run at display time.
                 $output .= format_module_intro('folder', $folder, $cm->id, false);
             }
+        }
+        $buttons = '';
+        // Display the "Edit" button if current user can edit folder contents.
+        // Do not display it on the course page for the teachers because there
+        // is an "Edit settings" button right next to it with the same functionality.
+        $canmanagefolderfiles = has_capability('mod/folder:managefiles', $context);
+        $canmanagecourseactivities = has_capability('moodle/course:manageactivities', $context);
+        if ($canmanagefolderfiles && ($folder->display != FOLDER_DISPLAY_INLINE || !$canmanagecourseactivities)) {
+            $editbutton = new single_button(new moodle_url('/mod/folder/edit.php', ['id' => $cm->id]),
+                get_string('edit'), 'post', single_button::BUTTON_PRIMARY);
+            $editbutton->class = 'navitem';
+            $buttons .= $this->render($editbutton);
+        }
+
+        // Do not append the edit button on the course page.
+        $downloadable = folder_archive_available($folder, $cm);
+        if ($downloadable) {
+            $downloadbutton = new single_button(new moodle_url('/mod/folder/download_folder.php', ['id' => $cm->id]),
+                get_string('downloadfolder', 'folder'), 'get');
+            $downloadbutton->class = 'navitem ml-auto';
+            $buttons .= $this->render($downloadbutton);
+        }
+
+        if ($buttons) {
+            $output .= $this->output->container_start("container-fluid tertiary-navigation");
+            $output .= $this->output->container_start("row");
+            $output .= $buttons;
+            $output .= $this->output->container_end();
+            $output .= $this->output->container_end();
         }
 
         $foldertree = new folder_tree($folder, $cm);
@@ -61,38 +87,9 @@ class mod_folder_renderer extends plugin_renderer_base {
             // Display module name as the name of the root directory.
             $foldertree->dir['dirname'] = $cm->get_formatted_name(array('escape' => false));
         }
-        $output .= $this->output->box($this->render($foldertree),
-                'generalbox foldertree');
-
-        // Do not append the edit button on the course page.
-        $downloadable = folder_archive_available($folder, $cm);
-
-        $buttons = '';
-        if ($downloadable) {
-            $downloadbutton = $this->output->single_button(
-                new moodle_url('/mod/folder/download_folder.php', array('id' => $cm->id)),
-                get_string('downloadfolder', 'folder')
-            );
-
-            $buttons .= $downloadbutton;
-        }
-
-        // Display the "Edit" button if current user can edit folder contents.
-        // Do not display it on the course page for the teachers because there
-        // is an "Edit settings" button right next to it with the same functionality.
-        if (has_capability('mod/folder:managefiles', $context) &&
-            ($folder->display != FOLDER_DISPLAY_INLINE || !has_capability('moodle/course:manageactivities', $context))) {
-            $editbutton = $this->output->single_button(
-                new moodle_url('/mod/folder/edit.php', array('id' => $cm->id)),
-                get_string('edit')
-            );
-
-            $buttons .= $editbutton;
-        }
-
-        if ($buttons) {
-            $output .= $this->output->box($buttons, 'generalbox folderbuttons');
-        }
+        $output .= $this->output->container_start("box generalbox pt-0 pb-3 foldertree");
+        $output .= $this->render($foldertree);
+        $output .= $this->output->container_end();
 
         return $output;
     }
@@ -124,7 +121,7 @@ class mod_folder_renderer extends plugin_renderer_base {
         }
         $result = '<ul>';
         foreach ($dir['subdirs'] as $subdir) {
-            $image = $this->output->pix_icon(file_folder_icon(24), $subdir['dirname'], 'moodle');
+            $image = $this->output->pix_icon(file_folder_icon(), $subdir['dirname'], 'moodle');
             $filename = html_writer::tag('span', $image, array('class' => 'fp-icon')).
                     html_writer::tag('span', s($subdir['dirname']), array('class' => 'fp-filename'));
             $filename = html_writer::tag('div', $filename, array('class' => 'fp-filename-icon'));
@@ -139,13 +136,18 @@ class mod_folder_renderer extends plugin_renderer_base {
                 $image = $url->out(false, array('preview' => 'tinyicon', 'oid' => $file->get_timemodified()));
                 $image = html_writer::empty_tag('img', array('src' => $image));
             } else {
-                $image = $this->output->pix_icon(file_file_icon($file, 24), $filenamedisplay, 'moodle');
+                $image = $this->output->pix_icon(file_file_icon($file), $filenamedisplay, 'moodle');
             }
             $filename = html_writer::tag('span', $image, array('class' => 'fp-icon')).
                     html_writer::tag('span', $filenamedisplay, array('class' => 'fp-filename'));
+            $urlparams = null;
+            if ($tree->folder->forcedownload) {
+                $urlparams = ['forcedownload' => 1];
+            }
             $filename = html_writer::tag('span',
-                    html_writer::link($url->out(false, array('forcedownload' => 1)), $filename),
-                    array('class' => 'fp-filename-icon'));
+                html_writer::link($url->out(false, $urlparams), $filename),
+                ['class' => 'fp-filename-icon']
+            );
             $result .= html_writer::tag('li', $filename);
         }
         $result .= '</ul>';

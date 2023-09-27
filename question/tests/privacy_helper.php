@@ -50,7 +50,7 @@ trait core_question_privacy_helper {
             $data
         ) {
         $attempt = $quba->get_question_attempt($slotno);
-        $question = $attempt->get_question();
+        $question = $attempt->get_question(false);
 
         // Check the question data exported.
         $this->assertEquals($data->name, $question->name);
@@ -93,6 +93,7 @@ trait core_question_privacy_helper {
             [get_string('questions', 'core_question')]
         );
 
+        /** @var \core_privacy\tests\request\content_writer $writer */
         $writer = writer::with_context($context);
 
         foreach ($quba->get_slots() as $slotno) {

@@ -14,24 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Contains the contextlist_context persistent.
- *
- * @package    tool_dataprivacy
- * @copyright  2018 Jake Dallimore <jrhdallimore@gmail.com>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
 namespace tool_dataprivacy;
-
-defined('MOODLE_INTERNAL') || die();
 
 use core\persistent;
 
 /**
  * The contextlist_context persistent.
  *
- * @copyright  2018 Jake Dallimore <jrhdallimore@gmail.com>
+ * @package    tool_dataprivacy
+ * @copyright  2021 The Open University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @since      Moodle 4.3
  */
 class contextlist_context extends persistent {
 
@@ -52,7 +45,7 @@ class contextlist_context extends persistent {
      *
      * @return array
      */
-    protected static function define_properties() {
+    protected static function define_properties(): array {
         return [
             'contextid' => [
                 'type' => PARAM_INT
@@ -67,8 +60,8 @@ class contextlist_context extends persistent {
                     self::STATUS_REJECTED,
                 ],
                 'default' => self::STATUS_PENDING,
-                'type' => PARAM_INT
-            ]
+                'type' => PARAM_INT,
+            ],
         ];
     }
 }

@@ -54,10 +54,9 @@ class core_role_allow_view_page extends core_role_allow_role_page {
 
     /**
      * Get tool tip for cell.
-     * @param string $fromrole
-     * @param string $targetrole
+     * @param stdClass $fromrole
+     * @param stdClass $targetrole
      * @return string
-     * @throws \coding_exception
      */
     protected function get_cell_tooltip($fromrole, $targetrole) {
         $a = new stdClass;
@@ -73,5 +72,9 @@ class core_role_allow_view_page extends core_role_allow_role_page {
      */
     public function get_intro_text() {
         return get_string('configallowview', 'core_admin');
+    }
+
+    protected function get_eventclass() {
+        return \core\event\role_allow_view_updated::class;
     }
 }

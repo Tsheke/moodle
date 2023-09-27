@@ -49,7 +49,7 @@ ob_end_clean();
 // Get the questions (item-names).
 $feedbackstructure = new mod_feedback_structure($feedback, $cm, $course->id);
 if (!$items = $feedbackstructure->get_items(true)) {
-    print_error('no_items_available_yet', 'feedback', $cm->url);
+    throw new \moodle_exception('no_items_available_yet', 'feedback', $cm->url);
 }
 
 $mygroupid = groups_get_activity_group($cm);
@@ -80,15 +80,14 @@ $rowoffset1 = 0;
 $worksheet1->write_string($rowoffset1, 0, userdate(time()), $xlsformats->head1);
 
 // Get the completeds.
-$completedscount = feedback_get_completeds_group_count($feedback, $mygroupid, $courseid);
-if ($completedscount > 0) {
-    // Write the count of completeds.
-    $rowoffset1++;
-    $worksheet1->write_string($rowoffset1,
-        0,
-        $cm->get_module_type_name(true).': '.strval($completedscount),
-        $xlsformats->head1);
-}
+$completedscount = $feedbackstructure->count_completed_responses($mygroupid);
+// Write the count of completeds.
+// Keep consistency and write count of completeds even when they are 0.
+$rowoffset1++;
+$worksheet1->write_string($rowoffset1,
+    0,
+    get_string('completed_feedbacks', 'feedback').': '.strval($completedscount),
+    $xlsformats->head1);
 
 $rowoffset1++;
 $worksheet1->write_string($rowoffset1,

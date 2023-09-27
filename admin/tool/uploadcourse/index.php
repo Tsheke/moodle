@@ -24,7 +24,6 @@
 
 require(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
-require_once($CFG->libdir . '/coursecatlib.php');
 require_once($CFG->libdir . '/csvlib.class.php');
 
 admin_externalpage_setup('tooluploadcourse');
@@ -43,9 +42,9 @@ if (empty($importid)) {
         $readcount = $cir->load_csv_content($content, $form1data->encoding, $form1data->delimiter_name);
         unset($content);
         if ($readcount === false) {
-            print_error('csvfileerror', 'tool_uploadcourse', $returnurl, $cir->get_error());
+            throw new \moodle_exception('csvfileerror', 'tool_uploadcourse', $returnurl, $cir->get_error());
         } else if ($readcount == 0) {
-            print_error('csvemptyfile', 'error', $returnurl, $cir->get_error());
+            throw new \moodle_exception('csvemptyfile', 'error', $returnurl, $cir->get_error());
         }
     } else {
         echo $OUTPUT->header();
@@ -78,6 +77,12 @@ if ($form2data = $mform2->is_cancelled()) {
 
     $options = (array) $form2data->options;
     $defaults = (array) $form2data->defaults;
+
+    // Custom field defaults.
+    $customfields = tool_uploadcourse_helper::get_custom_course_field_names();
+    foreach ($customfields as $customfield) {
+        $defaults[$customfield] = $form2data->{$customfield};
+    }
 
     // Restorefile deserves its own logic because formslib does not really appreciate
     // when the name of a filepicker is an array...

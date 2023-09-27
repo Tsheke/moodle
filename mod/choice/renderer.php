@@ -22,9 +22,6 @@
  * @copyright 2010 Rossiani Wijaya
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  **/
-define ('DISPLAY_HORIZONTAL_LAYOUT', 0);
-define ('DISPLAY_VERTICAL_LAYOUT', 1);
-
 class mod_choice_renderer extends plugin_renderer_base {
 
     /**
@@ -50,7 +47,7 @@ class mod_choice_renderer extends plugin_renderer_base {
         $choicecount = 0;
         foreach ($options['options'] as $option) {
             $choicecount++;
-            $html .= html_writer::start_tag('li', array('class'=>'option'));
+            $html .= html_writer::start_tag('li', array('class' => 'option mr-3'));
             if ($multiple) {
                 $option->attributes->name = 'answer[]';
                 $option->attributes->type = 'checkbox';
@@ -59,12 +56,19 @@ class mod_choice_renderer extends plugin_renderer_base {
                 $option->attributes->type = 'radio';
             }
             $option->attributes->id = 'choice_'.$choicecount;
-            $option->attributes->class = 'm-x-1';
+            $option->attributes->class = 'mx-1';
 
             $labeltext = $option->text;
             if (!empty($option->attributes->disabled)) {
                 $labeltext .= ' ' . get_string('full', 'choice');
                 $availableoption--;
+            }
+
+            if (!empty($options['limitanswers']) && !empty($options['showavailable'])) {
+                $labeltext .= html_writer::empty_tag('br');
+                $labeltext .= get_string("responsesa", "choice", $option->countanswers);
+                $labeltext .= html_writer::empty_tag('br');
+                $labeltext .= get_string("limita", "choice", $option->maxanswers);
             }
 
             $html .= html_writer::empty_tag('input', (array)$option->attributes + $disabled);
@@ -93,7 +97,7 @@ class mod_choice_renderer extends plugin_renderer_base {
                 if (!empty($options['allowupdate']) && ($options['allowupdate'])) {
                     $url = new moodle_url('view.php',
                             array('id' => $coursemoduleid, 'action' => 'delchoice', 'sesskey' => sesskey()));
-                    $html .= html_writer::link($url, get_string('removemychoice', 'choice'), array('class' => 'm-l-1'));
+                    $html .= html_writer::link($url, get_string('removemychoice', 'choice'), array('class' => 'ml-1'));
                 }
             } else {
                 $html .= html_writer::tag('label', get_string('havetologin', 'choice'));
@@ -129,16 +133,13 @@ class mod_choice_renderer extends plugin_renderer_base {
     /**
      * Returns HTML to display choices result
      * @param object $choices
-     * @param bool $forcepublish
      * @return string
      */
     public function display_publish_name_vertical($choices) {
-        global $PAGE;
         $html ='';
-        $html .= html_writer::tag('h3',format_string(get_string("responses", "choice")));
 
         $attributes = array('method'=>'POST');
-        $attributes['action'] = new moodle_url($PAGE->url);
+        $attributes['action'] = new moodle_url($this->page->url);
         $attributes['id'] = 'attemptsform';
 
         if ($choices->viewresponsecapability) {
@@ -179,22 +180,50 @@ class mod_choice_renderer extends plugin_renderer_base {
         foreach ($choices->options as $optionid => $options) {
             $celloption = clone($celldefault);
             $cellusernumber = clone($celldefault);
-            $cellusernumber->style = 'text-align: center;';
 
-            $celltext = '';
             if ($choices->showunanswered && $optionid == 0) {
-                $celltext = get_string('notanswered', 'choice');
+                $headertitle = get_string('notanswered', 'choice');
             } else if ($optionid > 0) {
-                $celltext = format_string($choices->options[$optionid]->text);
+                $headertitle = format_string($choices->options[$optionid]->text);
+                if (!empty($choices->options[$optionid]->user) && count($choices->options[$optionid]->user) > 0) {
+                    if ((count($choices->options[$optionid]->user)) == ($choices->options[$optionid]->maxanswer)) {
+                        $headertitle .= ' ' . get_string('full', 'choice');
+                    }
+                }
+            }
+            $celltext = $headertitle;
+
+            // Render select/deselect all checkbox for this option.
+            if ($choices->viewresponsecapability && $choices->deleterepsonsecapability) {
+
+                // Build the select/deselect all for this option.
+                $selectallid = 'select-response-option-' . $optionid;
+                $togglegroup = 'responses response-option-' . $optionid;
+                $selectalltext = get_string('selectalloption', 'choice', $headertitle);
+                $deselectalltext = get_string('deselectalloption', 'choice', $headertitle);
+                $mastercheckbox = new \core\output\checkbox_toggleall($togglegroup, true, [
+                    'id' => $selectallid,
+                    'name' => $selectallid,
+                    'value' => 1,
+                    'selectall' => $selectalltext,
+                    'deselectall' => $deselectalltext,
+                    'label' => $selectalltext,
+                    'labelclasses' => 'accesshide',
+                ]);
+
+                $celltext .= html_writer::div($this->output->render($mastercheckbox));
             }
             $numberofuser = 0;
             if (!empty($options->user) && count($options->user) > 0) {
                 $numberofuser = count($options->user);
             }
-
-            $celloption->text = $celltext;
+            if (($choices->limitanswers) && ($choices->showavailable)) {
+                $numberofuser .= html_writer::empty_tag('br');
+                $numberofuser .= get_string("limita", "choice", $options->maxanswer);
+            }
+            $celloption->text = html_writer::div($celltext, 'text-center');
             $optionsnames[$optionid] = $celltext;
-            $cellusernumber->text = $numberofuser;
+            $cellusernumber->text = html_writer::div($numberofuser, 'text-center');
 
             $columns['options'][] = $celloption;
             $columns['usernumber'][] = $cellusernumber;
@@ -230,8 +259,6 @@ class mod_choice_renderer extends plugin_renderer_base {
                         $checkbox = '';
                         if ($choices->viewresponsecapability && $choices->deleterepsonsecapability) {
                             $checkboxid = 'attempt-user' . $user->id . '-option' . $optionid;
-                            $checkbox .= html_writer::label($userfullname . ' ' . $optionsnames[$optionid],
-                                $checkboxid, false, array('class' => 'accesshide'));
                             if ($optionid > 0) {
                                 $checkboxname = 'attemptid[]';
                                 $checkboxvalue = $user->answerid;
@@ -239,13 +266,22 @@ class mod_choice_renderer extends plugin_renderer_base {
                                 $checkboxname = 'userid[]';
                                 $checkboxvalue = $user->id;
                             }
-                            $checkbox .= html_writer::checkbox($checkboxname, $checkboxvalue, '', null,
-                                array('id' => $checkboxid, 'class' => 'm-r-1'));
+
+                            $togglegroup = 'responses response-option-' . $optionid;
+                            $slavecheckbox = new \core\output\checkbox_toggleall($togglegroup, false, [
+                                'id' => $checkboxid,
+                                'name' => $checkboxname,
+                                'classes' => 'mr-1',
+                                'value' => $checkboxvalue,
+                                'label' => $userfullname . ' ' . $options->text,
+                                'labelclasses' => 'accesshide',
+                            ]);
+                            $checkbox = $this->output->render($slavecheckbox);
                         }
                         $userimage = $this->output->user_picture($user, array('courseid' => $choices->courseid, 'link' => false));
                         $profileurl = new moodle_url('/user/view.php', array('id' => $user->id, 'course' => $choices->courseid));
                         $profilelink = html_writer::link($profileurl, $userimage . $userfullname);
-                        $data .= html_writer::div($checkbox . $profilelink, 'm-b-1');
+                        $data .= html_writer::div($checkbox . $profilelink, 'mb-1');
 
                         $optionusers .= $data;
                     }
@@ -262,27 +298,36 @@ class mod_choice_renderer extends plugin_renderer_base {
 
         $actiondata = '';
         if ($choices->viewresponsecapability && $choices->deleterepsonsecapability) {
-            $selecturl = new moodle_url('#');
+            // Build the select/deselect all for all of options.
+            $selectallid = 'select-all-responses';
+            $togglegroup = 'responses';
+            $selectallcheckbox = new \core\output\checkbox_toggleall($togglegroup, true, [
+                'id' => $selectallid,
+                'name' => $selectallid,
+                'value' => 1,
+                'label' => get_string('selectall'),
+                'classes' => 'btn-secondary mr-1'
+            ], true);
+            $actiondata .= $this->output->render($selectallcheckbox);
 
-            $actiondata .= html_writer::start_div('selectallnone');
-            $actiondata .= html_writer::link($selecturl, get_string('selectall'), ['data-select-info' => true]) . ' / ';
-
-            $actiondata .= html_writer::link($selecturl, get_string('deselectall'), ['data-select-info' => false]);
-
-            $actiondata .= html_writer::end_div();
-
-            $actionurl = new moodle_url($PAGE->url, array('sesskey'=>sesskey(), 'action'=>'delete_confirmation()'));
+            $actionurl = new moodle_url($this->page->url,
+                    ['sesskey' => sesskey(), 'action' => 'delete_confirmation()']);
             $actionoptions = array('delete' => get_string('delete'));
             foreach ($choices->options as $optionid => $option) {
                 if ($optionid > 0) {
                     $actionoptions['choose_'.$optionid] = get_string('chooseoption', 'choice', $option->text);
                 }
             }
-            $select = new single_select($actionurl, 'action', $actionoptions, null,
-                    array('' => get_string('chooseaction', 'choice')), 'attemptsform');
+            $selectattributes = [
+                'data-action' => 'toggle',
+                'data-togglegroup' => 'responses',
+                'data-toggle' => 'action',
+            ];
+            $selectnothing = ['' => get_string('chooseaction', 'choice')];
+            $select = new single_select($actionurl, 'action', $actionoptions, null, $selectnothing, 'attemptsform');
             $select->set_label(get_string('withselected', 'choice'));
-
-            $PAGE->requires->js_call_amd('mod_choice/select_all_choices', 'init');
+            $select->disabled = true;
+            $select->attributes = $selectattributes;
 
             $actiondata .= $this->output->render($select);
         }
@@ -303,7 +348,6 @@ class mod_choice_renderer extends plugin_renderer_base {
      * @return string
      */
     public function display_publish_anonymous_horizontal($choices) {
-        global $CHOICE_COLUMN_HEIGHT;
         debugging(__FUNCTION__.'() is deprecated. Please use mod_choice_renderer::display_publish_anonymous() instead.',
                 DEBUG_DEVELOPER);
         return $this->display_publish_anonymous($choices, CHOICE_DISPLAY_VERTICAL);
@@ -316,7 +360,6 @@ class mod_choice_renderer extends plugin_renderer_base {
      * @return string
      */
     public function display_publish_anonymous_vertical($choices) {
-        global $CHOICE_COLUMN_WIDTH;
         debugging(__FUNCTION__.'() is deprecated. Please use mod_choice_renderer::display_publish_anonymous() instead.',
                 DEBUG_DEVELOPER);
         return $this->display_publish_anonymous($choices, CHOICE_DISPLAY_HORIZONTAL);
@@ -328,11 +371,10 @@ class mod_choice_renderer extends plugin_renderer_base {
      * Can be displayed either in the vertical or horizontal position.
      *
      * @param stdClass $choices Choices responses object.
-     * @param int $displaylayout The constants DISPLAY_HORIZONTAL_LAYOUT or DISPLAY_VERTICAL_LAYOUT.
+     * @param int $displaylayout The constants CHOICE_DISPLAY_HORIZONTAL or CHOICE_DISPLAY_VERTICAL.
      * @return string the rendered chart.
      */
     public function display_publish_anonymous($choices, $displaylayout) {
-        global $OUTPUT;
         $count = 0;
         $data = [];
         $numberofuser = 0;
@@ -352,8 +394,8 @@ class mod_choice_renderer extends plugin_renderer_base {
         }
 
         $chart = new \core\chart_bar();
-        if ($displaylayout == DISPLAY_HORIZONTAL_LAYOUT) {
-            $chart->set_horizontal(true);
+        if ($displaylayout == CHOICE_DISPLAY_VERTICAL) {
+            $chart->set_horizontal(true); // Horizontal bars when choices are vertical.
         }
         $series = new \core\chart_series(format_string(get_string("responses", "choice")), $data['series']);
         $series->set_labels($data['series_labels']);
@@ -361,7 +403,7 @@ class mod_choice_renderer extends plugin_renderer_base {
         $chart->set_labels($data['labels']);
         $yaxis = $chart->get_yaxis(0, true);
         $yaxis->set_stepsize(max(1, round(max($data['series']) / 10)));
-        return $OUTPUT->render($chart);
+        return $this->output->render($chart);
     }
 }
 

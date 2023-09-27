@@ -14,24 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Adhoc task that processes a data request and prepares the user's relevant contexts for review.
- *
- * @package    tool_dataprivacy
- * @copyright  2018 Jun Pataleta
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
 namespace tool_dataprivacy\task;
 
 use coding_exception;
 use core\task\adhoc_task;
-use moodle_exception;
 use tool_dataprivacy\api;
 use tool_dataprivacy\contextlist_context;
 use tool_dataprivacy\data_request;
-
-defined('MOODLE_INTERNAL') || die();
 
 /**
  * Class that processes a data request and prepares the user's relevant contexts for review.
@@ -39,23 +28,17 @@ defined('MOODLE_INTERNAL') || die();
  * Custom data accepted:
  * - requestid -> The ID of the data request to be processed.
  *
- * @package     tool_dataprivacy
- * @copyright   2018 Jun Pataleta
- * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package   tool_dataprivacy
+ * @copyright 2021 The Open University
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @since     Moodle 4.3
  */
 class initiate_data_request_task extends adhoc_task {
 
     /**
      * Run the task to initiate the data request process.
-     *
-     * @throws coding_exception
-     * @throws moodle_exception
      */
-    public function execute() {
-        global $CFG;
-
-        require_once($CFG->dirroot . "/{$CFG->admin}/tool/dataprivacy/lib.php");
-
+    public function execute(): void {
         if (!isset($this->get_custom_data()->requestid)) {
             throw new coding_exception('The custom data \'requestid\' is required.');
         }
@@ -67,27 +50,6 @@ class initiate_data_request_task extends adhoc_task {
         $status = $datarequest->get('status');
         if (!api::is_active($status)) {
             mtrace('Request ' . $requestid . ' with status ' . $status . ' doesn\'t need to be processed. Skipping...');
-            return;
-        }
-
-        $requestedby = $datarequest->get('requestedby');
-        $valid = true;
-        $comment = '';
-        $foruser = $datarequest->get('userid');
-        if ($foruser != $requestedby) {
-            if (!$valid = api::can_create_data_request_for_user($foruser, $requestedby)) {
-                $params = (object)[
-                    'requestedby' => $requestedby,
-                    'userid' => $foruser
-                ];
-                $comment = get_string('errornocapabilitytorequestforothers', 'tool_dataprivacy', $params);
-                mtrace($comment);
-            }
-        }
-        // Reject the request outright if it's invalid.
-        if (!$valid) {
-            $dpo = $datarequest->get('dpo');
-            api::update_request_status($requestid, api::DATAREQUEST_STATUS_REJECTED, $dpo, $comment);
             return;
         }
 

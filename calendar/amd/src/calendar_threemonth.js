@@ -17,8 +17,9 @@
  * This module handles display of multiple mini calendars in a view, and
  * movement through them.
  *
+ * @deprecated since 4.0 MDL-72810.
+ * @todo       MDL-73117 This will be deleted in Moodle 4.4.
  * @module     core_calendar/calendar_threemonth
- * @package    core_calendar
  * @copyright  2017 Andrew Nicols <andrew@nicols.co.uk>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -47,7 +48,7 @@ function(
      */
     var registerCalendarEventListeners = function(root) {
         var body = $('body');
-        body.on(CalendarEvents.monthChanged, function(e, year, month, courseId, categoryId) {
+        body.on([CalendarEvents.monthChanged, CalendarEvents.dayChanged].join(' '), function(e, year, month, courseId, categoryId) {
             // We have to use a queue here because the calling code is decoupled from these listeners.
             // It's possible for the event to be called multiple times before one call is fully resolved.
             root.queue(function(next) {
@@ -93,6 +94,8 @@ function(
                 requestYear = nextMonth.data('nextYear');
                 requestMonth = nextMonth.data('nextMonth');
                 oldMonth = previousMonth;
+            } else {
+                return $.Deferred().resolve();
             }
 
             return CalendarViewManager.refreshMonthContent(
@@ -117,6 +120,22 @@ function(
                 return $.when(slideUpPromise, slideDownPromise);
             });
         };
+
+        // Listen for a click on the day link in the three month block to load the day view.
+        root.on('click', CalendarSelectors.links.miniDayLink, function(e) {
+
+                var miniDayLink = $(e.target);
+                var year = miniDayLink.data('year'),
+                    month = miniDayLink.data('month'),
+                    day = miniDayLink.text(),
+                    courseId = miniDayLink.data('courseid'),
+                    categoryId = miniDayLink.data('categoryid'),
+                    calendarRoot = $('body').find(CalendarSelectors.calendarMain);
+                CalendarViewManager.refreshDayContent(calendarRoot, year, month, day, courseId, categoryId,
+                    calendarRoot.find('[id^="calendar-"][data-template^="core_calendar/"]'), 'core_calendar/calendar_day');
+                e.preventDefault();
+                CalendarViewManager.updateUrl('?view=day');
+        });
     };
 
     return {

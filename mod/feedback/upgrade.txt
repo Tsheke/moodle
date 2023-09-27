@@ -1,3 +1,28 @@
+This file describes API changes in /mod/feedback/*
+Information provided here is intended especially for developers.
+
+=== 4.3 ===
+
+* The `$extradetails` parameter of the `\mod_feedback\output\summary` class constructor has been removed
+
+=== 4.2 ===
+* The external methods get_items() and get_page_items() now only return the items when the user can access the feedback; if the
+user can't see them, a warning message will be returned, with the reasons.
+
+=== 4.0 ===
+* The following files and classes within them have been deprecated in favour of dynamic forms:
+    * edit_form.php
+    * use_templ_form.php
+* The page delete_template.php has been removed as it is now handled within manage_templates.php
+
+=== 3.11 ===
+The $extradetails parameter in the constructor of the mod_feedback\output\summary class has been deprecated and is not used anymore.
+
+=== 3.8 ===
+
+* The following functions have been finally deprecated and can not be used anymore:
+    * feedback_scale_used()
+
 === 3.6 ===
 
 * The following functions have been finally deprecated and can not be used anymore:
@@ -19,6 +44,8 @@
   * feedback_is_feedback_in_sitecourse_map()
   * feedback_clean_up_sitecourse_map()
   * feedback_print_numeric_option_list()
+* Web Service functions now support an optional courseid parameter (course where user completes the feedback).
+  This new parameter was necessary to support site feedbacks.
 
 === 3.5 ===
 

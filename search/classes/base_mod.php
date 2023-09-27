@@ -109,7 +109,7 @@ abstract class base_mod extends base {
      * @return array Array with SQL and parameters; both null if no need to query
      * @throws \coding_exception If called with invalid params
      */
-    protected function get_context_restriction_sql(\context $context = null, $modname, $modtable,
+    protected function get_context_restriction_sql(?\context $context, $modname, $modtable,
             $paramtype = SQL_PARAMS_QM) {
         global $DB;
 
@@ -285,5 +285,24 @@ abstract class base_mod extends base {
      */
     public function restrict_cm_access_by_group(\cm_info $cm) {
         return $cm->effectivegroupmode == SEPARATEGROUPS;
+    }
+
+    /**
+     * Returns an icon instance for the document.
+     *
+     * @param \core_search\document $doc
+     * @return \core_search\document_icon
+     */
+    public function get_doc_icon(document $doc) : document_icon {
+        return new document_icon('monologo', $this->get_module_name());
+    }
+
+    /**
+     * Returns a list of category names associated with the area.
+     *
+     * @return array
+     */
+    public function get_category_names() {
+        return [manager::SEARCH_AREA_CATEGORY_COURSE_CONTENT];
     }
 }

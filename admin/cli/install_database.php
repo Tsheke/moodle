@@ -56,6 +56,8 @@ Options:
 --agree-license       Indicates agreement with software license.
 --fullname=STRING     Name of the site
 --shortname=STRING    Name of the site
+--summary=STRING      The summary to be displayed on the front page
+--supportemail=STRING Email address for support and help.
 -h, --help            Print out this help
 
 Example:
@@ -82,11 +84,6 @@ require_once($CFG->libdir.'/installlib.php');
 require_once($CFG->libdir.'/adminlib.php');
 require_once($CFG->libdir.'/componentlib.class.php');
 
-// make sure no tables are installed yet
-if ($DB->get_tables() ) {
-    cli_error(get_string('clitablesexist', 'install'));
-}
-
 $CFG->early_install_lang = true;
 get_string_manager(true);
 
@@ -101,6 +98,8 @@ list($options, $unrecognized) = cli_get_params(
         'adminemail'        => '',
         'fullname'          => '',
         'shortname'         => '',
+        'summary'           => '',
+        'supportemail'      => '',
         'agree-license'     => false,
         'help'              => false
     ),
@@ -109,10 +108,20 @@ list($options, $unrecognized) = cli_get_params(
     )
 );
 
+if ($unrecognized) {
+    $unrecognized = implode("\n  ", $unrecognized);
+    cli_error(get_string('cliunknowoption', 'admin', $unrecognized));
+}
 
+// We show help text even if tables are installed.
 if ($options['help']) {
     echo $help;
     die;
+}
+
+// Make sure no tables are installed yet.
+if ($DB->get_tables() ) {
+    cli_error(get_string('clitablesexist', 'install'));
 }
 
 if (!$options['agree-license']) {
@@ -126,6 +135,15 @@ if ($options['adminpass'] === true or $options['adminpass'] === '') {
 // Validate that the address provided was an e-mail address.
 if (!empty($options['adminemail']) && !validate_email($options['adminemail'])) {
     $a = (object) array('option' => 'adminemail', 'value' => $options['adminemail']);
+    cli_error(get_string('cliincorrectvalueerror', 'admin', $a));
+}
+
+// Validate that the supportemail provided was an e-mail address.
+if (!empty($options['supportemail']) && !validate_email($options['supportemail'])) {
+    $a = (object) [
+        'option' => 'supportemail',
+        'value' => $options['supportemail']
+    ];
     cli_error(get_string('cliincorrectvalueerror', 'admin', $a));
 }
 

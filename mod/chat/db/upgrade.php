@@ -27,45 +27,30 @@ defined('MOODLE_INTERNAL') || die();
 function xmldb_chat_upgrade($oldversion) {
     global $CFG, $DB;
 
-    $dbman = $DB->get_manager();
+    require_once($CFG->libdir.'/db/upgradelib.php'); // Core Upgrade-related functions.
 
-    // Automatically generated Moodle v3.2.0 release upgrade line.
+    $dbman = $DB->get_manager(); // Loads ddl manager and xmldb classes.
+
+    // Automatically generated Moodle v3.9.0 release upgrade line.
     // Put any upgrade step following this.
 
-    // Automatically generated Moodle v3.3.0 release upgrade line.
+    // Automatically generated Moodle v4.0.0 release upgrade line.
     // Put any upgrade step following this.
+    if ($oldversion < 2022053000) {
+        // Define key course (foreign) to be added to chat_users.
+        $table = new xmldb_table('chat_users');
+        $key = new xmldb_key('course', XMLDB_KEY_FOREIGN, ['course'], 'course', ['id']);
+        // Launch add key course.
+        $dbman->add_key($table, $key);
 
-    // Automatically generated Moodle v3.4.0 release upgrade line.
-    // Put any upgrade step following this.
-
-    if ($oldversion < 2017111301) {
-        // Rename field 'system' on table 'chat_messages' as it is a reserved word in MySQL 8+.
-        $table = new xmldb_table('chat_messages');
-        $field = new xmldb_field('system');
-        if ($dbman->field_exists($table, $field)) {
-            $field->set_attributes(XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'groupid');
-            // Extend the execution time limit of the script to 2 hours.
-            upgrade_set_timeout(7200);
-            // Rename it to 'issystem'.
-            $dbman->rename_field($table, $field, 'issystem');
-        }
-
-        // Rename field 'system' on table 'chat_messages_current' as it is a reserved word in MySQL 8+.
-        $table = new xmldb_table('chat_messages_current');
-        $field = new xmldb_field('system');
-        if ($dbman->field_exists($table, $field)) {
-            $field->set_attributes(XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'groupid');
-            // Extend the execution time limit of the script to 5 minutes.
-            upgrade_set_timeout(300);
-            // Rename it to 'issystem'.
-            $dbman->rename_field($table, $field, 'issystem');
-        }
-
-        // Savepoint reached.
-        upgrade_mod_savepoint(true, 2017111301, 'chat');
+        // Chat savepoint reached.
+        upgrade_mod_savepoint(true, 2022053000, 'chat');
     }
 
-    // Automatically generated Moodle v3.5.0 release upgrade line.
+    // Automatically generated Moodle v4.1.0 release upgrade line.
+    // Put any upgrade step following this.
+
+    // Automatically generated Moodle v4.2.0 release upgrade line.
     // Put any upgrade step following this.
 
     return true;

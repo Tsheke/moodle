@@ -67,6 +67,13 @@ abstract class base {
     protected static $levels = [CONTEXT_SYSTEM];
 
     /**
+     * An area id from the componentname and the area name.
+     *
+     * @var string
+     */
+    public $areaid;
+
+    /**
      * Constructor.
      *
      * @throws \coding_exception
@@ -175,8 +182,7 @@ abstract class base {
         list($componentname, $varname) = $this->get_config_var_name();
 
         $config = [];
-        $settingnames = array('_enabled', '_indexingstart', '_indexingend', '_lastindexrun',
-                '_docsignored', '_docsprocessed', '_recordsprocessed', '_partial');
+        $settingnames = self::get_settingnames();
         foreach ($settingnames as $name) {
             $config[$varname . $name] = get_config($componentname, $varname . $name);
         }
@@ -186,6 +192,16 @@ abstract class base {
             $config[$varname . '_enabled'] = 1;
         }
         return $config;
+    }
+
+    /**
+     * Return a list of all required setting names.
+     *
+     * @return array
+     */
+    public static function get_settingnames() {
+        return array('_enabled', '_indexingstart', '_indexingend', '_lastindexrun',
+            '_docsignored', '_docsprocessed', '_recordsprocessed', '_partial');
     }
 
     /**
@@ -341,6 +357,19 @@ abstract class base {
     abstract public function get_document($record, $options = array());
 
     /**
+     * Returns the document title to display.
+     *
+     * Allow to customize the document title string to display.
+     *
+     * @param \core_search\document $doc
+     * @return string Document title to display in the search results page
+     */
+    public function get_document_display_title(\core_search\document $doc) {
+
+        return $doc->get('title');
+    }
+
+    /**
      * Return the context info required to index files for
      * this search area.
      *
@@ -430,7 +459,7 @@ abstract class base {
      * @return array Array with SQL and parameters; both null if no need to query
      * @throws \coding_exception If called with invalid params
      */
-    protected function get_course_level_context_restriction_sql(\context $context = null,
+    protected function get_course_level_context_restriction_sql(?\context $context,
             $coursetable, $paramtype = SQL_PARAMS_QM) {
         global $DB;
 
@@ -508,5 +537,24 @@ abstract class base {
      */
     public function get_contexts_to_reindex() {
         return new \ArrayIterator([\context_system::instance()]);
+    }
+
+    /**
+     * Returns an icon instance for the document.
+     *
+     * @param \core_search\document $doc
+     * @return \core_search\document_icon
+     */
+    public function get_doc_icon(document $doc) : document_icon {
+        return new document_icon('i/empty');
+    }
+
+    /**
+     * Returns a list of category names associated with the area.
+     *
+     * @return array
+     */
+    public function get_category_names() {
+        return [manager::SEARCH_AREA_CATEGORY_OTHER];
     }
 }

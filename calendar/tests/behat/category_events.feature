@@ -48,7 +48,7 @@ Feature: Course Category Events
       | student2    | B2i       | student           |
     And the following "events" exist:
       | name        | eventtype |
-      | Site event  | global    |
+      | Site event  | site    |
     And the following "events" exist:
       | name        | eventtype | course |
       | CA1i event  | course    | A1i    |
@@ -67,7 +67,7 @@ Feature: Course Category Events
   @javascript
   Scenario: Manager of a Category can see all child and parent events in their category
     Given I log in as "managera"
-    When I navigate to "Calendar" node in "Site pages"
+    When I follow "Calendar" in the user menu
     Then I should see "FA event"
     And  I should see "DA1 event"
     And  I should see "DA2 event"
@@ -76,7 +76,7 @@ Feature: Course Category Events
     And  I should not see "DB2 event"
     And  I log out
     Given I log in as "managerb"
-    When I navigate to "Calendar" node in "Site pages"
+    And I follow "Calendar" in the user menu
     Then I should see "FB event"
     And  I should see "DB1 event"
     And  I should see "DB2 event"
@@ -87,7 +87,7 @@ Feature: Course Category Events
   @javascript
   Scenario: Users enrolled in a course can see all child and parent events in their category
     Given I log in as "student1"
-    When I navigate to "Calendar" node in "Site pages"
+    When I follow "Calendar" in the user menu
     Then I should see "FA event"
     And  I should see "DA1 event"
     And  I should see "DA2 event"

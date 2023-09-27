@@ -48,13 +48,23 @@ if (!empty($filecontextid)) {
 
 $url = new moodle_url('/backup/restorefile.php', array('contextid'=>$contextid));
 
+$PAGE->set_url($url);
+$PAGE->set_context($context);
+
 switch ($context->contextlevel) {
+    case CONTEXT_COURSECAT:
+        core_course_category::page_setup();
+        break;
     case CONTEXT_MODULE:
-        $heading = get_string('restoreactivity', 'backup');
+        $PAGE->set_heading(get_string('restoreactivity', 'backup'));
         break;
     case CONTEXT_COURSE:
+        $course = get_course($context->instanceid);
+        $PAGE->set_heading($course->fullname);
+        $PAGE->set_secondary_active_tab('coursereuse');
+        break;
     default:
-        $heading = get_string('restorecourse', 'backup');
+        $PAGE->set_heading($SITE->fullname);
 }
 
 
@@ -109,11 +119,10 @@ if ($action == 'choosebackupfile') {
     die;
 }
 
-$PAGE->set_url($url);
-$PAGE->set_context($context);
 $PAGE->set_title(get_string('course') . ': ' . $coursefullname);
-$PAGE->set_heading($heading);
 $PAGE->set_pagelayout('admin');
+$PAGE->activityheader->disable();
+$PAGE->requires->js_call_amd('core_backup/async_backup', 'asyncBackupAllStatus', array($context->id));
 
 $form = new course_restore_form(null, array('contextid'=>$contextid));
 $data = $form->get_data();
@@ -127,8 +136,6 @@ if ($data && has_capability('moodle/restore:uploadfile', $context)) {
     redirect($restore_url);
     die;
 }
-
-
 
 echo $OUTPUT->header();
 
@@ -193,6 +200,15 @@ if (!empty($automatedbackups)) {
     $treeview_options['filearea']    = 'automated';
     $renderer = $PAGE->get_renderer('core', 'backup');
     echo $renderer->backup_files_viewer($treeview_options);
+    echo $OUTPUT->container_end();
+}
+
+// In progress course restores.
+if (async_helper::is_async_enabled()) {
+    echo $OUTPUT->heading_with_help(get_string('asyncrestoreinprogress', 'backup'), 'asyncrestoreinprogress', 'backup');
+    echo $OUTPUT->container_start();
+    $renderer = $PAGE->get_renderer('core', 'backup');
+    echo $renderer->restore_progress_viewer($USER->id, $context);
     echo $OUTPUT->container_end();
 }
 

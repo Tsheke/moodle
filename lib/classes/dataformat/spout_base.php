@@ -25,6 +25,9 @@
 
 namespace core\dataformat;
 
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Writer\Common\Creator\WriterFactory;
+
 /**
  * Common Spout class for dataformat.
  *
@@ -34,9 +37,6 @@ namespace core\dataformat;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 abstract class spout_base extends \core\dataformat\base {
-
-    /** @var $spouttype */
-    protected $spouttype = '';
 
     /** @var $writer */
     protected $writer;
@@ -51,15 +51,38 @@ abstract class spout_base extends \core\dataformat\base {
      * Output file headers to initialise the download of the file.
      */
     public function send_http_headers() {
-        $this->writer = \Box\Spout\Writer\WriterFactory::create($this->spouttype);
-        if (method_exists($this->writer, 'setTempFolder')) {
-            $this->writer->setTempFolder(make_request_directory());
-        }
         $filename = $this->filename . $this->get_extension();
-        $this->writer->openToBrowser($filename);
+
+        $this->writer = WriterFactory::createFromFile($filename);
+        if (method_exists($this->writer->getOptions(), 'setTempFolder')) {
+            $this->writer->getOptions()->setTempFolder(make_request_directory());
+        }
+
+        if (PHPUNIT_TEST) {
+            $this->writer->openToFile('php://output');
+        } else {
+            $this->writer->openToBrowser($filename);
+        }
 
         // By default one sheet is always created, but we want to rename it when we call start_sheet().
         $this->renamecurrentsheet = true;
+    }
+
+    /**
+     * Set the dataformat to be output to current file
+     */
+    public function start_output_to_file(): void {
+        $this->writer = WriterFactory::createFromFile($this->filepath);
+        if (method_exists($this->writer->getOptions(), 'setTempFolder')) {
+            $this->writer->getOptions()->setTempFolder(make_request_directory());
+        }
+
+        $this->writer->openToFile($this->filepath);
+
+        // By default one sheet is always created, but we want to rename it when we call start_sheet().
+        $this->renamecurrentsheet = true;
+
+        $this->start_output();
     }
 
     /**
@@ -79,7 +102,7 @@ abstract class spout_base extends \core\dataformat\base {
      * @param array $columns
      */
     public function start_sheet($columns) {
-        if ($this->sheettitle && $this->writer instanceof \Box\Spout\Writer\AbstractMultiSheetsWriter) {
+        if ($this->sheettitle && $this->writer instanceof \OpenSpout\Writer\AbstractWriterMultiSheets) {
             if ($this->renamecurrentsheet) {
                 $sheet = $this->writer->getCurrentSheet();
                 $this->renamecurrentsheet = false;
@@ -88,17 +111,20 @@ abstract class spout_base extends \core\dataformat\base {
             }
             $sheet->setName($this->sheettitle);
         }
-        $this->writer->addRow(array_values((array)$columns));
+        // Create a row with cells and apply the style to all cells.
+        $row = Row::fromValues((array)$columns);
+        $this->writer->addRow($row);
     }
 
     /**
      * Write a single record
      *
-     * @param object $record
+     * @param array $record
      * @param int $rownum
      */
     public function write_record($record, $rownum) {
-        $this->writer->addRow(array_values((array)$record));
+        $row = Row::fromValues($this->format_record($record));
+        $this->writer->addRow($row);
     }
 
     /**
@@ -107,5 +133,16 @@ abstract class spout_base extends \core\dataformat\base {
     public function close_output() {
         $this->writer->close();
         $this->writer = null;
+    }
+
+    /**
+     * Write data to disk
+     *
+     * @return bool
+     */
+    public function close_output_to_file(): bool {
+        $this->close_output();
+
+        return true;
     }
 }

@@ -32,6 +32,27 @@ class data_field_multimenu extends data_field_base {
      * */
     protected static $priority = self::LOW_PRIORITY;
 
+    public function supports_preview(): bool {
+        return true;
+    }
+
+    public function get_data_content_preview(int $recordid): stdClass {
+        $options = explode("\n", $this->field->param1);
+        $options = array_map('trim', $options);
+        $selected = $options[$recordid % count($options)];
+        $selected .= '##' . $options[($recordid + 1) % count($options)];
+        return (object)[
+            'id' => 0,
+            'fieldid' => $this->field->id,
+            'recordid' => $recordid,
+            'content' => $selected,
+            'content1' => null,
+            'content2' => null,
+            'content3' => null,
+            'content4' => null,
+        ];
+    }
+
     function display_add_field($recordid = 0, $formdata = null) {
         global $DB, $OUTPUT;
 
@@ -52,12 +73,16 @@ class data_field_multimenu extends data_field_base {
         $str = '<div title="'.s($this->field->description).'">';
         $str .= '<input name="field_' . $this->field->id . '[xxx]" type="hidden" value="xxx"/>'; // hidden field - needed for empty selection
 
-        $str .= '<label for="field_' . $this->field->id . '" class="accesshide">';
-        $str .= html_writer::span($this->field->name);
+        $str .= '<label for="field_' . $this->field->id . '">';
+        $str .= '<legend><span class="accesshide">' . $this->field->name;
+
         if ($this->field->required) {
+            $str .= '&nbsp;' . get_string('requiredelement', 'form') . '</span></legend>';
             $str .= '<div class="inline-req">';
             $str .= $OUTPUT->pix_icon('req', get_string('requiredelement', 'form'));
             $str .= '</div>';
+        } else {
+            $str .= '</span></legend>';
         }
         $str .= '</label>';
         $str .= '<select name="field_' . $this->field->id . '[]" id="field_' . $this->field->id . '"';
@@ -140,7 +165,7 @@ class data_field_multimenu extends data_field_base {
         $str .= '</select>';
 
         $str .= html_writer::checkbox('f_'.$this->field->id.'_allreq', null, $allrequired,
-            get_string('selectedrequired', 'data'), array('class' => 'm-r-1'));
+            get_string('selectedrequired', 'data'), array('class' => 'mr-1'));
 
         return $str;
 
@@ -246,28 +271,23 @@ class data_field_multimenu extends data_field_base {
 
 
     function display_browse_field($recordid, $template) {
-        global $DB;
-
-        if ($content = $DB->get_record('data_content', array('fieldid'=>$this->field->id, 'recordid'=>$recordid))) {
-            if (strval($content->content) === '') {
-                return false;
-            }
-
-            $options = explode("\n",$this->field->param1);
-            $options = array_map('trim', $options);
-
-            $contentArr = explode('##', $content->content);
-            $str = '';
-            foreach ($contentArr as $line) {
-                if (!in_array($line, $options)) {
-                    // hmm, looks like somebody edited the field definition
-                    continue;
-                }
-                $str .= $line . "<br />\n";
-            }
-            return $str;
+        $content = $this->get_data_content($recordid);
+        if (!$content || empty($content->content)) {
+            return '';
         }
-        return false;
+        $options = explode("\n", $this->field->param1);
+        $options = array_map('trim', $options);
+
+        $contentarray = explode('##', $content->content);
+        $str = '';
+        foreach ($contentarray as $line) {
+            if (!in_array($line, $options)) {
+                // Hmm, looks like somebody edited the field definition.
+                continue;
+            }
+            $str .= $line . "<br />\n";
+        }
+        return $str;
     }
 
     /**

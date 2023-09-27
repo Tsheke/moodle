@@ -37,12 +37,15 @@ class core_enrol_renderer extends plugin_renderer_base {
      * @return string XHTML
      */
     protected function render_enrol_user_button(enrol_user_button $button) {
-        $attributes = array('type'     => 'submit',
-                            'value'    => $button->label,
-                            'disabled' => $button->disabled ? 'disabled' : null,
-                            'title'    => $button->tooltip,
-                            'class'    => 'btn btn-secondary m-y-1');
+        $buttoninfo = $button->export_for_template($this->output);
 
+        $attributes = [
+            'type' => 'submit',
+            'value' => $buttoninfo->label,
+            'disabled' => $buttoninfo->disabled ? 'disabled' : null,
+            'title' => $buttoninfo->tooltip,
+            'class' => 'btn ' . "btn-{$buttoninfo->type}",
+        ];
         if ($button->actions) {
             $id = html_writer::random_id('single_button');
             $attributes['id'] = $id;
@@ -96,18 +99,10 @@ class core_enrol_renderer extends plugin_renderer_base {
         $table->initialise_javascript();
 
         $content = '';
-        $searchbutton = $table->get_user_search_button();
-        if ($searchbutton) {
-            $content .= $this->output->render($searchbutton);
-        }
         $content .= html_writer::tag('div', get_string('otheruserdesc', 'enrol'), array('class'=>'otherusersdesc'));
         $content .= $this->output->render($table->get_paging_bar());
         $content .= html_writer::table($table);
         $content .= $this->output->render($table->get_paging_bar());
-        $searchbutton = $table->get_user_search_button();
-        if ($searchbutton) {
-            $content .= $this->output->render($searchbutton);
-        }
         return $content;
     }
 
@@ -353,7 +348,11 @@ class course_enrolment_table extends html_table implements renderable {
      * @var array
      */
     protected static $sortablefields = array('firstname', 'lastname', 'firstnamephonetic', 'lastnamephonetic', 'middlename',
-            'alternatename', 'idnumber', 'email', 'phone1', 'phone2', 'institution', 'department', 'lastaccess', 'lastcourseaccess' );
+            'alternatename', 'username', 'idnumber', 'email', 'phone1', 'phone2',
+            'institution', 'department', 'lastaccess', 'lastcourseaccess');
+
+    /** @var bool To store status of Other users page. */
+    public $otherusers;
 
     /**
      * Constructs the table
@@ -369,7 +368,7 @@ class course_enrolment_table extends html_table implements renderable {
         $this->sort           = optional_param(self::SORTVAR, self::DEFAULTSORT, PARAM_ALPHANUM);
         $this->sortdirection  = optional_param(self::SORTDIRECTIONVAR, self::DEFAULTSORTDIRECTION, PARAM_ALPHA);
 
-        $this->attributes = array('class'=>'userenrolment');
+        $this->attributes = array('class' => 'userenrolment table-striped');
         if (!in_array($this->sort, self::$sortablefields)) {
             $this->sort = self::DEFAULTSORT;
         }
@@ -648,8 +647,6 @@ class course_enrolment_users_table extends course_enrolment_table {
  */
 class course_enrolment_other_users_table extends course_enrolment_table {
 
-    public $otherusers = true;
-
     /**
      * Constructs the table
      *
@@ -680,6 +677,7 @@ class course_enrolment_other_users_table extends course_enrolment_table {
             $this->manager->get_moodlepage()->requires->strings_for_js(array(
                     'ajaxoneuserfound',
                     'ajaxxusersfound',
+                    'ajaxxmoreusersfound',
                     'ajaxnext25',
                     'enrol',
                     'enrolmentoptions',

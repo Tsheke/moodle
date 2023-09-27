@@ -68,10 +68,10 @@ class create extends \moodleform {
         $editoroptions = !(empty($this->_customdata['editoroptions'])) ? $this->_customdata['editoroptions'] : null;
         $courseid = !(empty($this->_customdata['courseid'])) ? $this->_customdata['courseid'] : null;
 
-        $eventtypes = calendar_get_allowed_event_types($courseid);
+        $eventtypes = $this->_customdata['eventtypes'];
 
         if (in_array(true, $eventtypes, true) === false) {
-            print_error('nopermissiontoupdatecalendar');
+            throw new \moodle_exception('nopermissiontoupdatecalendar');
         }
 
         $mform->setDisableShortforms();
@@ -128,8 +128,9 @@ class create extends \moodleform {
         $eventtype = isset($data['eventtype']) ? $data['eventtype'] : null;
         $coursekey = ($eventtype == 'group') ? 'groupcourseid' : 'courseid';
         $courseid = (!empty($data[$coursekey])) ? $data[$coursekey] : null;
-        $eventtypes = calendar_get_allowed_event_types($courseid);
+        $categoryid = (!empty($data['categoryid'])) ? $data['categoryid'] : null;
 
+        $eventtypes = $this->_customdata['eventtypes'];
         if (empty($eventtype) || !isset($eventtypes[$eventtype]) || $eventtypes[$eventtype] == false) {
             $errors['eventtype'] = get_string('invalideventtype', 'calendar');
         }
@@ -146,6 +147,10 @@ class create extends \moodleform {
 
         if ($eventtype == 'course' && empty($courseid)) {
             $errors['courseid'] = get_string('selectacourse');
+        }
+
+        if ($eventtype == 'category' && empty($categoryid)) {
+            $errors['categoryid'] = get_string('selectacategory');
         }
 
         if ($eventtype == 'group' && (!empty($courseid) && empty($data['groupid']))) {

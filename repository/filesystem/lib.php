@@ -311,14 +311,14 @@ class repository_filesystem extends repository {
 
         if ($isdir) {
             $node['children'] = array();
-            $node['thumbnail'] = $OUTPUT->image_url(file_folder_icon(90))->out(false);
+            $node['thumbnail'] = $OUTPUT->image_url(file_folder_icon())->out(false);
             $node['path'] = $this->build_node_path('browse', $relpath, $name, $rootnodepath);
 
         } else {
             $node['source'] = $relpath;
             $node['size'] = filesize($abspath);
-            $node['thumbnail'] = $OUTPUT->image_url(file_extension_icon($name, 90))->out(false);
-            $node['icon'] = $OUTPUT->image_url(file_extension_icon($name, 24))->out(false);
+            $node['thumbnail'] = $OUTPUT->image_url(file_extension_icon($name))->out(false);
+            $node['icon'] = $OUTPUT->image_url(file_extension_icon($name))->out(false);
             $node['path'] = $relpath;
 
             if (file_extension_in_typegroup($name, 'image') && ($imageinfo = @getimagesize($abspath))) {
@@ -848,7 +848,7 @@ function repository_filesystem_pluginfile($course, $cm, $context, $filearea, $ar
     if (!($file = $repo->get_thumbnail($filepath, $filearea))) {
         // Generation failed, redirect to default icon for file extension.
         // Do not use redirect() here because is not compatible with webservice/pluginfile.php.
-        header('Location: ' . $OUTPUT->image_url(file_extension_icon($file, 90)));
+        header('Location: ' . $OUTPUT->image_url(file_extension_icon($file)));
     }
     // The thumbnails should not be changing much, but maybe the default lifetime is too long.
     $lifetime = $CFG->filelifetime;
@@ -856,37 +856,4 @@ function repository_filesystem_pluginfile($course, $cm, $context, $filearea, $ar
         $lifetime = 60*10;
     }
     send_stored_file($file, $lifetime, 0, $forcedownload, $options);
-}
-
-/**
- * Cron callback for repository_filesystem. Deletes the thumbnails for deleted or changed files.
- */
-function repository_filesystem_cron() {
-    $fs = get_file_storage();
-    // Find all generated thumbnails and group them in array by itemid (itemid == repository instance id).
-    $allfiles = array_merge(
-            $fs->get_area_files(SYSCONTEXTID, 'repository_filesystem', 'thumb'),
-            $fs->get_area_files(SYSCONTEXTID, 'repository_filesystem', 'icon')
-    );
-    $filesbyitem = array();
-    foreach ($allfiles as $file) {
-        if (!isset($filesbyitem[$file->get_itemid()])) {
-            $filesbyitem[$file->get_itemid()] = array();
-        }
-        $filesbyitem[$file->get_itemid()][] = $file;
-    }
-    // Find all instances of repository_filesystem.
-    $instances = repository::get_instances(array('type' => 'filesystem'));
-    // Loop through all itemids of generated thumbnails.
-    foreach ($filesbyitem as $itemid => $files) {
-        if (!isset($instances[$itemid]) || !($instances[$itemid] instanceof repository_filesystem)) {
-            // Instance was deleted.
-            $fs->delete_area_files(SYSCONTEXTID, 'repository_filesystem', 'thumb', $itemid);
-            $fs->delete_area_files(SYSCONTEXTID, 'repository_filesystem', 'icon', $itemid);
-            mtrace(" instance $itemid does not exist: deleted all thumbnails");
-        } else {
-            // Instance has some generated thumbnails, check that they are not outdated.
-            $instances[$itemid]->remove_obsolete_thumbnails($files);
-        }
-    }
 }

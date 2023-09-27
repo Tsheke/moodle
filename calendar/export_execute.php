@@ -1,9 +1,34 @@
 <?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Calendar export
+ *
+ * @package    core_calendar
+ * @copyright  1999 onwards Martin Dougiamas (http://dougiamas.com)
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
+define('NO_MOODLE_COOKIES', true);
 
 require_once('../config.php');
-//require_once($CFG->dirroot.'/course/lib.php');
 require_once($CFG->dirroot.'/calendar/lib.php');
 require_once($CFG->libdir.'/bennu/bennu.inc.php');
+
+raise_memory_limit(MEMORY_HUGE);
 
 $userid = optional_param('userid', 0, PARAM_INT);
 $username = optional_param('username', '', PARAM_TEXT);
@@ -14,22 +39,29 @@ if (empty($CFG->enablecalendarexport)) {
     die('no export');
 }
 
-//Fetch user information
-$checkuserid = !empty($userid) && $user = $DB->get_record('user', array('id' => $userid), 'id,password');
-//allowing for fallback check of old url - MDL-27542
-$checkusername = !empty($username) && $user = $DB->get_record('user', array('username' => $username), 'id,password');
-if (!$checkuserid && !$checkusername) {
+// Fetch basic user information to correctly log the user.
+$fields = 'id,username,password,firstname,lastname';
+
+$checkuserid = !empty($userid) && $user = $DB->get_record('user', array('id' => $userid), $fields);
+// Allowing for fallback check of old url - MDL-27542.
+$checkusername = !empty($username) && $user = $DB->get_record('user', array('username' => $username), $fields);
+if ((!$checkuserid && !$checkusername) || !$user) {
     //No such user
     die('Invalid authentication');
 }
 
-//Check authentication token
-$authuserid = !empty($userid) && $authtoken == sha1($userid . $user->password . $CFG->calendar_exportsalt);
-//allowing for fallback check of old url - MDL-27542
+// Check authentication token.
+$authuserid = !empty($userid) && $authtoken == calendar_get_export_token($user);
+// Allowing for fallback check of old url - MDL-27542.
 $authusername = !empty($username) && $authtoken == sha1($username . $user->password . $CFG->calendar_exportsalt);
 if (!$authuserid && !$authusername) {
     die('Invalid authentication');
 }
+
+// Setup up the user including web access logging.
+\core\session\manager::set_user($user);
+
+$PAGE->set_context(context_system::instance());
 
 // Get the calendar type we are using.
 $calendartype = \core_calendar\type_factory::get_calendar_instance();
@@ -40,11 +72,11 @@ $time = optional_param('preset_time', 'weeknow', PARAM_ALPHA);
 $now = $calendartype->timestamp_to_date_array(time());
 
 // Let's see if we have sufficient and correct data
-$allowed_what = array('all', 'user', 'groups', 'courses');
-$allowed_time = array('weeknow', 'weeknext', 'monthnow', 'monthnext', 'recentupcoming', 'custom');
+$allowedwhat = ['all', 'user', 'groups', 'courses', 'categories'];
+$allowedtime = ['weeknow', 'weeknext', 'monthnow', 'monthnext', 'recentupcoming', 'custom'];
 
 if (!empty($generateurl)) {
-    $authtoken = sha1($user->id . $user->password . $CFG->calendar_exportsalt);
+    $authtoken = calendar_get_export_token($user);
     $params = array();
     $params['preset_what'] = $what;
     $params['preset_time'] = $time;
@@ -56,9 +88,9 @@ if (!empty($generateurl)) {
     redirect($link->out());
     die;
 }
-
+$paramcategory = false;
 if(!empty($what) && !empty($time)) {
-    if(in_array($what, $allowed_what) && in_array($time, $allowed_time)) {
+    if(in_array($what, $allowedwhat) && in_array($time, $allowedtime)) {
         $courses = enrol_get_users_courses($user->id, true, 'id, visible, shortname');
         // Array of courses that we will pass to calendar_get_legacy_events() which
         // is initially set to the list of the user's courses.
@@ -76,8 +108,9 @@ if(!empty($what) && !empty($time)) {
         if ($what == 'all') {
             $users = $user->id;
             $courses[SITEID] = new stdClass;
-            $courses[SITEID]->shortname = get_string('globalevents', 'calendar');
+            $courses[SITEID]->shortname = get_string('siteevents', 'calendar');
             $paramcourses[SITEID] = $courses[SITEID];
+            $paramcategory = true;
         } else if ($what == 'groups') {
             $users = false;
             $paramcourses = array();
@@ -85,6 +118,11 @@ if(!empty($what) && !empty($time)) {
             $users = $user->id;
             $groups = false;
             $paramcourses = array();
+        } else if ($what == 'categories') {
+            $users = $user->id;
+            $groups = false;
+            $paramcourses = array();
+            $paramcategory = true;
         } else {
             $users = false;
             $groups = false;
@@ -180,7 +218,9 @@ if(!empty($what) && !empty($time)) {
         die();
     }
 }
-$events = calendar_get_legacy_events($timestart, $timeend, $users, $groups, array_keys($paramcourses), false);
+$limitnum = 0;
+$events = calendar_get_legacy_events($timestart, $timeend, $users, $groups, array_keys($paramcourses), false, true,
+        $paramcategory, $limitnum);
 
 $ical = new iCalendar;
 $ical->add_property('method', 'PUBLISH');
@@ -245,13 +285,15 @@ if(empty($serialized)) {
 
 $filename = 'icalexport.ics';
 
-header('Last-Modified: '. gmdate('D, d M Y H:i:s', time()) .' GMT');
-header('Cache-Control: private, must-revalidate, pre-check=0, post-check=0, max-age=0');
-header('Expires: '. gmdate('D, d M Y H:i:s', 0) .'GMT');
-header('Pragma: no-cache');
-header('Accept-Ranges: none'); // Comment out if PDFs do not work...
-header('Content-disposition: attachment; filename='.$filename);
-header('Content-length: '.strlen($serialized));
-header('Content-type: text/calendar; charset=utf-8');
+if (!defined('BEHAT_SITE_RUNNING')) {
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s', time()) . ' GMT');
+    header('Cache-Control: private, must-revalidate, pre-check=0, post-check=0, max-age=0');
+    header('Expires: ' . gmdate('D, d M Y H:i:s', 0) . 'GMT');
+    header('Pragma: no-cache');
+    header('Accept-Ranges: none'); // Comment out if PDFs do not work...
+    header('Content-disposition: attachment; filename=' . $filename);
+    header('Content-length: ' . strlen($serialized));
+    header('Content-type: text/calendar; charset=utf-8');
+}
 
 echo $serialized;

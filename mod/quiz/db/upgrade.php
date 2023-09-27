@@ -22,7 +22,6 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
 
 /**
  * Quiz module upgrade function.
@@ -30,174 +29,170 @@ defined('MOODLE_INTERNAL') || die();
  */
 function xmldb_quiz_upgrade($oldversion) {
     global $CFG, $DB;
-
     $dbman = $DB->get_manager();
 
-    if ($oldversion < 2016092000) {
-        // Define new fields to be added to quiz.
+    // Automatically generated Moodle v3.9.0 release upgrade line.
+    // Put any upgrade step following this.
+
+    if ($oldversion < 2020061501) {
+
+        // Define field completionminattempts to be added to quiz.
         $table = new xmldb_table('quiz');
+        $field = new xmldb_field('completionminattempts', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0',
+            'completionpass');
 
-        $field = new xmldb_field('allowofflineattempts', XMLDB_TYPE_INTEGER, '1', null, null, null, 0, 'completionpass');
-        // Conditionally launch add field allowofflineattempts.
+        // Conditionally launch add field completionminattempts.
         if (!$dbman->field_exists($table, $field)) {
             $dbman->add_field($table, $field);
         }
+
         // Quiz savepoint reached.
-        upgrade_mod_savepoint(true, 2016092000, 'quiz');
+        upgrade_mod_savepoint(true, 2020061501, 'quiz');
     }
 
-    if ($oldversion < 2016092001) {
-        // New field for quiz_attemps.
+    if ($oldversion < 2021052503) {
+        $table = new xmldb_table('quiz');
+        $field = new xmldb_field('completionpass');
+
+        if ($dbman->field_exists($table, $field)) {
+            $sql = "SELECT q.id, m.id as quizid " .
+                "FROM {quiz} q " .
+                "INNER JOIN {course_modules} cm ON cm.instance = q.id " .
+                "INNER JOIN {modules} m ON m.id = cm.module " .
+                "WHERE m.name = :name AND q.completionpass = :completionpass";
+
+            /** @var moodle_recordset $records */
+            $records = $DB->get_recordset_sql($sql, ['name' => 'quiz', 'completionpass' => 1], 0, 1000);
+            while ($records->valid()) {
+                $quizmodule = null;
+                foreach ($records as $record) {
+                    $ids[] = $record->id;
+                    $quizmodule = $record->quizid;
+                }
+
+                if ($ids) {
+                    list($insql, $params) = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED);
+                    $DB->set_field_select('course_modules', 'completionpassgrade', 1,
+                        "module = :quiz AND instance $insql", $params + ['quiz' => $quizmodule]);
+
+                    // Reset the value so it doesn't get picked on the next run. The field will be dropped later.
+                    $DB->set_field_select('quiz', 'completionpass', 0, "id $insql", $params);
+
+                    // Get the next batch of records.
+                    $records = $DB->get_recordset_sql($sql, ['name' => 'quiz', 'completionpass' => 1], 0, 1000);
+                }
+            }
+            $records->close();
+
+            // We have completed our checks. Drop the field.
+            if ($dbman->field_exists($table, $field)) {
+                $dbman->drop_field($table, $field);
+            }
+        }
+
+        upgrade_mod_savepoint(true, 2021052503, 'quiz');
+    }
+
+    if ($oldversion < 2021101900) {
+
+        // Define field gradednotificationsenttime to be added to quiz_attempts.
         $table = new xmldb_table('quiz_attempts');
+        $field = new xmldb_field('gradednotificationsenttime', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'sumgrades');
 
-        $field = new xmldb_field('timemodifiedoffline', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, 0, 'timemodified');
-        // Conditionally launch add field timemodifiedoffline.
+        // Conditionally launch add field gradednotificationsenttime.
         if (!$dbman->field_exists($table, $field)) {
             $dbman->add_field($table, $field);
+
+            $DB->execute('UPDATE {quiz_attempts} SET gradednotificationsenttime = timefinish');
         }
 
         // Quiz savepoint reached.
-        upgrade_mod_savepoint(true, 2016092001, 'quiz');
+        upgrade_mod_savepoint(true, 2021101900, 'quiz');
     }
 
-    if ($oldversion < 2016100300) {
-        // Find quizzes with the combination of require passing grade and grade to pass 0.
-        $gradeitems = $DB->get_records_sql("
-            SELECT gi.id, gi.itemnumber, cm.id AS cmid
-              FROM {quiz} q
-        INNER JOIN {course_modules} cm ON q.id = cm.instance
-        INNER JOIN {grade_items} gi ON q.id = gi.iteminstance
-        INNER JOIN {modules} m ON m.id = cm.module
-             WHERE q.completionpass = 1
-               AND gi.gradepass = 0
-               AND cm.completiongradeitemnumber IS NULL
-               AND gi.itemmodule = m.name
-               AND gi.itemtype = ?
-               AND m.name = ?", array('mod', 'quiz'));
+    if ($oldversion < 2022020300) {
+        // Define table quiz_slot_tags to be dropped.
+        $table = new xmldb_table('quiz_slot_tags');
 
-        foreach ($gradeitems as $gradeitem) {
-            $DB->execute("UPDATE {course_modules}
-                             SET completiongradeitemnumber = :itemnumber
-                           WHERE id = :cmid",
-                array('itemnumber' => $gradeitem->itemnumber, 'cmid' => $gradeitem->cmid));
+        // Conditionally launch drop table for quiz_slot_tags.
+        if ($dbman->table_exists($table)) {
+            $dbman->drop_table($table);
         }
-        // Quiz savepoint reached.
-        upgrade_mod_savepoint(true, 2016100300, 'quiz');
-    }
 
-    // Automatically generated Moodle v3.2.0 release upgrade line.
-    // Put any upgrade step following this.
-
-    // Automatically generated Moodle v3.3.0 release upgrade line.
-    // Put any upgrade step following this.
-
-    // Automatically generated Moodle v3.4.0 release upgrade line.
-    // Put any upgrade step following this.
-
-    if ($oldversion < 2018020700) {
-
+        // Define fields to be dropped from quiz_slots.
         $table = new xmldb_table('quiz_slots');
 
-        // Define field questioncategoryid to be added to quiz_slots.
-        $field = new xmldb_field('questioncategoryid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'questionid');
-        // Conditionally launch add field questioncategoryid.
-        if (!$dbman->field_exists($table, $field)) {
-            $dbman->add_field($table, $field);
+        // Define key questionid (foreign) to be dropped form quiz_slots.
+        $key = new xmldb_key('questionid', XMLDB_KEY_FOREIGN, ['questionid'], 'question', ['id']);
+
+        // Launch drop key questionid.
+        $dbman->drop_key($table, $key);
+
+        // Define key questioncategoryid (foreign) to be dropped form quiz_slots.
+        $key = new xmldb_key('questioncategoryid', XMLDB_KEY_FOREIGN, ['questioncategoryid'], 'question_categories', ['id']);
+
+        // Launch drop key questioncategoryid.
+        $dbman->drop_key($table, $key);
+
+        $field = new xmldb_field('questionid');
+        // Conditionally launch drop field questionid.
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
         }
 
-        // Define key questioncategoryid (foreign) to be added to quiz_slots.
-        $key = new xmldb_key('questioncategoryid', XMLDB_KEY_FOREIGN, array('questioncategoryid'), 'question_categories', ['id']);
-        // Launch add key questioncategoryid.
-        $dbman->add_key($table, $key);
-
-        // Define field includingsubcategories to be added to quiz_slots.
-        $field = new xmldb_field('includingsubcategories', XMLDB_TYPE_INTEGER, '4', null, null, null, null, 'questioncategoryid');
-        // Conditionally launch add field includingsubcategories.
-        if (!$dbman->field_exists($table, $field)) {
-            $dbman->add_field($table, $field);
+        $field = new xmldb_field('questioncategoryid');
+        // Conditionally launch drop field questioncategoryid.
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
         }
 
-        // Quiz savepoint reached.
-        upgrade_mod_savepoint(true, 2018020700, 'quiz');
-    }
-
-    if ($oldversion < 2018020701) {
-        // This SQL fetches all "random" questions from the question bank.
-        $fromclause = "FROM {quiz_slots} qs
-                       JOIN {question} q ON q.id = qs.questionid
-                      WHERE q.qtype = ?";
-
-        // Get the total record count - used for the progress bar.
-        $total = $DB->count_records_sql("SELECT count(qs.id) $fromclause", array('random'));
-
-        // Get the records themselves.
-        $rs = $DB->get_recordset_sql("SELECT qs.id, q.category, q.questiontext $fromclause", array('random'));
-
-        $a = new stdClass();
-        $a->total = $total;
-        $a->done = 0;
-
-        // For each question, move the configuration data to the quiz_slots table.
-        $pbar = new progress_bar('updatequizslotswithrandom', 500, true);
-        foreach ($rs as $record) {
-            $data = new stdClass();
-            $data->id = $record->id;
-            $data->questioncategoryid = $record->category;
-            $data->includingsubcategories = empty($record->questiontext) ? 0 : 1;
-            $DB->update_record('quiz_slots', $data);
-
-            // Update progress.
-            $a->done++;
-            $pbar->update($a->done, $a->total, get_string('updatequizslotswithrandomxofy', 'quiz', $a));
-        }
-        $rs->close();
-
-        // Quiz savepoint reached.
-        upgrade_mod_savepoint(true, 2018020701, 'quiz');
-    }
-
-    if ($oldversion < 2018040700) {
-
-        // Define field tags to be dropped from quiz_slots. This field was added earlier to master only.
-        $table = new xmldb_table('quiz_slots');
-        $field = new xmldb_field('tags');
-
-        // Conditionally launch drop field quizid.
+        $field = new xmldb_field('includingsubcategories');
+        // Conditionally launch drop field includingsubcategories.
         if ($dbman->field_exists($table, $field)) {
             $dbman->drop_field($table, $field);
         }
 
         // Quiz savepoint reached.
-        upgrade_mod_savepoint(true, 2018040700, 'quiz');
+        upgrade_mod_savepoint(true, 2022020300, 'quiz');
     }
 
-    if ($oldversion < 2018040800) {
+    // Automatically generated Moodle v4.0.0 release upgrade line.
+    // Put any upgrade step following this.
 
-        // Define table quiz_slot_tags to be created.
-        $table = new xmldb_table('quiz_slot_tags');
+    // Automatically generated Moodle v4.1.0 release upgrade line.
+    // Put any upgrade step following this.
 
-        // Adding fields to table quiz_slot_tags.
-        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
-        $table->add_field('slotid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        $table->add_field('tagid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        $table->add_field('tagname', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+    if ($oldversion < 2022120500) {
+        // Define field displaynumber to be added to quiz_slots.
+        $table = new xmldb_table('quiz_slots');
+        $field = new xmldb_field('displaynumber', XMLDB_TYPE_CHAR, '16', null, null, null, null, 'page');
 
-        // Adding keys to table quiz_slot_tags.
-        $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
-        $table->add_key('slotid', XMLDB_KEY_FOREIGN, array('slotid'), 'quiz_slots', array('id'));
-        $table->add_key('tagid', XMLDB_KEY_FOREIGN, array('tagid'), 'tag', array('id'));
-
-        // Conditionally launch create table for quiz_slot_tags.
-        if (!$dbman->table_exists($table)) {
-            $dbman->create_table($table);
+        // Conditionally launch add field displaynumber.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
         }
 
         // Quiz savepoint reached.
-        upgrade_mod_savepoint(true, 2018040800, 'quiz');
+        upgrade_mod_savepoint(true, 2022120500, 'quiz');
     }
 
-    // Automatically generated Moodle v3.5.0 release upgrade line.
+    // Automatically generated Moodle v4.2.0 release upgrade line.
     // Put any upgrade step following this.
+
+    if ($oldversion < 2023042401) {
+
+        // Define field reviewmaxmarks to be added to quiz.
+        $table = new xmldb_table('quiz');
+        $field = new xmldb_field('reviewmaxmarks', XMLDB_TYPE_INTEGER, '6', null, XMLDB_NOTNULL, null, '0', 'reviewcorrectness');
+
+        // Conditionally launch add field reviewmaxmarks.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Quiz savepoint reached.
+        upgrade_mod_savepoint(true, 2023042401, 'quiz');
+    }
 
     return true;
 }

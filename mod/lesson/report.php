@@ -48,12 +48,14 @@ if ($pageid !== null) {
     $url->param('pageid', $pageid);
 }
 $PAGE->set_url($url);
-if ($action == 'reportoverview') {
-    $PAGE->navbar->add(get_string('reports', 'lesson'));
-    $PAGE->navbar->add(get_string('overview', 'lesson'));
+if ($action == 'reportdetail') {
+    $PAGE->navbar->add(get_string('report', 'lesson'), $url);
 }
 
 $lessonoutput = $PAGE->get_renderer('mod_lesson');
+$PAGE->activityheader->set_description('');
+$reportactionmenu = new \mod_lesson\output\report_action_menu($id, $url);
+$reportactionarea = $lessonoutput->render($reportactionmenu);
 
 if ($action === 'delete') {
     /// Process any form data before fetching attempts, grades and times
@@ -118,6 +120,8 @@ if ($action === 'delete') {
 
     if ($table === false) {
         echo $lessonoutput->header($lesson, $cm, $action, false, null, get_string('nolessonattempts', 'lesson'));
+        echo $reportactionarea;
+
         if (!empty($currentgroup)) {
             $groupname = groups_get_group_name($currentgroup);
             echo $OUTPUT->notification(get_string('nolessonattemptsgroup', 'lesson', $groupname));
@@ -130,6 +134,8 @@ if ($action === 'delete') {
     }
 
     echo $lessonoutput->header($lesson, $cm, $action, false, null, get_string('overview', 'lesson'));
+    echo $reportactionarea;
+
     groups_print_activity_menu($cm, $url);
 
     $course_context = context_course::instance($course->id);
@@ -139,39 +145,51 @@ if ($action === 'delete') {
         echo $OUTPUT->box($seeallgradeslink, 'allcoursegrades');
     }
 
-    // Print it all out!
+    // The attempts table.
+    $attemptstable = html_writer::table($table);
+
+    // The HTML that we will be displaying which includes the attempts table and bulk actions menu, if necessary.
+    $attemptshtml = $attemptstable;
+
+    // Show bulk actions when user has capability to edit the lesson.
     if (has_capability('mod/lesson:edit', $context)) {
-        echo  "<form id=\"mod-lesson-report-form\" method=\"post\" action=\"report.php\">\n
-               <input type=\"hidden\" name=\"sesskey\" value=\"".sesskey()."\" />\n
-               <input type=\"hidden\" name=\"id\" value=\"$cm->id\" />\n";
+        $reporturl = new moodle_url('/mod/lesson/report.php');
+        $formid  = 'mod-lesson-report-form';
+
+        // Sesskey hidden input.
+        $formcontents = html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+
+        // CMID hidden input.
+        $formcontents .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $cm->id]);
+
+        // Attempts table.
+        $formcontents .= $attemptstable;
+
+        // Bulk actions menu.
+        $attemptsactions = [
+            'delete' => get_string('deleteselected')
+        ];
+        $bulkactions = new single_select($reporturl, 'action', $attemptsactions, '', ['' => 'choosedots'], $formid);
+        $bulkactions->set_label(get_string('withselectedattempts', 'lesson'));
+        $bulkactions->disabled = true;
+        $bulkactions->attributes = [
+            'data-action' => 'toggle',
+            'data-togglegroup' => 'lesson-attempts',
+            'data-toggle' => 'action',
+        ];
+        $bulkactionshtml = $OUTPUT->render($bulkactions);
+        $formcontents .= $OUTPUT->box($bulkactionshtml, 'center');
+
+        // Build the attempts form.
+        $formattributes = [
+            'id' => $formid,
+            'method' => 'post',
+        ];
+        $attemptshtml = html_writer::tag('form', $formcontents, $formattributes);
     }
 
-    echo html_writer::table($table);
-
-    if (has_capability('mod/lesson:edit', $context)) {
-        $checklinks  = '<a id="checkall" href="#">'.get_string('selectall').'</a> / ';
-        $checklinks .= '<a id="checknone" href="#">'.get_string('deselectall').'</a>';
-        $checklinks .= html_writer::label('action', 'menuaction', false, array('class' => 'accesshide'));
-        $options = array('delete' => get_string('deleteselected'));
-        $attributes = array('id' => 'actionid', 'class' => 'custom-select m-l-1');
-        $checklinks .= html_writer::select($options, 'action', 0, array('' => 'choosedots'), $attributes);
-        $PAGE->requires->js_amd_inline("
-        require(['jquery'], function($) {
-            $('#actionid').change(function() {
-                $('#mod-lesson-report-form').submit();
-            });
-            $('#checkall').click(function(e) {
-                $('#mod-lesson-report-form').find('input:checkbox').prop('checked', true);
-                e.preventDefault();
-            });
-            $('#checknone').click(function(e) {
-                $('#mod-lesson-report-form').find('input:checkbox').prop('checked', false);
-                e.preventDefault();
-            });
-        });");
-        echo $OUTPUT->box($checklinks, 'center');
-        echo '</form>';
-    }
+    // Show the attempts HTML.
+    echo $attemptshtml;
 
     // Calculate the Statistics.
     if ($data->avetime == null) {
@@ -215,7 +233,6 @@ if ($action === 'delete') {
                                 get_string('highscore', 'lesson'), get_string('lowscore', 'lesson'),
                                 get_string('hightime', 'lesson'), get_string('lowtime', 'lesson'));
         $stattable->align = array('center', 'center', 'center', 'center', 'center', 'center');
-        $stattable->wrap = array('nowrap', 'nowrap', 'nowrap', 'nowrap', 'nowrap', 'nowrap');
         $stattable->attributes['class'] = 'standardtable generaltable';
         $stattable->data[] = array($data->avescore, $data->avetime, $data->highscore, $data->lowscore, $data->hightime, $data->lowtime);
 
@@ -226,7 +243,6 @@ if ($action === 'delete') {
         $stattable->head = array(get_string('averagetime', 'lesson'), get_string('hightime', 'lesson'),
                                 get_string('lowtime', 'lesson'));
         $stattable->align = array('center', 'center', 'center');
-        $stattable->wrap = array('nowrap', 'nowrap', 'nowrap');
         $stattable->attributes['class'] = 'standardtable generaltable';
         $stattable->data[] = array($data->avetime, $data->hightime, $data->lowtime);
     }
@@ -247,6 +263,8 @@ if ($action === 'delete') {
 
 **************************************************************************/
     echo $lessonoutput->header($lesson, $cm, $action, false, null, get_string('detailedstats', 'lesson'));
+    echo $reportactionarea;
+
     groups_print_activity_menu($cm, $url);
 
     $course_context = context_course::instance($course->id);
@@ -281,7 +299,7 @@ if ($action === 'delete') {
 
         $table->head = array();
         $table->align = array('right', 'left');
-        $table->attributes['class'] = 'generaltable';
+        $table->attributes['class'] = 'table table-striped';
 
         if (empty($userstats->gradeinfo)) {
             $table->align = array("center");
@@ -307,18 +325,18 @@ if ($action === 'delete') {
     foreach ($answerpages as $page) {
         $table->align = array('left', 'left');
         $table->size = array('70%', null);
-        $table->attributes['class'] = 'generaltable';
+        $table->attributes['class'] = 'table table-striped';
         unset($table->data);
         if ($page->grayout) { // set the color of text
-            $fontstart = "<span class=\"dimmed\">";
-            $fontend = "</font>";
+            $fontstart = html_writer::start_tag('span', array('class' => 'dimmed_text'));
+            $fontend = html_writer::end_tag('span');
             $fontstart2 = $fontstart;
             $fontend2 = $fontend;
         } else {
-            $fontstart = "";
-            $fontend = "";
-            $fontstart2 = "";
-            $fontend2 = "";
+            $fontstart = '';
+            $fontend = '';
+            $fontstart2 = '';
+            $fontend2 = '';
         }
 
         $table->head = array($fontstart2.$page->qtype.": ".format_string($page->title).$fontend2, $fontstart2.get_string("classstats", "lesson").$fontend2);
@@ -342,12 +360,10 @@ if ($action === 'delete') {
         } else {
             $table->data[] = array(get_string('didnotanswerquestion', 'lesson'), " ");
         }
-        echo html_writer::start_tag('div', array('class' => 'no-overflow'));
         echo html_writer::table($table);
-        echo html_writer::end_tag('div');
     }
 } else {
-    print_error('unknowaction');
+    throw new \moodle_exception('unknowaction');
 }
 
 /// Finish the page

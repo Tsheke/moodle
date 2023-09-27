@@ -111,7 +111,6 @@ class restore_assign_activity_structure_step extends restore_activity_structure_
         } else {
             $data->teamsubmissiongroupingid = 0;
         }
-
         if (!isset($data->cutoffdate)) {
             $data->cutoffdate = 0;
         }
@@ -167,6 +166,11 @@ class restore_assign_activity_structure_step extends restore_activity_structure_
         }
         if (!empty($data->groupid)) {
             $data->groupid = $this->get_mappingid('group', $data->groupid);
+            if (!$data->groupid) {
+                // If the group does not exist, then the submission cannot be viewed and restoring can
+                // violate the unique index on the submission table.
+                return;
+            }
         } else {
             $data->groupid = 0;
         }
@@ -384,6 +388,12 @@ class restore_assign_activity_structure_step extends restore_activity_structure_
 
         // Skip user overrides if we are not restoring userinfo.
         if (!$userinfo && !is_null($data->userid)) {
+            return;
+        }
+
+        // Skip group overrides if we are not restoring groupinfo.
+        $groupinfo = $this->get_setting_value('groups');
+        if (!$groupinfo && !is_null($data->groupid)) {
             return;
         }
 

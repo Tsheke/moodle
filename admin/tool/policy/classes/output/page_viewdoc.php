@@ -55,6 +55,15 @@ class page_viewdoc implements renderable, templatable {
     /** @var int User id who wants to view this page. */
     protected $behalfid = null;
 
+    /** @var bool View the policy as a part of the management UI. */
+    protected $manage;
+
+    /** @var int Position of the current policy with respect to the total of policy docs to display. */
+    protected $numpolicy = 0;
+
+    /** @var int Total number of policy documents which the user has to agree to. */
+    protected $totalpolicies = 0;
+
     /**
      * Prepare the page for rendering.
      *
@@ -151,6 +160,7 @@ class page_viewdoc implements renderable, templatable {
      * @return stdClass
      */
     public function export_for_template(renderer_base $output) {
+        global $USER;
 
         $data = (object) [
             'pluginbaseurl' => (new moodle_url('/admin/tool/policy'))->out(false),
@@ -161,6 +171,26 @@ class page_viewdoc implements renderable, templatable {
         if ($this->manage && $this->policy->status != policy_version::STATUS_ARCHIVED) {
             $paramsurl = ['policyid' => $this->policy->policyid, 'versionid' => $this->policy->id];
             $data->editurl = (new moodle_url('/admin/tool/policy/editpolicydoc.php', $paramsurl))->out(false);
+        }
+
+        if ($this->policy->agreementstyle == policy_version::AGREEMENTSTYLE_OWNPAGE) {
+            if (!api::is_user_version_accepted($USER->id, $this->policy->id)) {
+                unset($data->returnurl);
+                $data->accepturl = (new moodle_url('/admin/tool/policy/index.php', [
+                    'listdoc[]' => $this->policy->id,
+                    'status'.$this->policy->id => 1,
+                    'submit' => 'accept',
+                    'sesskey' => sesskey(),
+                ]))->out(false);
+                if ($this->policy->optional == policy_version::AGREEMENT_OPTIONAL) {
+                    $data->declineurl = (new moodle_url('/admin/tool/policy/index.php', [
+                        'listdoc[]' => $this->policy->id,
+                        'status'.$this->policy->id => 0,
+                        'submit' => 'decline',
+                        'sesskey' => sesskey(),
+                    ]))->out(false);
+                }
+            }
         }
 
         $data->policy = clone($this->policy);

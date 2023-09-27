@@ -25,8 +25,6 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-/** Include eventslib.php */
-require_once($CFG->libdir.'/eventslib.php');
 // Include forms lib.
 require_once($CFG->libdir.'/formslib.php');
 
@@ -44,14 +42,7 @@ define('FEEDBACK_DEFAULT_PAGE_COUNT', 20);
 define('FEEDBACK_EVENT_TYPE_OPEN', 'open');
 define('FEEDBACK_EVENT_TYPE_CLOSE', 'close');
 
-/**
- * Returns all other caps used in module.
- *
- * @return array
- */
-function feedback_get_extra_capabilities() {
-    return array('moodle/site:accessallgroups');
-}
+require_once(__DIR__ . '/deprecatedlib.php');
 
 /**
  * @uses FEATURE_GROUPS
@@ -61,7 +52,7 @@ function feedback_get_extra_capabilities() {
  * @uses FEATURE_GRADE_HAS_GRADE
  * @uses FEATURE_GRADE_OUTCOMES
  * @param string $feature FEATURE_xx constant for requested feature
- * @return mixed True if module supports feature, null if doesn't know
+ * @return mixed True if module supports feature, false if not, null if doesn't know or string for the module purpose.
  */
 function feedback_supports($feature) {
     switch($feature) {
@@ -74,6 +65,7 @@ function feedback_supports($feature) {
         case FEATURE_GRADE_OUTCOMES:          return false;
         case FEATURE_BACKUP_MOODLE2:          return true;
         case FEATURE_SHOW_DESCRIPTION:        return true;
+        case FEATURE_MOD_PURPOSE:             return MOD_PURPOSE_COMMUNICATION;
 
         default: return null;
     }
@@ -399,7 +391,8 @@ function feedback_get_recent_mod_activity(&$activities, &$index,
 
     $sqlargs = array();
 
-    $userfields = user_picture::fields('u', null, 'useridagain');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $userfields = $userfieldsapi->get_sql('u', false, '', 'useridagain', false)->selects;
     $sql = " SELECT fk . * , fc . * , $userfields
                 FROM {feedback_completed} fc
                     JOIN {feedback} fk ON fk.id = fc.feedback
@@ -496,14 +489,14 @@ function feedback_print_recent_mod_activity($activity, $courseid, $detail, $modn
 
     echo '<table border="0" cellpadding="3" cellspacing="0" class="forum-recent">';
 
-    echo "<tr><td class=\"userpicture\" valign=\"top\">";
+    echo "<tr><td class=\"userpicture align-top\">";
     echo $OUTPUT->user_picture($activity->user, array('courseid'=>$courseid));
     echo "</td><td>";
 
     if ($detail) {
         $modname = $modnames[$activity->type];
         echo '<div class="title">';
-        echo $OUTPUT->image_icon('icon', $modname, $activity->type);
+        echo $OUTPUT->image_icon('monologo', $modname, $activity->type);
         echo "<a href=\"$CFG->wwwroot/mod/feedback/view.php?id={$activity->cmid}\">{$activity->name}</a>";
         echo '</div>';
     }
@@ -519,32 +512,6 @@ function feedback_print_recent_mod_activity($activity, $courseid, $detail, $modn
     echo "</td></tr></table>";
 
     return;
-}
-
-/**
- * Obtains the automatic completion state for this feedback based on the condition
- * in feedback settings.
- *
- * @param object $course Course
- * @param object $cm Course-module
- * @param int $userid User ID
- * @param bool $type Type of comparison (or/and; can be used as return value if no conditions)
- * @return bool True if completed, false if not, $type if conditions not set.
- */
-function feedback_get_completion_state($course, $cm, $userid, $type) {
-    global $CFG, $DB;
-
-    // Get feedback details
-    $feedback = $DB->get_record('feedback', array('id'=>$cm->instance), '*', MUST_EXIST);
-
-    // If completion option is enabled, evaluate it and return true/false
-    if ($feedback->completionsubmit) {
-        $params = array('userid'=>$userid, 'feedback'=>$feedback->id);
-        return $DB->record_exists('feedback_completed', $params);
-    } else {
-        // Completion option is not enabled so just return $type
-        return $type;
-    }
 }
 
 /**
@@ -597,10 +564,11 @@ function feedback_cron () {
 }
 
 /**
- * @return bool false
+ * @deprecated since Moodle 3.8
  */
-function feedback_scale_used ($feedbackid, $scaleid) {
-    return false;
+function feedback_scale_used() {
+    throw new coding_exception('feedback_scale_used() can not be used anymore. Plugins can implement ' .
+        '<modname>_scale_used_anywhere, all implementations of <modname>_scale_used are now ignored');
 }
 
 /**
@@ -709,7 +677,7 @@ function feedback_reset_userdata($data) {
  *
  * @global object
  * @uses FEEDBACK_RESETFORM_RESET
- * @param object $mform form passed by reference
+ * @param MoodleQuickForm $mform form passed by reference
  */
 function feedback_reset_course_form_definition(&$mform) {
     global $COURSE, $DB;
@@ -819,7 +787,8 @@ function feedback_set_events($feedback) {
         $event->eventtype    = FEEDBACK_EVENT_TYPE_OPEN;
         $event->type         = empty($feedback->timeclose) ? CALENDAR_EVENT_TYPE_ACTION : CALENDAR_EVENT_TYPE_STANDARD;
         $event->name         = get_string('calendarstart', 'feedback', $feedback->name);
-        $event->description  = format_module_intro('feedback', $feedback, $feedback->coursemodule);
+        $event->description  = format_module_intro('feedback', $feedback, $feedback->coursemodule, false);
+        $event->format       = FORMAT_HTML;
         $event->timestart    = $feedback->timeopen;
         $event->timesort     = $feedback->timeopen;
         $event->visible      = instance_is_visible('feedback', $feedback);
@@ -828,7 +797,7 @@ function feedback_set_events($feedback) {
             // Calendar event exists so update it.
             $event->id = $eventid;
             $calendarevent = calendar_event::load($event->id);
-            $calendarevent->update($event);
+            $calendarevent->update($event, false);
         } else {
             // Event doesn't exist so create one.
             $event->courseid     = $feedback->course;
@@ -837,7 +806,7 @@ function feedback_set_events($feedback) {
             $event->modulename   = 'feedback';
             $event->instance     = $feedback->id;
             $event->eventtype    = FEEDBACK_EVENT_TYPE_OPEN;
-            calendar_event::create($event);
+            calendar_event::create($event, false);
         }
     } else if ($eventid) {
         // Calendar event is on longer needed.
@@ -854,7 +823,8 @@ function feedback_set_events($feedback) {
         $event->type         = CALENDAR_EVENT_TYPE_ACTION;
         $event->eventtype    = FEEDBACK_EVENT_TYPE_CLOSE;
         $event->name         = get_string('calendarend', 'feedback', $feedback->name);
-        $event->description  = format_module_intro('feedback', $feedback, $feedback->coursemodule);
+        $event->description  = format_module_intro('feedback', $feedback, $feedback->coursemodule, false);
+        $event->format       = FORMAT_HTML;
         $event->timestart    = $feedback->timeclose;
         $event->timesort     = $feedback->timeclose;
         $event->visible      = instance_is_visible('feedback', $feedback);
@@ -863,7 +833,7 @@ function feedback_set_events($feedback) {
             // Calendar event exists so update it.
             $event->id = $eventid;
             $calendarevent = calendar_event::load($event->id);
-            $calendarevent->update($event);
+            $calendarevent->update($event, false);
         } else {
             // Event doesn't exist so create one.
             $event->courseid     = $feedback->course;
@@ -871,7 +841,7 @@ function feedback_set_events($feedback) {
             $event->userid       = 0;
             $event->modulename   = 'feedback';
             $event->instance     = $feedback->id;
-            calendar_event::create($event);
+            calendar_event::create($event, false);
         }
     } else if ($eventid) {
         // Calendar event is on longer needed.
@@ -993,7 +963,8 @@ function feedback_get_incomplete_users(cm_info $cm,
 
     //first get all user who can complete this feedback
     $cap = 'mod/feedback:complete';
-    $allnames = get_all_user_name_fields(true, 'u');
+    $userfieldsapi = \core_user\fields::for_name();
+    $allnames = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     $fields = 'u.id, ' . $allnames . ', u.picture, u.email, u.imagealt';
     if (!$allusers = get_users_by_capability($context,
                                             $cap,
@@ -1130,7 +1101,8 @@ function feedback_get_complete_users($cm,
         $sortsql = '';
     }
 
-    $ufields = user_picture::fields('u');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $ufields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     $sql = 'SELECT DISTINCT '.$ufields.', c.timemodified as completed_timemodified
             FROM {user} u, {feedback_completed} c '.$fromgroup.'
             WHERE '.$where.' anonymous_response = :anon
@@ -1209,7 +1181,7 @@ function feedback_get_receivemail_users($cmid, $groups = false) {
  * @param int $courseid
  * @param string $name the name of template shown in the templatelist
  * @param int $ispublic 0:privat 1:public
- * @return int the new templateid
+ * @return stdClass the new template
  */
 function feedback_create_template($courseid, $name, $ispublic = 0) {
     global $DB;
@@ -1936,10 +1908,23 @@ function feedback_save_tmp_values($feedbackcompletedtmp, $feedbackcompleted) {
         //check if there are depend items
         $item = $DB->get_record('feedback_item', array('id'=>$value->item));
         if ($item->dependitem > 0 && isset($allitems[$item->dependitem])) {
-            $check = feedback_compare_item_value($tmpcplid,
-                                        $allitems[$item->dependitem],
-                                        $item->dependvalue,
-                                        true);
+            $ditem = $allitems[$item->dependitem];
+            while ($ditem !== null) {
+                $check = feedback_compare_item_value($tmpcplid,
+                                            $ditem,
+                                            $item->dependvalue,
+                                            true);
+                if (!$check) {
+                    break;
+                }
+                if ($ditem->dependitem > 0 && isset($allitems[$ditem->dependitem])) {
+                    $item = $ditem;
+                    $ditem = $allitems[$ditem->dependitem];
+                } else {
+                    $ditem = null;
+                }
+            }
+
         } else {
             $check = true;
         }
@@ -1981,7 +1966,7 @@ function feedback_delete_completedtmp() {
  *
  * @global object
  * @param int $feedbackid
- * @return mixed false if there already is a pagebreak on last position or the id of the pagebreak-item
+ * @return int|false false if there already is a pagebreak on last position or the id of the pagebreak-item
  */
 function feedback_create_pagebreak($feedbackid) {
     global $DB;
@@ -2561,13 +2546,13 @@ function feedback_print_numeric_option_list() {
  * @return void
  */
 function feedback_send_email($cm, $feedback, $course, $user, $completed = null) {
-    global $CFG, $DB;
+    global $CFG, $DB, $PAGE;
 
     if ($feedback->email_notification == 0) {  // No need to do anything
         return;
     }
 
-    if (is_int($user)) {
+    if (!is_object($user)) {
         $user = $DB->get_record('user', array('id' => $user));
     }
 
@@ -2628,8 +2613,13 @@ function feedback_send_email($cm, $feedback, $course, $user, $completed = null) 
                 $posthtml = '';
             }
 
+            $customdata = [
+                'cmid' => $cm->id,
+                'instance' => $feedback->id,
+            ];
             if ($feedback->anonymous == FEEDBACK_ANONYMOUS_NO) {
                 $eventdata = new \core\message\message();
+                $eventdata->anonymous        = false;
                 $eventdata->courseid         = $course->id;
                 $eventdata->name             = 'submission';
                 $eventdata->component        = 'mod_feedback';
@@ -2643,9 +2633,16 @@ function feedback_send_email($cm, $feedback, $course, $user, $completed = null) 
                 $eventdata->courseid         = $course->id;
                 $eventdata->contexturl       = $info->url;
                 $eventdata->contexturlname   = $info->feedback;
+                // User image.
+                $userpicture = new user_picture($user);
+                $userpicture->size = 1; // Use f1 size.
+                $userpicture->includetoken = $teacher->id; // Generate an out-of-session token for the user receiving the message.
+                $customdata['notificationiconurl'] = $userpicture->get_url($PAGE)->out(false);
+                $eventdata->customdata = $customdata;
                 message_send($eventdata);
             } else {
                 $eventdata = new \core\message\message();
+                $eventdata->anonymous        = true;
                 $eventdata->courseid         = $course->id;
                 $eventdata->name             = 'submission';
                 $eventdata->component        = 'mod_feedback';
@@ -2659,6 +2656,9 @@ function feedback_send_email($cm, $feedback, $course, $user, $completed = null) 
                 $eventdata->courseid         = $course->id;
                 $eventdata->contexturl       = $info->url;
                 $eventdata->contexturlname   = $info->feedback;
+                // Feedback icon if can be easily reachable.
+                $customdata['notificationiconurl'] = ($cm instanceof cm_info) ? $cm->get_icon_url()->out() : '';
+                $eventdata->customdata = $customdata;
                 message_send($eventdata);
             }
         }
@@ -2708,6 +2708,7 @@ function feedback_send_email_anonym($cm, $feedback, $course) {
             }
 
             $eventdata = new \core\message\message();
+            $eventdata->anonymous        = true;
             $eventdata->courseid         = $course->id;
             $eventdata->name             = 'submission';
             $eventdata->component        = 'mod_feedback';
@@ -2721,6 +2722,12 @@ function feedback_send_email_anonym($cm, $feedback, $course) {
             $eventdata->courseid         = $course->id;
             $eventdata->contexturl       = $info->url;
             $eventdata->contexturlname   = $info->feedback;
+            $eventdata->customdata       = [
+                'cmid' => $cm->id,
+                'instance' => $feedback->id,
+                'notificationiconurl' => ($cm instanceof cm_info) ? $cm->get_icon_url()->out() : '',  // Performance wise.
+            ];
+
             message_send($eventdata);
         }
     }
@@ -2778,7 +2785,7 @@ function feedback_send_email_html($info, $course, $cm) {
 function feedback_encode_target_url($url) {
     if (strpos($url, '?')) {
         list($part1, $part2) = explode('?', $url, 2); //maximal 2 parts
-        return $part1 . '?' . htmlentities($part2);
+        return $part1 . '?' . htmlentities($part2, ENT_COMPAT);
     } else {
         return $url;
     }
@@ -2790,64 +2797,55 @@ function feedback_encode_target_url($url) {
  * @param settings_navigation $settings The settings navigation object
  * @param navigation_node $feedbacknode The node to add module settings to
  */
-function feedback_extend_settings_navigation(settings_navigation $settings,
-                                             navigation_node $feedbacknode) {
-
-    global $PAGE;
-
-    if (!$context = context_module::instance($PAGE->cm->id, IGNORE_MISSING)) {
-        print_error('badcontext');
+function feedback_extend_settings_navigation(settings_navigation $settings, navigation_node $feedbacknode) {
+    $hassecondary = $settings->get_page()->has_secondary_navigation();
+    if (!$context = context_module::instance($settings->get_page()->cm->id, IGNORE_MISSING)) {
+        throw new \moodle_exception('badcontext');
     }
 
     if (has_capability('mod/feedback:edititems', $context)) {
-        $questionnode = $feedbacknode->add(get_string('questions', 'feedback'));
-
+        $questionnode = $feedbacknode->add(get_string('questions', 'feedback'), null,
+            navigation_node::TYPE_CUSTOM, null, 'questionnode');
         $questionnode->add(get_string('edit_items', 'feedback'),
-                    new moodle_url('/mod/feedback/edit.php',
-                                    array('id' => $PAGE->cm->id,
-                                          'do_show' => 'edit')));
+            new moodle_url('/mod/feedback/edit.php', ['id' => $settings->get_page()->cm->id]));
 
         $questionnode->add(get_string('export_questions', 'feedback'),
-                    new moodle_url('/mod/feedback/export.php',
-                                    array('id' => $PAGE->cm->id,
-                                          'action' => 'exportfile')));
+            new moodle_url('/mod/feedback/export.php', ['id' => $settings->get_page()->cm->id, 'action' => 'exportfile']));
 
         $questionnode->add(get_string('import_questions', 'feedback'),
-                    new moodle_url('/mod/feedback/import.php',
-                                    array('id' => $PAGE->cm->id)));
+            new moodle_url('/mod/feedback/import.php', ['id' => $settings->get_page()->cm->id]));
 
-        $questionnode->add(get_string('templates', 'feedback'),
-                    new moodle_url('/mod/feedback/edit.php',
-                                    array('id' => $PAGE->cm->id,
-                                          'do_show' => 'templates')));
+        $feedbacknode->add(get_string('templates', 'feedback'),
+            new moodle_url('/mod/feedback/manage_templates.php', ['id' => $settings->get_page()->cm->id, 'mode' => 'manage']),
+            navigation_node::TYPE_CUSTOM, null, 'templatenode');
     }
 
-    if (has_capability('mod/feedback:mapcourse', $context) && $PAGE->course->id == SITEID) {
+    if (has_capability('mod/feedback:mapcourse', $context) && $settings->get_page()->course->id == SITEID) {
         $feedbacknode->add(get_string('mappedcourses', 'feedback'),
-                    new moodle_url('/mod/feedback/mapcourse.php',
-                                    array('id' => $PAGE->cm->id)));
+            new moodle_url('/mod/feedback/mapcourse.php', ['id' => $settings->get_page()->cm->id]),
+            navigation_node::TYPE_CUSTOM, null, 'mapcourse');
+    }
+
+    $feedback = $settings->get_page()->activityrecord;
+    if ($feedback->course == SITEID) {
+        $analysisnode = navigation_node::create(get_string('analysis', 'feedback'),
+            new moodle_url('/mod/feedback/analysis_course.php', ['id' => $settings->get_page()->cm->id]),
+            navigation_node::TYPE_CUSTOM, null, 'feedbackanalysis');
+    } else {
+        $analysisnode = navigation_node::create(get_string('analysis', 'feedback'),
+            new moodle_url('/mod/feedback/analysis.php', ['id' => $settings->get_page()->cm->id]),
+            navigation_node::TYPE_CUSTOM, null, 'feedbackanalysis');
     }
 
     if (has_capability('mod/feedback:viewreports', $context)) {
-        $feedback = $PAGE->activityrecord;
-        if ($feedback->course == SITEID) {
-            $feedbacknode->add(get_string('analysis', 'feedback'),
-                    new moodle_url('/mod/feedback/analysis_course.php',
-                                    array('id' => $PAGE->cm->id)));
-        } else {
-            $feedbacknode->add(get_string('analysis', 'feedback'),
-                    new moodle_url('/mod/feedback/analysis.php',
-                                    array('id' => $PAGE->cm->id)));
-        }
-
-        $feedbacknode->add(get_string('show_entries', 'feedback'),
-                    new moodle_url('/mod/feedback/show_entries.php',
-                                    array('id' => $PAGE->cm->id)));
-
-        if ($feedback->anonymous == FEEDBACK_ANONYMOUS_NO AND $feedback->course != SITEID) {
-            $feedbacknode->add(get_string('show_nonrespondents', 'feedback'),
-                        new moodle_url('/mod/feedback/show_nonrespondents.php',
-                                        array('id' => $PAGE->cm->id)));
+        $feedbacknode->add_node($analysisnode);
+        $feedbacknode->add(get_string(($hassecondary ? 'responses' : 'show_entries'), 'feedback'),
+            new moodle_url('/mod/feedback/show_entries.php', ['id' => $settings->get_page()->cm->id]),
+            navigation_node::TYPE_CUSTOM, null, 'responses');
+    } else {
+        $feedbackcompletion = new mod_feedback_completion($feedback, $context, $settings->get_page()->course->id);
+        if ($feedbackcompletion->can_view_analysis()) {
+            $feedbacknode->add_node($analysisnode);
         }
     }
 }
@@ -3002,13 +3000,35 @@ function feedback_check_updates_since(cm_info $cm, $from, $filter = array()) {
  *
  * @param calendar_event $event
  * @param \core_calendar\action_factory $factory
+ * @param int $userid User id to use for all capability checks, etc. Set to 0 for current user (default).
  * @return \core_calendar\local\event\entities\action_interface|null
  */
 function mod_feedback_core_calendar_provide_event_action(calendar_event $event,
-                                                         \core_calendar\action_factory $factory) {
+                                                         \core_calendar\action_factory $factory,
+                                                         int $userid = 0) {
 
-    $cm = get_fast_modinfo($event->courseid)->instances['feedback'][$event->instance];
-    $feedbackcompletion = new mod_feedback_completion(null, $cm, 0);
+    global $USER;
+
+    if (empty($userid)) {
+        $userid = $USER->id;
+    }
+
+    $cm = get_fast_modinfo($event->courseid, $userid)->instances['feedback'][$event->instance];
+
+    if (!$cm->uservisible) {
+        // The module is not visible to the user for any reason.
+        return null;
+    }
+
+    $completion = new \completion_info($cm->get_course());
+
+    $completiondata = $completion->get_data($cm, false, $userid);
+
+    if ($completiondata->completionstate != COMPLETION_INCOMPLETE) {
+        return null;
+    }
+
+    $feedbackcompletion = new mod_feedback_completion(null, $cm, 0, false, null, null, $userid);
 
     if (!empty($cm->customdata['timeclose']) && $cm->customdata['timeclose'] < time()) {
         // Feedback is already closed, do not display it even if it was never submitted.
@@ -3023,7 +3043,7 @@ function mod_feedback_core_calendar_provide_event_action(calendar_event $event,
     // The feedback is actionable if it does not have timeopen or timeopen is in the past.
     $actionable = $feedbackcompletion->is_open();
 
-    if ($actionable && $feedbackcompletion->is_already_submitted()) {
+    if ($actionable && $feedbackcompletion->is_already_submitted(false)) {
         // There is no need to display anything if the user has already submitted the feedback.
         return null;
     }
@@ -3099,10 +3119,9 @@ function mod_feedback_get_completion_active_rule_descriptions($cm) {
     foreach ($cm->customdata['customcompletionrules'] as $key => $val) {
         switch ($key) {
             case 'completionsubmit':
-                if (empty($val)) {
-                    continue;
+                if (!empty($val)) {
+                    $descriptions[] = get_string('completionsubmit', 'feedback');
                 }
-                $descriptions[] = get_string('completionsubmit', 'feedback');
                 break;
             default:
                 break;
@@ -3223,4 +3242,27 @@ function mod_feedback_core_calendar_event_timestart_updated(\calendar_event $eve
         $event = \core\event\course_module_updated::create_from_cm($coursemodule, $context);
         $event->trigger();
     }
+}
+
+/**
+ * Callback to fetch the activity event type lang string.
+ *
+ * @param string $eventtype The event type.
+ * @return lang_string The event type lang string.
+ */
+function mod_feedback_core_calendar_get_event_action_string(string $eventtype): string {
+    $modulename = get_string('modulename', 'feedback');
+
+    switch ($eventtype) {
+        case FEEDBACK_EVENT_TYPE_OPEN:
+            $identifier = 'calendarstart';
+            break;
+        case FEEDBACK_EVENT_TYPE_CLOSE:
+            $identifier = 'calendarend';
+            break;
+        default:
+            return get_string('requiresaction', 'calendar', $modulename);
+    }
+
+    return get_string($identifier, 'feedback', $modulename);
 }

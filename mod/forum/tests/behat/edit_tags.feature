@@ -16,41 +16,38 @@ Feature: Edited forum posts handle tags correctly
       | user | course | role |
       | teacher1 | C1 | editingteacher |
       | student1 | C1 | student |
-    And I log in as "teacher1"
-    And I am on "Course 1" course homepage with editing mode on
-    And I add a "Forum" to section "1" and I fill the form with:
-      | Forum name | Test forum name |
-      | Description | Test forum description |
-    And I add a new discussion to "Test forum name" forum with:
-      | Subject | Teacher post subject |
-      | Message | Teacher post message |
-    And I log out
+    And the following "activity" exists:
+      | course   | C1              |
+      | activity | forum           |
+      | name     | Test forum name |
+      | idnumber | forum1          |
+    And the following "mod_forum > discussions" exist:
+      | user     | forum  | name                 | message              |
+      | teacher1 | forum1 | Teacher post subject | Teacher post message |
 
   @javascript
   Scenario: Forum post edition of custom tags works as expected
-    Given I log in as "student1"
-    And I am on "Course 1" course homepage
+    Given I am on the "Course 1" Course page logged in as student1
     And I reply "Teacher post subject" post from "Test forum name" forum with:
       | Subject | Student post subject |
       | Message | Student post message |
       | Tags    | Tag1                 |
-    Then I should see "Tag1" in the ".forum-tags" "css_element"
+    Then I should see "Tag1" in the ".tag_list" "css_element"
     And I click on "Edit" "link" in the "//div[@aria-label='Student post subject by Student 1']" "xpath_element"
     Then I should see "Tag1" in the ".form-autocomplete-selection" "css_element"
 
   @javascript
   Scenario: Forum post edition of standard tags works as expected
     Given I log in as "admin"
+    And I change window size to "large"
     And I navigate to "Appearance > Manage tags" in site administration
     And I follow "Default collection"
     And I follow "Add standard tags"
     And I set the field "Enter comma-separated list of new tags" to "OT1, OT2, OT3"
     And I press "Continue"
-    And I log out
-    And I log in as "teacher1"
-    And I am on "Course 1" course homepage
-    And I follow "Test forum"
-    And I click on "Add a new discussion topic" "button"
+    And I am on the "Test forum name" "forum activity" page logged in as teacher1
+    And I click on "Add discussion topic" "link"
+    And I click on "Advanced" "button"
     And I expand all fieldsets
     And I open the autocomplete suggestions list
     And I should see "OT1" in the ".form-autocomplete-suggestions" "css_element"
@@ -60,9 +57,9 @@ Feature: Edited forum posts handle tags correctly
       | Subject | Student post subject |
       | Message | Student post message |
       | Tags | OT1, OT3 |
-    Then I should see "OT1" in the ".forum-tags" "css_element"
-    And I should see "OT3" in the ".forum-tags" "css_element"
-    And I should not see "OT2" in the ".forum-tags" "css_element"
+    Then I should see "OT1" in the ".tag_list" "css_element"
+    And I should see "OT3" in the ".tag_list" "css_element"
+    And I should not see "OT2" in the ".tag_list" "css_element"
     And I click on "Edit" "link" in the "//div[@aria-label='Student post subject by Teacher 1']" "xpath_element"
     And I should see "OT1" in the ".form-autocomplete-selection" "css_element"
     And I should see "OT3" in the ".form-autocomplete-selection" "css_element"

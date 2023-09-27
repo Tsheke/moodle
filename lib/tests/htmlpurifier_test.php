@@ -14,27 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Unit tests for the HTMLPurifier integration
- *
- * @package    core
- * @category   phpunit
- * @copyright  2012 Petr Skoda {@link http://skodak.org}
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
-defined('MOODLE_INTERNAL') || die();
-
+namespace core;
 
 /**
  * HTMLPurifier test case
  *
  * @package    core
- * @category   phpunit
+ * @category   test
  * @copyright  2012 Petr Skoda {@link http://skodak.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class core_htmlpurifier_testcase extends basic_testcase {
+class htmlpurifier_test extends \basic_testcase {
 
     /**
      * Verify _blank target is allowed.
@@ -62,6 +52,11 @@ class core_htmlpurifier_testcase extends basic_testcase {
         $this->assertSame($text, $result);
 
         $text = '<nolink>xxx<em>xx</em><div>xxx</div></nolink>';
+        $result = purify_html($text, array());
+        $this->assertSame($text, $result);
+
+        // Ensure nolink doesn't force open tags to be closed, so can be virtually everywhere.
+        $text = '<p><nolink><div>no filters</div></nolink></p>';
         $result = purify_html($text, array());
         $this->assertSame($text, $result);
     }
@@ -431,6 +426,12 @@ class core_htmlpurifier_testcase extends basic_testcase {
                 '<video %1$s>Did not work <a href="http://example.com/prettygood.mp4">click here to download</a></video>',
                 '<div class="text_to_html"><video %1$s>Did not work <a href="http://example.com/prettygood.mp4">' .
                 'click here to download</a></video></div>'
+            ]) + $generatetestcases('Video inside an inline tag', $videoattrs + ['src="http://example.com/prettygood.mp4'], [
+                '<em><video %1$s>Oh, that\'s pretty bad 😦</video></em>',
+                '<div class="text_to_html"><em><video %1$s>Oh, that\'s pretty bad 😦</video></em></div>'
+            ]) + $generatetestcases('Video inside a block tag', $videoattrs + ['src="http://example.com/prettygood.mp4'], [
+                '<p><video %1$s>Oh, that\'s pretty bad 😦</video></p>',
+                '<div class="text_to_html"><p><video %1$s>Oh, that\'s pretty bad 😦</video></p></div>'
             ]) + $generatetestcases('Source tag without video or audio', $videoattrs, [
                 'some text <source src="http://example.com/getup.wav" type="audio/wav"> the end',
                 '<div class="text_to_html">some text  the end</div>'

@@ -1,5 +1,3 @@
-/* global Item */
-
 /**
  * A managed category.
  *
@@ -8,9 +6,9 @@
  * @constructor
  * @extends Item
  */
-function Category() {
+Category = function() {
     Category.superclass.constructor.apply(this, arguments);
-}
+};
 Category.NAME = 'moodle-course-management-category';
 Category.CSS_PREFIX = 'management-category';
 Category.ATTRS = {
@@ -259,27 +257,25 @@ Category.prototype = {
      * @param {Course} course
      */
     moveCourseTo: function(course) {
-        var self = this;
-        Y.use('moodle-core-notification-confirm', function() {
-            var confirm = new M.core.confirm({
-                title: M.util.get_string('confirm', 'moodle'),
-                question: M.util.get_string('confirmcoursemove', 'moodle', {
+        require(['core/notification'], function(Notification) {
+            Notification.saveCancelPromise(
+                M.util.get_string('confirmation', 'admin'),
+                M.util.get_string('confirmcoursemove', 'moodle',
+                {
                     course: course.getName(),
-                    category: self.getName()
+                    category: this.getName(),
                 }),
-                yesLabel: M.util.get_string('move', 'moodle'),
-                noLabel: M.util.get_string('cancel', 'moodle')
-            });
-            confirm.on('complete-yes', function() {
-                confirm.hide();
-                confirm.destroy();
+                M.util.get_string('move', 'moodle')
+            ).then(function() {
                 this.get('console').performAjaxAction('movecourseintocategory', {
+                    courseid: course.get('courseid'),
                     categoryid: this.get('categoryid'),
-                    courseid: course.get('courseid')
                 }, this.completeMoveCourse, this);
-            }, self);
-            confirm.show();
-        });
+                return;
+            }.bind(this)).catch(function() {
+                // User cancelled.
+            });
+        }.bind(this));
     },
 
     /**

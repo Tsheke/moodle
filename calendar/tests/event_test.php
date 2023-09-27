@@ -14,15 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Event tests.
- *
- * @package    core_calendar
- * @copyright  2017 Cameron Ball <cameron@cameron1729.xyz>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
-defined('MOODLE_INTERNAL') || die();
+namespace core_calendar;
 
 use core_calendar\local\event\entities\event;
 use core_calendar\local\event\proxies\std_proxy;
@@ -31,13 +23,16 @@ use core_calendar\local\event\value_objects\event_description;
 use core_calendar\local\event\value_objects\event_times;
 use core_calendar\local\event\entities\event_collection_interface;
 
+defined('MOODLE_INTERNAL') || die();
+
 /**
- * Event testcase.
+ * Calendar event tests..
  *
+ * @package    core_calendar
  * @copyright 2017 Cameron Ball <cameron@cameron1729.xyz>
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class core_calendar_event_testcase extends advanced_testcase {
+class event_test extends \advanced_testcase {
     /**
      * Test event class getters.
      *
@@ -59,16 +54,18 @@ class core_calendar_event_testcase extends advanced_testcase {
             $constructorparams['times'],
             $constructorparams['visible'],
             $constructorparams['subscription'],
-            $constructorparams['location']
+            $constructorparams['location'],
+            $constructorparams['component']
         );
 
         foreach ($constructorparams as $name => $value) {
-            if ($name !== 'visible') {
+            if ($name !== 'visible' && $name !== 'component') {
                 $this->assertEquals($event->{'get_' . $name}(), $value);
             }
         }
 
         $this->assertEquals($event->is_visible(), $constructorparams['visible']);
+        $this->assertEquals('mod_' . $event->get_course_module()->get('modname'), $event->get_component());
     }
 
     /**
@@ -76,7 +73,7 @@ class core_calendar_event_testcase extends advanced_testcase {
      */
     public function getters_testcases() {
         $lamecallable = function($id) {
-            return (object)['id' => $id];
+            return (object)['id' => $id, 'modname' => 'assign'];
         };
 
         return [
@@ -96,11 +93,13 @@ class core_calendar_event_testcase extends advanced_testcase {
                         (new \DateTimeImmutable())->setTimestamp(-386380800),
                         (new \DateTimeImmutable())->setTimestamp(115776000),
                         (new \DateTimeImmutable())->setTimestamp(115776000),
-                        (new \DateTimeImmutable())->setTimestamp(time())
+                        (new \DateTimeImmutable())->setTimestamp(time()),
+                        (new \DateTimeImmutable())->setTimestamp(115776000)
                     ),
                     'visible' => true,
                     'subscription' => new std_proxy(1, $lamecallable),
                     'location' => 'Test',
+                    'component' => null
                 ]
             ],
         ];
@@ -137,7 +136,7 @@ class core_calendar_event_test_event_collection implements event_collection_inte
         return 2;
     }
 
-    public function getIterator() {
+    public function getIterator(): \Traversable {
         foreach ($this->events as $event) {
             yield $event;
         }

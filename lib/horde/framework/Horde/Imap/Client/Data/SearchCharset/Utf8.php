@@ -2,7 +2,7 @@
 /**
  * Copyright 2014-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -60,6 +60,18 @@ extends Horde_Imap_Client_Data_SearchCharset
     /**
      */
     public function unserialize($data)
+    {
+    }
+
+    /**
+     * @return array
+     */
+    public function __serialize()
+    {
+        return array();
+    }
+
+    public function __unserialize(array $data)
     {
     }
 

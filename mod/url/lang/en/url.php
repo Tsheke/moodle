@@ -23,10 +23,10 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-$string['clicktoopen'] = 'Click {$a} link to open resource.';
+$string['clicktoopen'] = 'Click on {$a} to open the resource.';
 $string['configdisplayoptions'] = 'Select all options that should be available, existing settings are not modified. Hold CTRL key to select multiple fields.';
 $string['configframesize'] = 'When a web page or an uploaded file is displayed within a frame, this value is the height (in pixels) of the top frame (which contains the navigation).';
-$string['configrolesinparams'] = 'Enable if you want to include localized role names in list of available parameter variables.';
+$string['configrolesinparams'] = 'Should customised role names (from the course settings) be available as variables for URL parameters?';
 $string['configsecretphrase'] = 'This secret phrase is used to produce encrypted code value that can be sent to some servers as a parameter.  The encrypted code is produced by an md5 value of the current user IP address concatenated with your secret phrase. ie code = md5(IP.secretphrase). Please note that this is not reliable because IP address may change and is often shared by different computers.';
 $string['contentheader'] = 'Content';
 $string['createurl'] = 'Create a URL';
@@ -47,8 +47,14 @@ $string['invalidstoredurl'] = 'Cannot display this resource, URL is invalid.';
 $string['chooseavariable'] = 'Choose a variable...';
 $string['indicator:cognitivedepth'] = 'URL cognitive';
 $string['indicator:cognitivedepth_help'] = 'This indicator is based on the cognitive depth reached by the student in a URL resource.';
+$string['indicator:cognitivedepthdef'] = 'URL cognitive';
+$string['indicator:cognitivedepthdef_help'] = 'The participant has reached this percentage of the cognitive engagement offered by the URL resources during this analysis interval (Levels = No view, View)';
+$string['indicator:cognitivedepthdef_link'] = 'Learning_analytics_indicators#Cognitive_depth';
 $string['indicator:socialbreadth'] = 'URL social';
 $string['indicator:socialbreadth_help'] = 'This indicator is based on the social breadth reached by the student in a URL resource.';
+$string['indicator:socialbreadthdef'] = 'URL social';
+$string['indicator:socialbreadthdef_help'] = 'The participant has reached this percentage of the social engagement offered by the URL resources during this analysis interval (Levels = No participation, Participant alone)';
+$string['indicator:socialbreadthdef_link'] = 'Learning_analytics_indicators#Social_breadth';
 $string['invalidurl'] = 'Entered URL is invalid';
 $string['modulename'] = 'URL';
 $string['modulename_help'] = 'The URL module enables a teacher to provide a web link as a course resource. Anything that is freely available online, such as documents or images, can be linked to; the URL doesn’t have to be the home page of a website. The URL of a particular web page may be copied and pasted or a teacher can use the file picker and choose a link from a repository such as Flickr, YouTube or Wikimedia (depending upon which repositories are enabled for the site).
@@ -58,10 +64,16 @@ There are a number of display options for the URL, such as embedded or opening i
 Note that URLs can also be added to any other resource or activity type through the text editor.';
 $string['modulename_link'] = 'mod/url/view';
 $string['modulenameplural'] = 'URLs';
+$string['name'] = 'Name';
+$string['name_help'] = 'This will serve as the link text for the URL.
+
+Enter a meaningful text that concisely describes the URL\'s purpose.
+
+Avoid using the word "link". This will help screen reader users as screen readers announce links (e.g. "Moodle.org, link") so there\'s no need to include the word "link" in the name field.';
 $string['page-mod-url-x'] = 'Any URL module page';
 $string['parameterinfo'] = '&amp;parameter=variable';
 $string['parametersheader'] = 'URL variables';
-$string['parametersheader_help'] = 'Some internal Moodle variables may be automatically appended to the URL. Type your name for the parameter into each text box(es) and then select the required matching variable.';
+$string['parametersheader_help'] = 'This section allows you to pass internal information as part of the URL. This is useful if the URL is an interactive web page that takes parameters, and you want to pass something like the name of the current user, for example. Enter the name of the URL\'s parameter in the text box then select the corresponding site variable.';
 $string['pluginadministration'] = 'URL module administration';
 $string['pluginname'] = 'URL';
 $string['popupheight'] = 'Pop-up height (in pixels)';
@@ -71,7 +83,7 @@ $string['popupwidthexplain'] = 'Specifies default width of popup windows.';
 $string['printintro'] = 'Display URL description';
 $string['printintroexplain'] = 'Display URL description below content? Some display types may not display description even if enabled.';
 $string['privacy:metadata'] = 'The URL resource plugin does not store any personal data.';
-$string['rolesinparams'] = 'Include role names in parameters';
+$string['rolesinparams'] = 'Role names as URL variables';
 $string['search:activity'] = 'URL';
 $string['serverurl'] = 'Server URL';
 $string['url:addinstance'] = 'Add a new URL resource';

@@ -88,14 +88,23 @@ class block_online_users extends block_base {
 
         $this->content->text = '<div class="info">'.$usercount.' ('.$periodminutes.')</div>';
 
-        // Verify if we can see the list of users, if not just print number of users
-        if (!has_capability('block/online_users:viewlist', $this->page->context)) {
+        // Verify if we can see the list of users, if not just print number of users.
+        // If the current user is not logged in OR it's a guest then don't show any users.
+        if (!has_capability('block/online_users:viewlist', $this->page->context)
+                || isguestuser() || !isloggedin()) {
             return $this->content;
         }
 
         $userlimit = 50; // We'll just take the most recent 50 maximum.
+        $initialcount = 0;
         if ($users = $onlineusers->get_users($userlimit)) {
+            require_once($CFG->dirroot . '/user/lib.php');
+            $initialcount = count($users);
             foreach ($users as $user) {
+                if (!user_can_view_profile($user)) {
+                    unset($users[$user->id]);
+                    continue;
+                }
                 $users[$user->id]->fullname = fullname($user);
             }
         } else {
@@ -126,17 +135,25 @@ class block_online_users extends block_base {
                 } else { // Not a guest user.
                     $this->content->text .= '<div class="user">';
                     $this->content->text .= '<a href="'.$CFG->wwwroot.'/user/view.php?id='.$user->id.'&amp;course='.$this->page->course->id.'" title="'.$timeago.'">';
-                    $this->content->text .= $OUTPUT->user_picture($user, array('size'=>16, 'alttext'=>false, 'link'=>false)) .$user->fullname.'</a></div>';
+                    $avataroptions = [
+                        'size' => 30,
+                        'class' => 'userpicture align-middle',
+                        'visibletoscreenreaders' => false,
+                        'link' => false,
+                    ];
+                    $this->content->text .= $OUTPUT->user_picture($user, $avataroptions) . $user->fullname . '</a></div>';
 
                     if ($USER->id == $user->id) {
-                        $action = ($user->uservisibility != null && $user->uservisibility == 0) ? 'show' : 'hide';
-                        $anchortagcontents = $OUTPUT->pix_icon('t/' . $action,
-                            get_string('online_status:' . $action, 'block_online_users'));
-                        $anchortag = html_writer::link("", $anchortagcontents,
-                            array('title' => get_string('online_status:' . $action, 'block_online_users'),
-                                'data-action' => $action, 'data-userid' => $user->id, 'id' => 'change-user-visibility'));
+                        if ($CFG->block_online_users_onlinestatushiding) {
+                            $action = ($user->uservisibility != null && $user->uservisibility == 0) ? 'show' : 'hide';
+                            $anchortagcontents = $OUTPUT->pix_icon('t/' . $action,
+                                get_string('online_status:' . $action, 'block_online_users'));
+                            $anchortag = html_writer::link("", $anchortagcontents,
+                                array('title' => get_string('online_status:' . $action, 'block_online_users'),
+                                    'data-action' => $action, 'data-userid' => $user->id, 'id' => 'change-user-visibility'));
 
-                        $this->content->text .= '<div class="uservisibility">' . $anchortag . '</div>';
+                            $this->content->text .= '<div class="uservisibility">' . $anchortag . '</div>';
+                        }
                     } else {
                         if ($canshowicon) {  // Only when logged in and messaging active etc.
                             $anchortagcontents = $OUTPUT->pix_icon('t/message', get_string('messageselectadd'));
@@ -150,10 +167,39 @@ class block_online_users extends block_base {
                 }
                 $this->content->text .= "</li>\n";
             }
+            if ($initialcount - count($users) > 0) {
+                $this->content->text .= '<li class="listentry"><div class="otherusers">';
+                $this->content->text .= html_writer::span(
+                    get_string('otherusers', 'block_online_users', $initialcount - count($users))
+                );
+                $this->content->text .= "</div>";
+                $this->content->text .= "</li>\n";
+            }
             $this->content->text .= '</ul><div class="clearer"><!-- --></div>';
         }
 
         return $this->content;
+    }
+
+    /**
+     * Return the plugin config settings for external functions.
+     *
+     * @return stdClass the configs for both the block instance and plugin
+     * @since Moodle 3.8
+     */
+    public function get_config_for_external() {
+        global $CFG;
+
+        // Return all settings for all users since it is safe (no private keys, etc..).
+        $configs = (object) [
+            'timetosee' => $CFG->block_online_users_timetosee,
+            'onlinestatushiding' => $CFG->block_online_users_onlinestatushiding
+        ];
+
+        return (object) [
+            'instance' => new stdClass(),
+            'plugin' => $configs,
+        ];
     }
 }
 

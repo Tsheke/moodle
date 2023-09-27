@@ -24,6 +24,13 @@
  * @since Moodle 2.4
  */
 
+namespace core_user;
+
+use core_external\external_api;
+use core_files_external;
+use core_user_external;
+use externallib_advanced_testcase;
+
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
@@ -32,7 +39,7 @@ require_once($CFG->dirroot . '/webservice/tests/helpers.php');
 require_once($CFG->dirroot . '/user/externallib.php');
 require_once($CFG->dirroot . '/files/externallib.php');
 
-class core_user_externallib_testcase extends externallib_advanced_testcase {
+class externallib_test extends externallib_advanced_testcase {
 
     /**
      * Test get_users
@@ -53,17 +60,11 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
             'address' => '2 Test Street Perth 6000 WA',
             'phone1' => '01010101010',
             'phone2' => '02020203',
-            'icq' => 'testuser1',
-            'skype' => 'testuser1',
-            'yahoo' => 'testuser1',
-            'aim' => 'testuser1',
-            'msn' => 'testuser1',
             'department' => 'Department of user 1',
             'institution' => 'Institution of user 1',
             'description' => 'This is a description for user 1',
             'descriptionformat' => FORMAT_MOODLE,
             'city' => 'Perth',
-            'url' => 'http://moodle.org',
             'country' => 'AU'
             );
 
@@ -80,7 +81,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $generatedusers[$user1->id] = $user1;
         $generatedusers[$user2->id] = $user2;
 
-        $context = context_course::instance($course->id);
+        $context = \context_course::instance($course->id);
         $roleid = $this->assignUserCapability('moodle/user:viewdetails', $context->id);
 
         // Enrol the users in the course.
@@ -128,21 +129,6 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
             if (!empty($generateduser->phone2)) {
                 $this->assertEquals($generateduser->phone2, $returneduser['phone2']);
             }
-            if (!empty($generateduser->icq)) {
-                $this->assertEquals($generateduser->icq, $returneduser['icq']);
-            }
-            if (!empty($generateduser->skype)) {
-                $this->assertEquals($generateduser->skype, $returneduser['skype']);
-            }
-            if (!empty($generateduser->yahoo)) {
-                $this->assertEquals($generateduser->yahoo, $returneduser['yahoo']);
-            }
-            if (!empty($generateduser->aim)) {
-                $this->assertEquals($generateduser->aim, $returneduser['aim']);
-            }
-            if (!empty($generateduser->msn)) {
-                $this->assertEquals($generateduser->msn, $returneduser['msn']);
-            }
             if (!empty($generateduser->department)) {
                 $this->assertEquals($generateduser->department, $returneduser['department']);
             }
@@ -160,9 +146,6 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
             }
             if (!empty($generateduser->country)) {
                 $this->assertEquals($generateduser->country, $returneduser['country']);
-            }
-            if (!empty($generateduser->url)) {
-                $this->assertEquals($generateduser->url, $returneduser['url']);
             }
             if (!empty($CFG->usetags) and !empty($generateduser->interests)) {
                 $this->assertEquals(implode(', ', $generateduser->interests), $returneduser['interests']);
@@ -186,9 +169,9 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
             // Call the external function.
             $result = core_user_external::get_users($searchparams);
             $this->fail('Expecting \'keyalreadyset\' moodle_exception to be thrown.');
-        } catch (moodle_exception $e) {
+        } catch (\moodle_exception $e) {
             $this->assertEquals('keyalreadyset', $e->errorcode);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $this->fail('Expecting \'keyalreadyset\' moodle_exception to be thrown.');
         }
     }
@@ -201,7 +184,20 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
 
         $this->resetAfterTest(true);
 
-        $course = self::getDataGenerator()->create_course();
+        $generator = self::getDataGenerator();
+
+        // Create complex user profile field supporting multi-lang.
+        filter_set_global_state('multilang', TEXTFILTER_ON);
+        $statuses = 'UE\nSE\n<span lang="en" class="multilang">Other</span><span lang="es" class="multilang">Otro</span>';
+        $generator->create_custom_profile_field(
+            [
+                'datatype' => 'menu',
+                'shortname' => 'employmentstatus', 'name' => 'Employment status',
+                'param1' => $statuses
+            ]
+        );
+
+        $course = $generator->create_course();
         $user1 = array(
             'username' => 'usernametest1',
             'idnumber' => 'idnumbertest1',
@@ -211,41 +207,35 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
             'address' => '2 Test Street Perth 6000 WA',
             'phone1' => '01010101010',
             'phone2' => '02020203',
-            'icq' => 'testuser1',
-            'skype' => 'testuser1',
-            'yahoo' => 'testuser1',
-            'aim' => 'testuser1',
-            'msn' => 'testuser1',
             'department' => 'Department of user 1',
             'institution' => 'Institution of user 1',
             'description' => 'This is a description for user 1',
             'descriptionformat' => FORMAT_MOODLE,
             'city' => 'Perth',
-            'url' => 'http://moodle.org',
             'country' => 'AU',
-            'lang' => 'kkl',
-            'theme' => 'kkt',
+            'profile_field_jobposition' => 'Manager',
+            'profile_field_employmentstatus' => explode('\n', $statuses)[2],
         );
-        $user1 = self::getDataGenerator()->create_user($user1);
+        $user1 = $generator->create_user($user1);
         if (!empty($CFG->usetags)) {
             require_once($CFG->dirroot . '/user/editlib.php');
             $user1->interests = array('Cinema', 'Tennis', 'Dance', 'Guitar', 'Cooking');
             useredit_update_interests($user1, $user1->interests);
         }
-        $user2 = self::getDataGenerator()->create_user(
+        $user2 = $generator->create_user(
                 array('username' => 'usernametest2', 'idnumber' => 'idnumbertest2'));
 
         $generatedusers = array();
         $generatedusers[$user1->id] = $user1;
         $generatedusers[$user2->id] = $user2;
 
-        $context = context_course::instance($course->id);
+        $context = \context_course::instance($course->id);
         $roleid = $this->assignUserCapability('moodle/user:viewdetails', $context->id);
 
         // Enrol the users in the course.
-        $this->getDataGenerator()->enrol_user($user1->id, $course->id, $roleid, 'manual');
-        $this->getDataGenerator()->enrol_user($user2->id, $course->id, $roleid, 'manual');
-        $this->getDataGenerator()->enrol_user($USER->id, $course->id, $roleid, 'manual');
+        $generator->enrol_user($user1->id, $course->id, $roleid, 'manual');
+        $generator->enrol_user($user2->id, $course->id, $roleid, 'manual');
+        $generator->enrol_user($USER->id, $course->id, $roleid, 'manual');
 
         // call as admin and receive all possible fields.
         $this->setAdminUser();
@@ -291,21 +281,6 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
                 if (!empty($generateduser->phone2)) {
                     $this->assertEquals($generateduser->phone2, $returneduser['phone2']);
                 }
-                if (!empty($generateduser->icq)) {
-                    $this->assertEquals($generateduser->icq, $returneduser['icq']);
-                }
-                if (!empty($generateduser->skype)) {
-                    $this->assertEquals($generateduser->skype, $returneduser['skype']);
-                }
-                if (!empty($generateduser->yahoo)) {
-                    $this->assertEquals($generateduser->yahoo, $returneduser['yahoo']);
-                }
-                if (!empty($generateduser->aim)) {
-                    $this->assertEquals($generateduser->aim, $returneduser['aim']);
-                }
-                if (!empty($generateduser->msn)) {
-                    $this->assertEquals($generateduser->msn, $returneduser['msn']);
-                }
                 if (!empty($generateduser->department)) {
                     $this->assertEquals($generateduser->department, $returneduser['department']);
                 }
@@ -324,16 +299,18 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
                 if (!empty($generateduser->country)) {
                     $this->assertEquals($generateduser->country, $returneduser['country']);
                 }
-                if (!empty($generateduser->url)) {
-                    $this->assertEquals($generateduser->url, $returneduser['url']);
-                }
                 if (!empty($CFG->usetags) and !empty($generateduser->interests)) {
                     $this->assertEquals(implode(', ', $generateduser->interests), $returneduser['interests']);
                 }
-                // Check empty since incorrect values were used when creating the user.
+                // Default language and no theme were used for the user.
+                $this->assertEquals($CFG->lang, $returneduser['lang']);
+                $this->assertEmpty($returneduser['theme']);
+
                 if ($returneduser['id'] == $user1->id) {
-                    $this->assertEmpty($returneduser['lang']);
-                    $this->assertEmpty($returneduser['theme']);
+                    $this->assertCount(1, $returneduser['customfields']);
+                    $dbvalue = explode('\n', $statuses)[2];
+                    $this->assertEquals($dbvalue, $returneduser['customfields'][0]['value']);
+                    $this->assertEquals('Other', $returneduser['customfields'][0]['displayvalue']);
                 }
             }
         }
@@ -366,7 +343,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
 
         $this->resetAfterTest(true);
 
-        $return = new stdClass();
+        $return = new \stdClass();
 
         // Create the course and fetch its context.
         $return->course = self::getDataGenerator()->create_course();
@@ -379,17 +356,11 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
             'address' => '2 Test Street Perth 6000 WA',
             'phone1' => '01010101010',
             'phone2' => '02020203',
-            'icq' => 'testuser1',
-            'skype' => 'testuser1',
-            'yahoo' => 'testuser1',
-            'aim' => 'testuser1',
-            'msn' => 'testuser1',
             'department' => 'Department of user 1',
             'institution' => 'Institution of user 1',
             'description' => 'This is a description for user 1',
             'descriptionformat' => FORMAT_MOODLE,
             'city' => 'Perth',
-            'url' => 'http://moodle.org',
             'country' => 'AU'
         );
         $return->user1 = self::getDataGenerator()->create_user($return->user1);
@@ -400,13 +371,19 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         }
         $return->user2 = self::getDataGenerator()->create_user();
 
-        $context = context_course::instance($return->course->id);
+        $context = \context_course::instance($return->course->id);
         $return->roleid = $this->assignUserCapability($capability, $context->id);
 
         // Enrol the users in the course.
         $this->getDataGenerator()->enrol_user($return->user1->id, $return->course->id, $return->roleid, 'manual');
         $this->getDataGenerator()->enrol_user($return->user2->id, $return->course->id, $return->roleid, 'manual');
         $this->getDataGenerator()->enrol_user($USER->id, $return->course->id, $return->roleid, 'manual');
+
+        $group1 = $this->getDataGenerator()->create_group(['courseid' => $return->course->id, 'name' => 'G1']);
+        $group2 = $this->getDataGenerator()->create_group(['courseid' => $return->course->id, 'name' => 'G2']);
+
+        groups_add_member($group1->id, $return->user1->id);
+        groups_add_member($group2->id, $return->user2->id);
 
         return $return;
     }
@@ -451,6 +428,9 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
 
         // We need to execute the return values cleaning process to simulate the web service server.
         $enrolledusers = external_api::clean_returnvalue(core_user_external::get_course_user_profiles_returns(), $enrolledusers);
+        // Check we get the requested user and that is in a group.
+        $this->assertCount(1, $enrolledusers);
+        $this->assertCount(1, $enrolledusers[0]['groups']);
 
         foreach($enrolledusers as $enrolleduser) {
             if ($enrolleduser['username'] == $data->user1->username) {
@@ -461,18 +441,12 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
                 $this->assertEquals($data->user1->address, $enrolleduser['address']);
                 $this->assertEquals($data->user1->phone1, $enrolleduser['phone1']);
                 $this->assertEquals($data->user1->phone2, $enrolleduser['phone2']);
-                $this->assertEquals($data->user1->icq, $enrolleduser['icq']);
-                $this->assertEquals($data->user1->skype, $enrolleduser['skype']);
-                $this->assertEquals($data->user1->yahoo, $enrolleduser['yahoo']);
-                $this->assertEquals($data->user1->aim, $enrolleduser['aim']);
-                $this->assertEquals($data->user1->msn, $enrolleduser['msn']);
                 $this->assertEquals($data->user1->department, $enrolleduser['department']);
                 $this->assertEquals($data->user1->institution, $enrolleduser['institution']);
                 $this->assertEquals($data->user1->description, $enrolleduser['description']);
                 $this->assertEquals(FORMAT_HTML, $enrolleduser['descriptionformat']);
                 $this->assertEquals($data->user1->city, $enrolleduser['city']);
                 $this->assertEquals($data->user1->country, $enrolleduser['country']);
-                $this->assertEquals($data->user1->url, $enrolleduser['url']);
                 if (!empty($CFG->usetags)) {
                     $this->assertEquals(implode(', ', $data->user1->interests), $enrolleduser['interests']);
                 }
@@ -484,7 +458,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
      * Test create_users
      */
     public function test_create_users() {
-         global $USER, $CFG, $DB;
+        global $DB;
 
         $this->resetAfterTest(true);
 
@@ -508,40 +482,237 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
                 ], [
                     'type' => 'invalidpreference',
                     'value' => 'abcd'
-                ]]
-            );
+                ]
+            ],
+            'department' => 'College of Science',
+            'institution' => 'National Institute of Physics',
+            'phone1' => '01 2345 6789',
+            'maildisplay' => 1,
+            'interests' => 'badminton, basketball, cooking,  '
+        );
 
-        $context = context_system::instance();
+        // User with an authentication method done externally.
+        $user2 = array(
+            'username' => 'usernametest2',
+            'firstname' => 'First Name User Test 2',
+            'lastname' => 'Last Name User Test 2',
+            'email' => 'usertest2@example.com',
+            'auth' => 'oauth2'
+        );
+
+        $context = \context_system::instance();
         $roleid = $this->assignUserCapability('moodle/user:create', $context->id);
         $this->assignUserCapability('moodle/user:editprofile', $context->id, $roleid);
 
         // Call the external function.
-        $createdusers = core_user_external::create_users(array($user1));
+        $createdusers = core_user_external::create_users(array($user1, $user2));
 
         // We need to execute the return values cleaning process to simulate the web service server.
         $createdusers = external_api::clean_returnvalue(core_user_external::create_users_returns(), $createdusers);
 
         // Check we retrieve the good total number of created users + no error on capability.
-        $this->assertEquals(1, count($createdusers));
+        $this->assertCount(2, $createdusers);
 
         foreach($createdusers as $createduser) {
             $dbuser = $DB->get_record('user', array('id' => $createduser['id']));
-            $this->assertEquals($dbuser->username, $user1['username']);
-            $this->assertEquals($dbuser->idnumber, $user1['idnumber']);
-            $this->assertEquals($dbuser->firstname, $user1['firstname']);
-            $this->assertEquals($dbuser->lastname, $user1['lastname']);
-            $this->assertEquals($dbuser->email, $user1['email']);
-            $this->assertEquals($dbuser->description, $user1['description']);
-            $this->assertEquals($dbuser->city, $user1['city']);
-            $this->assertEquals($dbuser->country, $user1['country']);
-            $this->assertEquals('atto', get_user_preferences('htmleditor', null, $dbuser));
-            $this->assertEquals(null, get_user_preferences('invalidpreference', null, $dbuser));
+
+            if ($createduser['username'] === $user1['username']) {
+                $usertotest = $user1;
+                $this->assertEquals('atto', get_user_preferences('htmleditor', null, $dbuser));
+                $this->assertEquals(null, get_user_preferences('invalidpreference', null, $dbuser));
+                // Confirm user interests have been saved.
+                $interests = \core_tag_tag::get_item_tags_array('core', 'user', $createduser['id'],
+                        \core_tag_tag::BOTH_STANDARD_AND_NOT, 0, false);
+                // There should be 3 user interests.
+                $this->assertCount(3, $interests);
+
+            } else if ($createduser['username'] === $user2['username']) {
+                $usertotest = $user2;
+            }
+
+            foreach ($dbuser as $property => $value) {
+                if ($property === 'password') {
+                    if ($usertotest === $user2) {
+                        // External auth mechanisms don't store password in the user table.
+                        $this->assertEquals(AUTH_PASSWORD_NOT_CACHED, $value);
+                    } else {
+                        // Skip hashed passwords.
+                        continue;
+                    }
+                }
+                // Confirm that the values match.
+                if (isset($usertotest[$property])) {
+                    $this->assertEquals($usertotest[$property], $value);
+                }
+            }
         }
 
         // Call without required capability
         $this->unassignUserCapability('moodle/user:create', $context->id, $roleid);
         $this->expectException('required_capability_exception');
-        $createdusers = core_user_external::create_users(array($user1));
+        core_user_external::create_users(array($user1));
+    }
+
+    /**
+     * Test create_users with password and createpassword parameter not set.
+     */
+    public function test_create_users_empty_password() {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $user = [
+            'username' => 'usernametest1',
+            'firstname' => 'First Name User Test 1',
+            'lastname' => 'Last Name User Test 1',
+            'email' => 'usertest1@example.com',
+        ];
+
+        // This should throw an exception because either password or createpassword param must be passed for auth_manual.
+        $this->expectException(\invalid_parameter_exception::class);
+        core_user_external::create_users([$user]);
+    }
+
+    /**
+     * Data provider for \core_user_externallib_testcase::test_create_users_with_same_emails().
+     */
+    public function create_users_provider_with_same_emails() {
+        return [
+            'Same emails allowed, same case' => [
+                1, false
+            ],
+            'Same emails allowed, different case' => [
+                1, true
+            ],
+            'Same emails disallowed, same case' => [
+                0, false
+            ],
+            'Same emails disallowed, different case' => [
+                0, true
+            ],
+        ];
+    }
+
+    /**
+     * Test for \core_user_external::create_users() when user using the same email addresses are being created.
+     *
+     * @dataProvider create_users_provider_with_same_emails
+     * @param int $sameemailallowed The value to set for $CFG->allowaccountssameemail.
+     * @param boolean $differentcase Whether to user a different case for the other user.
+     */
+    public function test_create_users_with_same_emails($sameemailallowed, $differentcase) {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        // Allow multiple users with the same email address.
+        set_config('allowaccountssameemail', $sameemailallowed);
+        $users = [
+            [
+                'username' => 's1',
+                'firstname' => 'Johnny',
+                'lastname' => 'Bravo',
+                'email' => 's1@example.com',
+                'password' => 'Passw0rd!'
+            ],
+            [
+                'username' => 's2',
+                'firstname' => 'John',
+                'lastname' => 'Doe',
+                'email' => $differentcase ? 'S1@EXAMPLE.COM' : 's1@example.com',
+                'password' => 'Passw0rd!'
+            ],
+        ];
+
+        if (!$sameemailallowed) {
+            // This should throw an exception when $CFG->allowaccountssameemail is empty.
+            $this->expectException(\invalid_parameter_exception::class);
+        }
+
+        // Create our users.
+        core_user_external::create_users($users);
+
+        // Confirm that the users have been created.
+        list($insql, $params) = $DB->get_in_or_equal(['s1', 's2']);
+        $this->assertEquals(2, $DB->count_records_select('user', 'username ' . $insql, $params));
+    }
+
+    /**
+     * Test create_users with invalid parameters
+     *
+     * @dataProvider data_create_users_invalid_parameter
+     * @param array $data User data to attempt to register.
+     * @param string $expectmessage Expected exception message.
+     */
+    public function test_create_users_invalid_parameter(array $data, $expectmessage) {
+        global $USER, $CFG, $DB;
+
+        $this->resetAfterTest(true);
+        $this->assignUserCapability('moodle/user:create', SYSCONTEXTID);
+
+        $this->expectException('invalid_parameter_exception');
+        $this->expectExceptionMessage($expectmessage);
+
+        core_user_external::create_users(array($data));
+    }
+
+    /**
+     * Data provider for {@see self::test_create_users_invalid_parameter()}.
+     *
+     * @return array
+     */
+    public function data_create_users_invalid_parameter() {
+        return [
+            'blank_username' => [
+                'data' => [
+                    'username' => '',
+                    'firstname' => 'Foo',
+                    'lastname' => 'Bar',
+                    'email' => 'foobar@example.com',
+                    'createpassword' => 1,
+                ],
+                'expectmessage' => 'The field username cannot be blank',
+            ],
+            'blank_firtname' => [
+                'data' => [
+                    'username' => 'foobar',
+                    'firstname' => "\t \n",
+                    'lastname' => 'Bar',
+                    'email' => 'foobar@example.com',
+                    'createpassword' => 1,
+                ],
+                'expectmessage' => 'The field firstname cannot be blank',
+            ],
+            'blank_lastname' => [
+                'data' => [
+                    'username' => 'foobar',
+                    'firstname' => '0',
+                    'lastname' => '   ',
+                    'email' => 'foobar@example.com',
+                    'createpassword' => 1,
+                ],
+                'expectmessage' => 'The field lastname cannot be blank',
+            ],
+            'invalid_email' => [
+                'data' => [
+                    'username' => 'foobar',
+                    'firstname' => 'Foo',
+                    'lastname' => 'Bar',
+                    'email' => '@foobar',
+                    'createpassword' => 1,
+                ],
+                'expectmessage' => 'Email address is invalid',
+            ],
+            'missing_password' => [
+                'data' => [
+                    'username' => 'foobar',
+                    'firstname' => 'Foo',
+                    'lastname' => 'Bar',
+                    'email' => 'foobar@example.com',
+                ],
+                'expectmessage' => 'Invalid password: you must provide a password, or set createpassword',
+            ],
+        ];
     }
 
     /**
@@ -559,7 +730,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $this->assertEquals(2, $DB->count_records_select('user', 'deleted = 0 AND (id = :userid1 OR id = :userid2)',
                 array('userid1' => $user1->id, 'userid2' => $user2->id)));
 
-        $context = context_system::instance();
+        $context = \context_system::instance();
         $roleid = $this->assignUserCapability('moodle/user:delete', $context->id);
 
         // Call the external function.
@@ -582,11 +753,12 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         global $USER, $CFG, $DB;
 
         $this->resetAfterTest(true);
+        $this->preventResetByRollback();
 
         $wsuser = self::getDataGenerator()->create_user();
         self::setUser($wsuser);
 
-        $context = context_user::instance($USER->id);
+        $context = \context_user::instance($USER->id);
         $contextid = $context->id;
         $filename = "reddot.png";
         $filecontent = "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38"
@@ -623,10 +795,16 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
                 ], [
                     'type' => 'invialidpreference',
                     'value' => 'abcd'
-                ]]
-            );
+                ]
+            ],
+            'department' => 'College of Science',
+            'institution' => 'National Institute of Physics',
+            'phone1' => '01 2345 6789',
+            'maildisplay' => 1,
+            'interests' => 'badminton, basketball, cooking,  '
+        );
 
-        $context = context_system::instance();
+        $context = \context_system::instance();
         $roleid = $this->assignUserCapability('moodle/user:update', $context->id);
         $this->assignUserCapability('moodle/user:editprofile', $context->id, $roleid);
 
@@ -641,8 +819,20 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $user4['id'] = $userdeleted->id;
         user_delete_user($userdeleted);
 
+        $user5 = self::getDataGenerator()->create_user();
+        $user5 = array('id' => $user5->id, 'email' => $user5->email);
+
         // Call the external function.
-        core_user_external::update_users(array($user1, $user2, $user3, $user4));
+        $returnvalue = core_user_external::update_users(array($user1, $user2, $user3, $user4));
+        $returnvalue = external_api::clean_returnvalue(core_user_external::update_users_returns(), $returnvalue);
+
+        // Check warnings.
+        $this->assertEquals($user2['id'], $returnvalue['warnings'][0]['itemid']); // Guest user.
+        $this->assertEquals('usernotupdatedguest', $returnvalue['warnings'][0]['warningcode']);
+        $this->assertEquals($user3['id'], $returnvalue['warnings'][1]['itemid']); // Admin user.
+        $this->assertEquals('usernotupdatedadmin', $returnvalue['warnings'][1]['warningcode']);
+        $this->assertEquals($user4['id'], $returnvalue['warnings'][2]['itemid']); // Deleted user.
+        $this->assertEquals('usernotupdateddeleted', $returnvalue['warnings'][2]['warningcode']);
 
         $dbuser2 = $DB->get_record('user', array('id' => $user2['id']));
         $this->assertNotEquals($dbuser2->username, $user2['username']);
@@ -661,8 +851,17 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $this->assertEquals($dbuser->city, $user1['city']);
         $this->assertEquals($dbuser->country, $user1['country']);
         $this->assertNotEquals(0, $dbuser->picture, 'Picture must be set to the new icon itemid for this user');
+        $this->assertEquals($dbuser->department, $user1['department']);
+        $this->assertEquals($dbuser->institution, $user1['institution']);
+        $this->assertEquals($dbuser->phone1, $user1['phone1']);
+        $this->assertEquals($dbuser->maildisplay, $user1['maildisplay']);
         $this->assertEquals('atto', get_user_preferences('htmleditor', null, $dbuser));
         $this->assertEquals(null, get_user_preferences('invalidpreference', null, $dbuser));
+
+        // Confirm user interests have been saved.
+        $interests = \core_tag_tag::get_item_tags_array('core', 'user', $user1['id'], \core_tag_tag::BOTH_STANDARD_AND_NOT, 0, false);
+        // There should be 3 user interests.
+        $this->assertCount(3, $interests);
 
         // Confirm no picture change when parameter is not supplied.
         unset($user1['userpicture']);
@@ -676,6 +875,39 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $dbuserdelpic = $DB->get_record('user', array('id' => $user1['id']));
         $this->assertEquals(0, $dbuserdelpic->picture, 'Picture must be deleted when sent as 0.');
 
+        // Updating user with an invalid email.
+        $user5['email'] = 'bogus';
+        $returnvalue = core_user_external::update_users(array($user5));
+        $returnvalue = external_api::clean_returnvalue(core_user_external::update_users_returns(), $returnvalue);
+        $this->assertEquals('useremailinvalid', $returnvalue['warnings'][0]['warningcode']);
+        $this->assertStringContainsString('Invalid email address',
+            $returnvalue['warnings'][0]['message']);
+
+        // Updating user with a duplicate email.
+        $user5['email'] = $user1['email'];
+        $returnvalue = core_user_external::update_users(array($user1, $user5));
+        $returnvalue = external_api::clean_returnvalue(core_user_external::update_users_returns(), $returnvalue);
+        $this->assertEquals('useremailduplicate', $returnvalue['warnings'][0]['warningcode']);
+        $this->assertStringContainsString('Duplicate email address',
+                $returnvalue['warnings'][0]['message']);
+
+        // Updating a user that does not exist.
+        $user5['id'] = -1;
+        $returnvalue = core_user_external::update_users(array($user5));
+        $returnvalue = external_api::clean_returnvalue(core_user_external::update_users_returns(), $returnvalue);
+        $this->assertEquals('invaliduserid', $returnvalue['warnings'][0]['warningcode']);
+        $this->assertStringContainsString('Invalid user ID',
+                $returnvalue['warnings'][0]['message']);
+
+        // Updating a remote user.
+        $user1['mnethostid'] = 5;
+        user_update_user($user1); // Update user not using webservice.
+        unset($user1['mnethostid']); // The mnet host ID field is not in the allowed field list for the webservice.
+        $returnvalue = core_user_external::update_users(array($user1));
+        $returnvalue = external_api::clean_returnvalue(core_user_external::update_users_returns(), $returnvalue);
+        $this->assertEquals('usernotupdatedremote', $returnvalue['warnings'][0]['warningcode']);
+        $this->assertStringContainsString('User is a remote user',
+                $returnvalue['warnings'][0]['message']);
 
         // Call without required capability.
         $this->unassignUserCapability('moodle/user:update', $context->id, $roleid);
@@ -684,28 +916,88 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
     }
 
     /**
-     * Test update_users using duplicated email.
+     * Data provider for testing \core_user_external::update_users() for users with same emails
+     *
+     * @return array
      */
-    public function test_update_users_duplicated_email() {
-        global $DB, $CFG;
+    public function users_with_same_emails() {
+        return [
+            'Same emails not allowed: Update name using exactly the same email' => [
+                0, 'John', 's1@example.com', 'Johnny', 's1@example.com', false, true
+            ],
+            'Same emails not allowed: Update using someone else\'s email' => [
+                0, 'John', 's1@example.com', 'Johnny', 's2@example.com', true, false
+            ],
+            'Same emails allowed: Update using someone else\'s email' => [
+                1, 'John', 's1@example.com', 'Johnny', 's2@example.com', true, true
+            ],
+            'Same emails not allowed: Update using same email but with different case' => [
+                0, 'John', 's1@example.com', 'Johnny', 'S1@EXAMPLE.COM', false, true
+            ],
+            'Same emails not allowed: Update using another user\'s email similar to user but with different case' => [
+                0, 'John', 's1@example.com', 'Johnny', 'S1@EXAMPLE.COM', true, false
+            ],
+            'Same emails allowed: Update using another user\'s email similar to user but with different case' => [
+                1, 'John', 's1@example.com', 'Johnny', 'S1@EXAMPLE.COM', true, true
+            ],
+        ];
+    }
 
-        $this->resetAfterTest(true);
+    /**
+     * Test update_users using similar emails with varying cases.
+     *
+     * @dataProvider users_with_same_emails
+     * @param boolean $allowsameemail The value to set for $CFG->allowaccountssameemail.
+     * @param string $currentname The user's current name.
+     * @param string $currentemail The user's current email.
+     * @param string $newname The user's new name.
+     * @param string $newemail The user's new email.
+     * @param boolean $withanotheruser Whether to create another user that has the same email as the target user's new email.
+     * @param boolean $successexpected Whether we expect that the target user's email/name will be updated.
+     */
+    public function test_update_users_emails_with_different_cases($allowsameemail, $currentname, $currentemail,
+                                                                  $newname, $newemail, $withanotheruser, $successexpected) {
+        global $DB;
+
+        $this->resetAfterTest();
         $this->setAdminUser();
 
-        $user1 = self::getDataGenerator()->create_user();
-        $user2 = self::getDataGenerator()->create_user();
-        $user2toupdate = array(
-            'id' => $user2->id,
-            'email' => $user1->email,
-        );
-        // E-mail duplicated not allowed.
-        $CFG->allowaccountssameemail = 0;
-        core_user_external::update_users(array($user2toupdate));
-        $this->assertNotEquals($user1->email, $DB->get_field('user', 'email', array('id' => $user2->id)));
-        // E-mail duplicated allowed.
-        $CFG->allowaccountssameemail = 1;
-        core_user_external::update_users(array($user2toupdate));
-        $this->assertEquals($user1->email, $DB->get_field('user', 'email', array('id' => $user2->id)));
+        // Set the value for $CFG->allowaccountssameemail.
+        set_config('allowaccountssameemail', $allowsameemail);
+
+        $generator = self::getDataGenerator();
+
+        // Create the user that we wish to update.
+        $usertoupdate = $generator->create_user(['email' => $currentemail, 'firstname' => $currentname]);
+
+        if ($withanotheruser) {
+            // Create another user that has the same email as the new email that we'd like to update for our target user.
+            $generator->create_user(['email' => $newemail]);
+        }
+
+        // Build the user update parameters.
+        $updateparams = [
+            'id' => $usertoupdate->id,
+            'email' => $newemail,
+            'firstname' => $newname
+        ];
+        // Let's try to update the user's information.
+        core_user_external::update_users([$updateparams]);
+
+        // Fetch the updated user record.
+        $userrecord = $DB->get_record('user', ['id' => $usertoupdate->id], 'id, email, firstname');
+
+        // If we expect the update to succeed, then the email/name would have been changed.
+        if ($successexpected) {
+            $expectedemail = $newemail;
+            $expectedname = $newname;
+        } else {
+            $expectedemail = $currentemail;
+            $expectedname = $currentname;
+        }
+        // Confirm that our expectations are met.
+        $this->assertEquals($expectedemail, $userrecord->email);
+        $this->assertEquals($expectedname, $userrecord->firstname);
     }
 
     /**
@@ -716,10 +1008,10 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
 
         $this->resetAfterTest(true);
 
-        $context = context_system::instance();
+        $context = \context_system::instance();
         $roleid = $this->assignUserCapability('moodle/user:manageownfiles', $context->id);
 
-        $context = context_user::instance($USER->id);
+        $context = \context_user::instance($USER->id);
         $contextid = $context->id;
         $component = "user";
         $filearea = "draft";
@@ -753,6 +1045,55 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $this->assertNotEmpty($file);
     }
 
+
+    /**
+     * Test add_user_private_files quota
+     */
+    public function test_add_user_private_files_quota() {
+        global $USER, $CFG, $DB;
+
+        $this->resetAfterTest(true);
+
+        $context = \context_system::instance();
+        $roleid = $this->assignUserCapability('moodle/user:manageownfiles', $context->id);
+
+        $context = \context_user::instance($USER->id);
+        $contextid = $context->id;
+        $component = "user";
+        $filearea = "draft";
+        $itemid = 0;
+        $filepath = "/";
+        $filename = "Simple.txt";
+        $filecontent = base64_encode("Let us create a nice simple file");
+        $contextlevel = null;
+        $instanceid = null;
+        $browser = get_file_browser();
+
+        // Call the files api to create a file.
+        $draftfile = core_files_external::upload($contextid, $component, $filearea, $itemid, $filepath,
+            $filename, $filecontent, $contextlevel, $instanceid);
+        $draftfile = external_api::clean_returnvalue(core_files_external::upload_returns(), $draftfile);
+        $draftid = $draftfile['itemid'];
+
+        // Call the external function to add the file to private files.
+        core_user_external::add_user_private_files($draftid);
+
+        // Force the quota so we are sure it won't be space to add the new file.
+        $fileareainfo = file_get_file_area_info($contextid, 'user', 'private');
+        $CFG->userquota = $fileareainfo['filesize_without_references'] + 1;
+
+        // Generate a new draftitemid for the same testfile.
+        $draftfile = core_files_external::upload($contextid, $component, $filearea, $itemid, $filepath,
+            $filename, $filecontent, $contextlevel, $instanceid);
+        $draftid = $draftfile['itemid'];
+
+        $this->expectException('moodle_exception');
+        $this->expectExceptionMessage(get_string('maxareabytes', 'error'));
+
+        // Call the external function to include the new file.
+        core_user_external::add_user_private_files($draftid);
+    }
+
     /**
      * Test add user device
      */
@@ -768,7 +1109,8 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
                 'platform' => 'Android',
                 'version' => '4.2.2',
                 'pushid' => 'apushdkasdfj4835',
-                'uuid' => 'asdnfl348qlksfaasef859'
+                'uuid' => 'asdnfl348qlksfaasef859',
+                'publickey' => null,
                 );
 
         // Call the external function.
@@ -789,8 +1131,9 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
 
         // Test update an existing device.
         $device['pushid'] = 'different than before';
+        $device['publickey'] = 'MFsxCzAJBgNVBAYTAkZSMRMwEQYDVQQ';
         $warnings = core_user_external::add_user_device($device['appid'], $device['name'], $device['model'], $device['platform'],
-                                                        $device['version'], $device['pushid'], $device['uuid']);
+            $device['version'], $device['pushid'], $device['uuid'], $device['publickey']);
         $warnings = external_api::clean_returnvalue(core_user_external::add_user_device_returns(), $warnings);
 
         $this->assertEquals(1, $DB->count_records('user_devices'));
@@ -935,7 +1278,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $user = self::getDataGenerator()->create_user();
         self::setUser($user);
 
-        $context = context_user::instance($USER->id);
+        $context = \context_user::instance($USER->id);
         $contextid = $context->id;
         $filename = "reddot.png";
         $filecontent = "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38"
@@ -950,9 +1293,9 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $result = external_api::clean_returnvalue(core_user_external::update_picture_returns(), $result);
         $picture = $DB->get_field('user', 'picture', array('id' => $user->id));
         // The new revision is in the url for the user.
-        $this->assertContains($picture, $result['profileimageurl']);
+        $this->assertStringContainsString($picture, $result['profileimageurl']);
         // Check expected URL for serving the image.
-        $this->assertContains("/$contextid/user/icon", $result['profileimageurl']);
+        $this->assertStringContainsString("/$contextid/user/icon", $result['profileimageurl']);
 
         // Delete image.
         $result = core_user_external::update_picture(0, true);
@@ -964,7 +1307,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         // Add again the user profile image (as admin).
         $this->setAdminUser();
 
-        $context = context_user::instance($USER->id);
+        $context = \context_user::instance($USER->id);
         $admincontextid = $context->id;
         $draftfile = core_files_external::upload($admincontextid, 'user', 'draft', 0, '/', $filename, $filecontent, null, null);
         $draftid = $draftfile['itemid'];
@@ -973,8 +1316,8 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $result = external_api::clean_returnvalue(core_user_external::update_picture_returns(), $result);
         // The new revision is in the url for the user.
         $picture = $DB->get_field('user', 'picture', array('id' => $user->id));
-        $this->assertContains($picture, $result['profileimageurl']);
-        $this->assertContains("/$contextid/user/icon", $result['profileimageurl']);
+        $this->assertStringContainsString($picture, $result['profileimageurl']);
+        $this->assertStringContainsString("/$contextid/user/icon", $result['profileimageurl']);
     }
 
     /**
@@ -1010,7 +1353,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
             ),
             array(
                 'name' => 'htmleditor',
-                'value' => 'tinymce',
+                'value' => 'tiny',
                 'userid' => $user2->id,
             )
         );
@@ -1023,7 +1366,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         // Get preference from DB to avoid cache.
         $this->assertEquals('atto', $DB->get_field('user_preferences', 'value',
             array('userid' => $user1->id, 'name' => 'htmleditor')));
-        $this->assertEquals('tinymce', $DB->get_field('user_preferences', 'value',
+        $this->assertEquals('tiny', $DB->get_field('user_preferences', 'value',
             array('userid' => $user2->id, 'name' => 'htmleditor')));
     }
 
@@ -1132,6 +1475,40 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
     }
 
     /**
+     * Test update_user_preferences unsetting an existing preference.
+     */
+    public function test_update_user_preferences_unset() {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $user = self::getDataGenerator()->create_user();
+
+        // Save users preferences.
+        $this->setAdminUser();
+        $preferences = array(
+            array(
+                'name' => 'htmleditor',
+                'value' => 'atto',
+                'userid' => $user->id,
+            )
+        );
+
+        $result = core_user_external::set_user_preferences($preferences);
+        $result = external_api::clean_returnvalue(core_user_external::set_user_preferences_returns(), $result);
+        $this->assertCount(0, $result['warnings']);
+        $this->assertCount(1, $result['saved']);
+
+        // Get preference from DB to avoid cache.
+        $this->assertEquals('atto', $DB->get_field('user_preferences', 'value',
+            array('userid' => $user->id, 'name' => 'htmleditor')));
+
+        // Now, unset.
+        $result = core_user_external::update_user_preferences($user->id, null, array(array('type' => 'htmleditor')));
+
+        $this->assertEquals(0, $DB->count_records('user_preferences', array('userid' => $user->id, 'name' => 'htmleditor')));
+    }
+
+    /**
      * Test agree_site_policy
      */
     public function test_agree_site_policy() {
@@ -1175,9 +1552,9 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         try {
             $result = core_user_external::agree_site_policy();
             $this->fail('Expecting \'usernotfullysetup\' moodle_exception to be thrown');
-        } catch (moodle_exception $e) {
+        } catch (\moodle_exception $e) {
             $this->assertEquals('usernotfullysetup', $e->errorcode);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $this->fail('Expecting \'usernotfullysetup\' moodle_exception to be thrown.');
         }
     }
@@ -1190,7 +1567,7 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $this->resetAfterTest(true);
         $user = self::getDataGenerator()->create_user();
         $this->setUser($user);
-        $usercontext = context_user::instance($user->id);
+        $usercontext = \context_user::instance($user->id);
 
         $filerecord = array(
             'contextid' => $usercontext->id,
@@ -1235,5 +1612,182 @@ class core_user_externallib_testcase extends externallib_advanced_testcase {
         $this->expectException('required_capability_exception');
         // Try to retrieve other user private files info.
         core_user_external::get_private_files_info($user2->id);
+    }
+
+    /**
+     * Test the functionality of the {@see \core_user\external\search_identity} class.
+     */
+    public function test_external_search_identity() {
+        global $CFG;
+
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $user1 = self::getDataGenerator()->create_user([
+            'firstname' => 'Firstone',
+            'lastname' => 'Lastone',
+            'username' => 'usernameone',
+            'idnumber' => 'idnumberone',
+            'email' => 'userone@example.com',
+            'phone1' => 'tel1',
+            'phone2' => 'tel2',
+            'department' => 'Department Foo',
+            'institution' => 'Institution Foo',
+            'city' => 'City One',
+            'country' => 'AU',
+        ]);
+
+        $user2 = self::getDataGenerator()->create_user([
+            'firstname' => 'Firsttwo',
+            'lastname' => 'Lasttwo',
+            'username' => 'usernametwo',
+            'idnumber' => 'idnumbertwo',
+            'email' => 'usertwo@example.com',
+            'phone1' => 'tel1',
+            'phone2' => 'tel2',
+            'department' => 'Department Foo',
+            'institution' => 'Institution Foo',
+            'city' => 'City One',
+            'country' => 'AU',
+        ]);
+
+        $user3 = self::getDataGenerator()->create_user([
+            'firstname' => 'Firstthree',
+            'lastname' => 'Lastthree',
+            'username' => 'usernamethree',
+            'idnumber' => 'idnumberthree',
+            'email' => 'userthree@example.com',
+            'phone1' => 'tel1',
+            'phone2' => 'tel2',
+            'department' => 'Department Foo',
+            'institution' => 'Institution Foo',
+            'city' => 'City One',
+            'country' => 'AU',
+        ]);
+
+        $CFG->showuseridentity = 'email,idnumber,city';
+        $CFG->maxusersperpage = 3;
+
+        $result = \core_user\external\search_identity::execute('Lastt');
+        $result = external_api::clean_returnvalue(\core_user\external\search_identity::execute_returns(), $result);
+
+        $this->assertEquals(2, count($result['list']));
+        $this->assertEquals(3, $result['maxusersperpage']);
+        $this->assertEquals(false, $result['overflow']);
+
+        foreach ($result['list'] as $user) {
+            $this->assertEquals(3, count($user['extrafields']));
+            $this->assertEquals('email', $user['extrafields'][0]['name']);
+            $this->assertEquals('idnumber', $user['extrafields'][1]['name']);
+            $this->assertEquals('city', $user['extrafields'][2]['name']);
+        }
+
+        $CFG->showuseridentity = 'username';
+        $CFG->maxusersperpage = 2;
+
+        $result = \core_user\external\search_identity::execute('Firstt');
+        $result = external_api::clean_returnvalue(\core_user\external\search_identity::execute_returns(), $result);
+
+        $this->assertEquals(2, count($result['list']));
+        $this->assertEquals(2, $result['maxusersperpage']);
+        $this->assertEquals(false, $result['overflow']);
+
+        foreach ($result['list'] as $user) {
+            $this->assertEquals(1, count($user['extrafields']));
+            $this->assertEquals('username', $user['extrafields'][0]['name']);
+        }
+
+        $CFG->showuseridentity = 'email';
+        $CFG->maxusersperpage = 2;
+
+        $result = \core_user\external\search_identity::execute('City One');
+        $result = external_api::clean_returnvalue(\core_user\external\search_identity::execute_returns(), $result);
+
+        $this->assertEquals(0, count($result['list']));
+        $this->assertEquals(2, $result['maxusersperpage']);
+        $this->assertEquals(false, $result['overflow']);
+
+        $CFG->showuseridentity = 'city';
+        $CFG->maxusersperpage = 2;
+
+        foreach ($result['list'] as $user) {
+            $this->assertEquals(1, count($user['extrafields']));
+            $this->assertEquals('username', $user['extrafields'][0]['name']);
+        }
+
+        $result = \core_user\external\search_identity::execute('City One');
+        $result = external_api::clean_returnvalue(\core_user\external\search_identity::execute_returns(), $result);
+
+        $this->assertEquals(2, count($result['list']));
+        $this->assertEquals(2, $result['maxusersperpage']);
+        $this->assertEquals(true, $result['overflow']);
+    }
+
+    /**
+     * Test functionality of the {@see \core_user\external\search_identity} class with alternativefullnameformat defined.
+     */
+    public function test_external_search_identity_with_alternativefullnameformat() {
+        global $CFG;
+
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $user1 = self::getDataGenerator()->create_user([
+            'lastname' => '小柳',
+            'lastnamephonetic' => 'Koyanagi',
+            'firstname' => '秋',
+            'firstnamephonetic' => 'Aki',
+            'email' => 'koyanagiaki@example.com',
+            'country' => 'JP',
+        ]);
+
+        $CFG->showuseridentity = 'email';
+        $CFG->maxusersperpage = 3;
+        $CFG->alternativefullnameformat =
+            '<ruby>lastname firstname <rp>(</rp><rt>lastnamephonetic firstnamephonetic</rt><rp>)</rp></ruby>';
+
+        $result = \core_user\external\search_identity::execute('Ak');
+        $result = external_api::clean_returnvalue(\core_user\external\search_identity::execute_returns(), $result);
+
+        $this->assertEquals(1, count($result['list']));
+        $this->assertEquals(3, $result['maxusersperpage']);
+        $this->assertEquals(false, $result['overflow']);
+
+        foreach ($result['list'] as $user) {
+            $this->assertEquals(1, count($user['extrafields']));
+            $this->assertEquals('email', $user['extrafields'][0]['name']);
+        }
+    }
+
+    /**
+     * Test verifying that update_user_preferences prevents changes to the default homepage for other users.
+     */
+    public function test_update_user_preferences_homepage_permission_callback() {
+        global $DB;
+        $this->resetAfterTest();
+
+        $user = self::getDataGenerator()->create_user();
+        $this->setUser($user);
+        $adminuser = get_admin();
+
+        // Allow user selection of the default homepage via preferences.
+        set_config('defaulthomepage', HOMEPAGE_USER);
+
+        // Try to save another user's home page preference which uses the permissioncallback.
+        $preferences = [
+            [
+                'name' => 'user_home_page_preference',
+                'value' => '3',
+                'userid' => $adminuser->id,
+            ]
+        ];
+        $result = core_user_external::set_user_preferences($preferences);
+        $result = external_api::clean_returnvalue(core_user_external::set_user_preferences_returns(), $result);
+        $this->assertCount(1, $result['warnings']);
+        $this->assertCount(0, $result['saved']);
+
+        // Verify no change to the preference, checking from DB to avoid cache.
+        $this->assertEquals(null, $DB->get_field('user_preferences', 'value',
+            ['userid' => $adminuser->id, 'name' => 'user_home_page_preference']));
     }
 }

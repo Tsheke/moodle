@@ -23,6 +23,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @since      Moodle 3.0
  */
+namespace mod_choice;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -40,7 +41,7 @@ require_once($CFG->dirroot . '/mod/choice/lib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @since      Moodle 3.0
  */
-class mod_choice_lib_testcase extends externallib_advanced_testcase {
+class lib_test extends \externallib_advanced_testcase {
 
     /**
      * Test choice_view
@@ -55,7 +56,7 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         // Setup test data.
         $course = $this->getDataGenerator()->create_course();
         $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id));
-        $context = context_module::instance($choice->cmid);
+        $context = \context_module::instance($choice->cmid);
         $cm = get_coursemodule_from_instance('choice', $choice->id);
 
         // Trigger and capture the event.
@@ -89,7 +90,7 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         // Setup test data.
         $course = $this->getDataGenerator()->create_course();
         $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id));
-        $context = context_module::instance($choice->cmid);
+        $context = \context_module::instance($choice->cmid);
         $cm = get_coursemodule_from_instance('choice', $choice->id);
 
         // Default values are false, user cannot view results.
@@ -138,9 +139,6 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
 
     }
 
-    /**
-     * @expectedException moodle_exception
-     */
     public function test_choice_user_submit_response_validation() {
         global $USER;
 
@@ -159,7 +157,49 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         $optionids2 = array_keys($choicewithoptions2->option);
 
         // Make sure we cannot submit options from a different choice instance.
+        $this->expectException(\moodle_exception::class);
         choice_user_submit_response($optionids2[0], $choice1, $USER->id, $course, $cm);
+    }
+
+    /**
+     * Test choice_get_user_response
+     * @return void
+     */
+    public function test_choice_get_user_response() {
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+        // Setup test data.
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id));
+        $cm = get_coursemodule_from_instance('choice', $choice->id);
+
+        $choicewithoptions = choice_get_choice($choice->id);
+        $optionids = array_keys($choicewithoptions->option);
+
+        choice_user_submit_response($optionids[0], $choice, $student->id, $course, $cm);
+        $responses = choice_get_user_response($choice, $student->id);
+        $this->assertCount(1, $responses);
+        $response = array_shift($responses);
+        $this->assertEquals($optionids[0], $response->optionid);
+
+        // Multiple responses.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id, 'allowmultiple' => 1));
+        $cm = get_coursemodule_from_instance('choice', $choice->id);
+
+        $choicewithoptions = choice_get_choice($choice->id);
+        $optionids = array_keys($choicewithoptions->option);
+
+        // Submit a response with the options reversed.
+        $selections = $optionids;
+        rsort($selections);
+        choice_user_submit_response($selections, $choice, $student->id, $course, $cm);
+        $responses = choice_get_user_response($choice, $student->id);
+        $this->assertCount(count($optionids), $responses);
+        foreach ($responses as $resp) {
+            $this->assertEquals(array_shift($optionids), $resp->optionid);
+        }
     }
 
     /**
@@ -265,6 +305,80 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         $this->assertEquals('expired', array_keys($warnings)[0]);
     }
 
+    /*
+     * The choice's event should not be shown to a user when the user cannot view the choice activity at all.
+     */
+    public function test_choice_core_calendar_provide_event_action_in_hidden_section() {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a student.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Create a choice.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id,
+                'timeopen' => time() - DAYSECS, 'timeclose' => time() + DAYSECS));
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id, CHOICE_EVENT_TYPE_OPEN);
+
+        // Set sections 0 as hidden.
+        set_section_visible($course->id, 0, 0);
+
+        // Now, log out.
+        $CFG->forcelogin = true; // We don't want to be logged in as guest, as guest users might still have some capabilities.
+        $this->setUser();
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_choice_core_calendar_provide_event_action($event, $factory, $student->id);
+
+        // Confirm the event is not shown at all.
+        $this->assertNull($actionevent);
+    }
+
+    /*
+     * The choice's event should not be shown to a user who does not have permission to view the choice.
+     */
+    public function test_choice_core_calendar_provide_event_action_for_non_user() {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a choice.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id,
+                'timeopen' => time() - DAYSECS, 'timeclose' => time() + DAYSECS));
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id, CHOICE_EVENT_TYPE_OPEN);
+
+        // Now, log out.
+        $CFG->forcelogin = true; // We don't want to be logged in as guest, as guest users might still have some capabilities.
+        $this->setUser();
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event.
+        $actionevent = mod_choice_core_calendar_provide_event_action($event, $factory);
+
+        // Confirm the event is not shown at all.
+        $this->assertNull($actionevent);
+    }
+
     public function test_choice_core_calendar_provide_event_action_open() {
         $this->resetAfterTest();
 
@@ -294,28 +408,56 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         $this->assertTrue($actionevent->is_actionable());
     }
 
-    /**
-     * An event should not have an action if the user has already submitted a response
-     * to the choice activity.
-     */
-    public function test_choice_core_calendar_provide_event_action_already_submitted() {
-        global $DB;
-
+    public function test_choice_core_calendar_provide_event_action_open_for_user() {
         $this->resetAfterTest();
 
         $this->setAdminUser();
 
         // Create a course.
         $course = $this->getDataGenerator()->create_course();
-        // Create user.
-        $student = $this->getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
-        $this->getDataGenerator()->enrol_user($student->id, $course->id, $studentrole->id, 'manual');
+
+        // Create a student.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         // Create a choice.
         $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id,
             'timeopen' => time() - DAYSECS, 'timeclose' => time() + DAYSECS));
-        $context = context_module::instance($choice->cmid);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id, CHOICE_EVENT_TYPE_OPEN);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_choice_core_calendar_provide_event_action($event, $factory, $student->id);
+
+        // Confirm the event was decorated.
+        $this->assertInstanceOf('\core_calendar\local\event\value_objects\action', $actionevent);
+        $this->assertEquals(get_string('viewchoices', 'choice'), $actionevent->get_name());
+        $this->assertInstanceOf('moodle_url', $actionevent->get_url());
+        $this->assertEquals(1, $actionevent->get_item_count());
+        $this->assertTrue($actionevent->is_actionable());
+    }
+
+    /**
+     * An event should not have an action if the user has already submitted a response
+     * to the choice activity.
+     */
+    public function test_choice_core_calendar_provide_event_action_already_submitted() {
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a student.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Create a choice.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id,
+            'timeopen' => time() - DAYSECS, 'timeclose' => time() + DAYSECS));
         $cm = get_coursemodule_from_instance('choice', $choice->id);
 
         $choicewithoptions = choice_get_choice($choice->id);
@@ -333,6 +475,45 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
 
         // Decorate action event.
         $action = mod_choice_core_calendar_provide_event_action($event, $factory);
+
+        // Confirm no action was returned if the user has already submitted the
+        // choice activity.
+        $this->assertNull($action);
+    }
+
+    /**
+     * An event should not have an action if the user has already submitted a response
+     * to the choice activity.
+     */
+    public function test_choice_core_calendar_provide_event_action_already_submitted_for_user() {
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a student.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Create a choice.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id,
+            'timeopen' => time() - DAYSECS, 'timeclose' => time() + DAYSECS));
+        $cm = get_coursemodule_from_instance('choice', $choice->id);
+
+        $choicewithoptions = choice_get_choice($choice->id);
+        $optionids = array_keys($choicewithoptions->option);
+
+        choice_user_submit_response($optionids[0], $choice, $student->id, $course, $cm);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id, CHOICE_EVENT_TYPE_OPEN);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $action = mod_choice_core_calendar_provide_event_action($event, $factory, $student->id);
 
         // Confirm no action was returned if the user has already submitted the
         // choice activity.
@@ -360,6 +541,35 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
 
         // Decorate action event.
         $action = mod_choice_core_calendar_provide_event_action($event, $factory);
+
+        // Confirm not action was provided for a closed activity.
+        $this->assertNull($action);
+    }
+
+    public function test_choice_core_calendar_provide_event_action_closed_for_user() {
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a student.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        $timeclose = time() - DAYSECS;
+        // Create a choice.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id,
+            'timeclose' => $timeclose));
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id, CHOICE_EVENT_TYPE_OPEN, $timeclose - 1);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $action = mod_choice_core_calendar_provide_event_action($event, $factory, $student->id);
 
         // Confirm not action was provided for a closed activity.
         $this->assertNull($action);
@@ -397,6 +607,47 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         $this->assertFalse($actionevent->is_actionable());
     }
 
+    public function test_choice_core_calendar_provide_event_action_open_in_future_for_user() {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a student.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        $timeopen = time() + DAYSECS;
+        $timeclose = $timeopen + DAYSECS;
+
+        // Create a choice.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id,
+            'timeopen' => $timeopen, 'timeclose' => $timeclose));
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id, CHOICE_EVENT_TYPE_OPEN, $timeopen);
+
+        // Now, log out.
+        $CFG->forcelogin = true; // We don't want to be logged in as guest, as guest users might still have some capabilities.
+        $this->setUser();
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_choice_core_calendar_provide_event_action($event, $factory, $student->id);
+
+        // Confirm the event was decorated.
+        $this->assertInstanceOf('\core_calendar\local\event\value_objects\action', $actionevent);
+        $this->assertEquals(get_string('viewchoices', 'choice'), $actionevent->get_name());
+        $this->assertInstanceOf('moodle_url', $actionevent->get_url());
+        $this->assertEquals(1, $actionevent->get_item_count());
+        $this->assertFalse($actionevent->is_actionable());
+    }
+
     public function test_choice_core_calendar_provide_event_action_no_time_specified() {
         $this->resetAfterTest();
 
@@ -425,6 +676,108 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         $this->assertTrue($actionevent->is_actionable());
     }
 
+    public function test_choice_core_calendar_provide_event_action_no_time_specified_for_user() {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a student.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Create a choice.
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id));
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id, CHOICE_EVENT_TYPE_OPEN);
+
+        // Now, log out.
+        $CFG->forcelogin = true; // We don't want to be logged in as guest, as guest users might still have some capabilities.
+        $this->setUser();
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_choice_core_calendar_provide_event_action($event, $factory, $student->id);
+
+        // Confirm the event was decorated.
+        $this->assertInstanceOf('\core_calendar\local\event\value_objects\action', $actionevent);
+        $this->assertEquals(get_string('viewchoices', 'choice'), $actionevent->get_name());
+        $this->assertInstanceOf('moodle_url', $actionevent->get_url());
+        $this->assertEquals(1, $actionevent->get_item_count());
+        $this->assertTrue($actionevent->is_actionable());
+    }
+
+    public function test_choice_core_calendar_provide_event_action_already_completed() {
+        $this->resetAfterTest();
+        set_config('enablecompletion', 1);
+        $this->setAdminUser();
+
+        // Create the activity.
+        $course = $this->getDataGenerator()->create_course(array('enablecompletion' => 1));
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id),
+            array('completion' => 2, 'completionview' => 1, 'completionexpected' => time() + DAYSECS));
+
+        // Get some additional data.
+        $cm = get_coursemodule_from_instance('choice', $choice->id);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id,
+            \core_completion\api::COMPLETION_EVENT_TYPE_DATE_COMPLETION_EXPECTED);
+
+        // Mark the activity as completed.
+        $completion = new \completion_info($course);
+        $completion->set_module_viewed($cm);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event.
+        $actionevent = mod_choice_core_calendar_provide_event_action($event, $factory);
+
+        // Ensure result was null.
+        $this->assertNull($actionevent);
+    }
+
+    public function test_choice_core_calendar_provide_event_action_already_completed_for_user() {
+        $this->resetAfterTest();
+        set_config('enablecompletion', 1);
+        $this->setAdminUser();
+
+        // Create the activity.
+        $course = $this->getDataGenerator()->create_course(array('enablecompletion' => 1));
+        $choice = $this->getDataGenerator()->create_module('choice', array('course' => $course->id),
+            array('completion' => 2, 'completionview' => 1, 'completionexpected' => time() + DAYSECS));
+
+        // Enrol a student in the course.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Get some additional data.
+        $cm = get_coursemodule_from_instance('choice', $choice->id);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $choice->id,
+            \core_completion\api::COMPLETION_EVENT_TYPE_DATE_COMPLETION_EXPECTED);
+
+        // Mark the activity as completed for the student.
+        $completion = new \completion_info($course);
+        $completion->set_module_viewed($cm, $student->id);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_choice_core_calendar_provide_event_action($event, $factory, $student->id);
+
+        // Ensure result was null.
+        $this->assertNull($actionevent);
+    }
+
     /**
      * Creates an action event.
      *
@@ -435,7 +788,7 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
      * @return bool|calendar_event
      */
     private function create_action_event($courseid, $instanceid, $eventtype, $timestart = null) {
-        $event = new stdClass();
+        $event = new \stdClass();
         $event->name = 'Calendar event';
         $event->modulename = 'choice';
         $event->courseid = $courseid;
@@ -449,7 +802,7 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
             $event->timestart = time();
         }
 
-        return calendar_event::create($event);
+        return \calendar_event::create($event);
     }
 
     /**
@@ -473,13 +826,13 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
             'completion' => 2,
             'completionsubmit' => 0
         ]);
-        $cm1 = cm_info::create(get_coursemodule_from_instance('choice', $choice1->id));
-        $cm2 = cm_info::create(get_coursemodule_from_instance('choice', $choice2->id));
+        $cm1 = \cm_info::create(get_coursemodule_from_instance('choice', $choice1->id));
+        $cm2 = \cm_info::create(get_coursemodule_from_instance('choice', $choice2->id));
 
         // Data for the stdClass input type.
         // This type of input would occur when checking the default completion rules for an activity type, where we don't have
         // any access to cm_info, rather the input is a stdClass containing completion and customdata attributes, just like cm_info.
-        $moddefaults = new stdClass();
+        $moddefaults = new \stdClass();
         $moddefaults->customdata = ['customcompletionrules' => ['completionsubmit' => 1]];
         $moddefaults->completion = 2;
 
@@ -487,7 +840,7 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         $this->assertEquals(mod_choice_get_completion_active_rule_descriptions($cm1), $activeruledescriptions);
         $this->assertEquals(mod_choice_get_completion_active_rule_descriptions($cm2), []);
         $this->assertEquals(mod_choice_get_completion_active_rule_descriptions($moddefaults), $activeruledescriptions);
-        $this->assertEquals(mod_choice_get_completion_active_rule_descriptions(new stdClass()), []);
+        $this->assertEquals(mod_choice_get_completion_active_rule_descriptions(new \stdClass()), []);
     }
 
     /**
@@ -978,5 +1331,28 @@ class mod_choice_lib_testcase extends externallib_advanced_testcase {
         // Confirm that limits are respected by trying to save the same option as another user.
         $this->expectException('moodle_exception');
         choice_user_submit_response($optionids[1], $choicewithoptions, $user2->id, $course, $cm);
+    }
+
+    /**
+     * A user who does not have capabilities to add events to the calendar should be able to create an choice.
+     */
+    public function test_creation_with_no_calendar_capabilities() {
+        $this->resetAfterTest();
+        $course = self::getDataGenerator()->create_course();
+        $context = \context_course::instance($course->id);
+        $user = self::getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $roleid = self::getDataGenerator()->create_role();
+        self::getDataGenerator()->role_assign($roleid, $user->id, $context->id);
+        assign_capability('moodle/calendar:manageentries', CAP_PROHIBIT, $roleid, $context, true);
+        $generator = self::getDataGenerator()->get_plugin_generator('mod_choice');
+        // Create an instance as a user without the calendar capabilities.
+        $this->setUser($user);
+        $time = time();
+        $params = array(
+            'course' => $course->id,
+            'timeopen' => $time + 200,
+            'timeclose' => $time + 500,
+        );
+        $generator->create_instance($params);
     }
 }

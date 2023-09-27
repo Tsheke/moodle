@@ -36,26 +36,38 @@ define('NO_MOODLE_COOKIES', true);
 require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->dirroot . '/webservice/lib.php');
 
+global $OUTPUT;
+
 $token = required_param('token', PARAM_ALPHANUM);
 $video = required_param('video', PARAM_ALPHANUM);   // Video ids are numeric, but it's more solid to expect things like 00001.
-$width = required_param('width', PARAM_INT);
-$height = required_param('height', PARAM_INT);
+$width = optional_param('width', 0, PARAM_INT);
+$height = optional_param('height', 0, PARAM_INT);
+$h = optional_param('h', '', PARAM_ALPHANUM); // Security hash for restricted videos.
 
 // Authenticate the user.
 $webservicelib = new webservice();
 $webservicelib->authenticate_user($token);
 
-$output = <<<OET
-<html>
-    <head>
-        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
-    </head>
-    <body style="margin:0; padding:0">
-        <iframe src="https://player.vimeo.com/video/$video"
-            width="$width" height="$height" frameborder="0"
-            webkitallowfullscreen mozallowfullscreen allowfullscreen>
-        </iframe>
-    </body>
-</html>
-OET;
-echo $output;
+$params = ['lang' => current_language()];
+if (!empty($h)) {
+    $params['h'] = $h;
+}
+
+// Add do not track parameter.
+if (get_config('media_vimeo', 'donottrack')) {
+    $params['dnt'] = 1;
+}
+
+$embedurl = new moodle_url("https://player.vimeo.com/video/$video", $params);
+$context = ['embedurl' => $embedurl->out(false)]; // Template context.
+
+if (empty($width) && empty($height)) {
+    // Use the full page. The video will keep the ratio.
+    $context['display'] = "position:absolute; top:0; left:0; width:100%; height:100%;";
+} else {
+    $context['width'] = $width;
+    $context['height'] = $height;
+}
+
+// Output the rendered template.
+echo $OUTPUT->render_from_template('media_vimeo/appembed', $context);

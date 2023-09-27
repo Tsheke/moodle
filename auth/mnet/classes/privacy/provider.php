@@ -25,11 +25,13 @@ namespace auth_mnet\privacy;
 
 defined('MOODLE_INTERNAL') || die();
 
-use \core_privacy\local\metadata\collection;
-use \core_privacy\local\request\contextlist;
-use \core_privacy\local\request\approved_contextlist;
+use core_privacy\local\metadata\collection;
+use core_privacy\local\request\contextlist;
+use core_privacy\local\request\approved_contextlist;
 use core_privacy\local\request\transform;
-use \core_privacy\local\request\writer;
+use core_privacy\local\request\writer;
+use core_privacy\local\request\userlist;
+use core_privacy\local\request\approved_userlist;
 
 /**
  * Privacy provider for the mnet authentication
@@ -39,6 +41,7 @@ use \core_privacy\local\request\writer;
  */
 class provider implements
         \core_privacy\local\metadata\provider,
+        \core_privacy\local\request\core_userlist_provider,
         \core_privacy\local\request\plugin\provider {
     /**
      * Returns meta data about this system.
@@ -78,7 +81,6 @@ class provider implements
 
         $externalfields = [
                 'address' => 'privacy:metadata:mnet_external:address',
-                'aim' => 'privacy:metadata:mnet_external:aim',
                 'alternatename' => 'privacy:metadata:mnet_external:alternatename',
                 'autosubscribe' => 'privacy:metadata:mnet_external:autosubscribe',
                 'calendartype' => 'privacy:metadata:mnet_external:calendartype',
@@ -92,7 +94,6 @@ class provider implements
                 'firstaccess' => 'privacy:metadata:mnet_external:firstaccess',
                 'firstname' => 'privacy:metadata:mnet_external:firstname',
                 'firstnamephonetic' => 'privacy:metadata:mnet_external:firstnamephonetic',
-                'icq' => 'privacy:metadata:mnet_external:icq',
                 'id' => 'privacy:metadata:mnet_external:id',
                 'idnumber' => 'privacy:metadata:mnet_external:idnumber',
                 'imagealt' => 'privacy:metadata:mnet_external:imagealt',
@@ -105,19 +106,15 @@ class provider implements
                 'maildigest' => 'privacy:metadata:mnet_external:maildigest',
                 'maildisplay' => 'privacy:metadata:mnet_external:maildisplay',
                 'middlename' => 'privacy:metadata:mnet_external:middlename',
-                'msn' => 'privacy:metadata:mnet_external:msn',
                 'phone1' => 'privacy:metadata:mnet_external:phone1',
                 'pnone2' => 'privacy:metadata:mnet_external:phone2',
                 'picture' => 'privacy:metadata:mnet_external:picture',
                 'policyagreed' => 'privacy:metadata:mnet_external:policyagreed',
-                'skype' => 'privacy:metadata:mnet_external:skype',
                 'suspended' => 'privacy:metadata:mnet_external:suspended',
                 'timezone' => 'privacy:metadata:mnet_external:timezone',
                 'trackforums' => 'privacy:metadata:mnet_external:trackforums',
                 'trustbitmask' => 'privacy:metadata:mnet_external:trustbitmask',
-                'url' => 'privacy:metadata:mnet_external:url',
                 'username' => 'privacy:metadata:mnet_external:username',
-                'yahoo' => 'privacy:metadata:mnet_external:yahoo',
         ];
 
         $collection->add_external_location_link('moodle', $externalfields, 'privacy:metadata:external:moodle');
@@ -144,6 +141,25 @@ class provider implements
         $contextlist->add_from_sql($sql, $params);
 
         return $contextlist;
+    }
+
+    /**
+     * Get the list of users within a specific context.
+     *
+     * @param userlist $userlist The userlist containing the list of users who have data in this context/plugin combination.
+     */
+    public static function get_users_in_context(userlist $userlist) {
+        $context = $userlist->get_context();
+
+        if (!$context instanceof \context_user) {
+            return;
+        }
+
+        $sql = "SELECT userid
+                  FROM {mnet_log}
+                 WHERE userid = ?";
+        $params = [$context->instanceid];
+        $userlist->add_from_sql('userid', $sql, $params);
     }
 
     /**
@@ -217,6 +233,21 @@ class provider implements
     }
 
     /**
+     * Delete multiple users within a single context.
+     *
+     * @param approved_userlist $userlist The approved context and user information to delete information for.
+     */
+    public static function delete_data_for_users(approved_userlist $userlist) {
+        global $DB;
+
+        $context = $userlist->get_context();
+
+        if ($context instanceof \context_user) {
+            $DB->delete_records('mnet_log', ['userid' => $context->instanceid]);
+        }
+    }
+
+    /**
      * Delete all user data for the specified user, in the specified contexts.
      *
      * @param approved_contextlist $contextlist The approved contexts and user information to delete information for.
@@ -228,13 +259,15 @@ class provider implements
             return;
         }
 
+        $userid = $contextlist->get_user()->id;
         foreach ($contextlist->get_contexts() as $context) {
             if ($context->contextlevel != CONTEXT_USER) {
-                return;
+                continue;
             }
-
-            // Because we only use user contexts the instance ID is the user ID.
-            $DB->delete_records('mnet_log', ['userid' => $context->instanceid]);
+            if ($context->instanceid == $userid) {
+                // Because we only use user contexts the instance ID is the user ID.
+                $DB->delete_records('mnet_log', ['userid' => $context->instanceid]);
+            }
         }
     }
 }

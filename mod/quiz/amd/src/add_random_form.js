@@ -17,7 +17,6 @@
  * JavaScript for the add_random_form class.
  *
  * @module    mod_quiz/add_random_form
- * @package   mod_quiz
  * @copyright 2018 Ryan Wyllie <ryan@moodle.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -168,8 +167,9 @@ define(
      */
     var addEventListeners = function(form, contextId, topCategories) {
         var reloadTimerId = null;
+        const tagsFilter = form.find(SELECTORS.TAG_IDS_FORM_ELEMENT);
 
-        form.on('change', function(e) {
+        form.add(tagsFilter).on('change', function(e) {
             // Only reload the preview when elements that will change the result
             // are modified.
             if (!isInterestingElement($(e.target))) {
@@ -201,12 +201,14 @@ define(
      * @param {jquery} formId The form element id.
      * @param {int} contextId The current context id.
      * @param {string[]} topCategories List of top category values (matching the select box values)
+     * @param {bool} isTagsEnabled Whether tags feature is enabled or not.
      */
-    var init = function(formId, contextId, topCategories) {
-        var form = $('#' + formId);
-
-        reloadQuestionPreview(form, contextId, topCategories);
-        addEventListeners(form, contextId, topCategories);
+    var init = function(formId, contextId, topCategories, isTagsEnabled) {
+         if (isTagsEnabled == true) {
+             var form = $('#' + formId);
+             reloadQuestionPreview(form, contextId, topCategories, isTagsEnabled);
+             addEventListeners(form, contextId, topCategories, isTagsEnabled);
+         }
     };
 
     return {

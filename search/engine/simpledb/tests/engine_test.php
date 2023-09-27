@@ -14,14 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Simple db search engine tests.
- *
- * @package     search_simpledb
- * @category    test
- * @copyright   2016 David Monllao {@link http://www.davidmonllao.com}
- * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace search_simpledb;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -37,7 +30,7 @@ require_once($CFG->dirroot . '/search/tests/fixtures/mock_search_area.php');
  * @copyright   2016 David Monllao {@link http://www.davidmonllao.com}
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class search_simpledb_engine_testcase extends advanced_testcase {
+class engine_test extends \advanced_testcase {
 
     /**
      * @var \core_search::manager
@@ -50,7 +43,7 @@ class search_simpledb_engine_testcase extends advanced_testcase {
     protected $engine = null;
 
     /**
-     * @var core_search_generator
+     * @var \core_search_generator
      */
     protected $generator = null;
 
@@ -59,7 +52,7 @@ class search_simpledb_engine_testcase extends advanced_testcase {
      *
      * @return void
      */
-    public function setUp() {
+    public function setUp(): void {
         $this->resetAfterTest();
 
         if ($this->requires_manual_index_update()) {
@@ -73,9 +66,7 @@ class search_simpledb_engine_testcase extends advanced_testcase {
         // search component to it.
 
         $this->engine = new \search_simpledb\engine();
-        $this->search = testable_core_search::instance($this->engine);
-        $areaid = \core_search\manager::generate_areaid('core_mocksearch', 'mock_search_area');
-        $this->search->add_search_area($areaid, new core_mocksearch\search\mock_search_area());
+        $this->search = \testable_core_search::instance($this->engine);
 
         $this->generator = self::getDataGenerator()->get_plugin_generator('core_search');
         $this->generator->setup();
@@ -88,7 +79,7 @@ class search_simpledb_engine_testcase extends advanced_testcase {
      *
      * @return void
      */
-    public function tearDown() {
+    public function tearDown(): void {
         // For unit tests before PHP 7, teardown is called even on skip. So only do our teardown if we did setup.
         if ($this->generator) {
             // Moodle DML freaks out if we don't teardown the temp table after each run.
@@ -104,6 +95,8 @@ class search_simpledb_engine_testcase extends advanced_testcase {
      */
     public function test_index() {
         global $DB;
+
+        $this->add_mock_search_area();
 
         $record = new \stdClass();
         $record->timemodified = time() - 1;
@@ -130,6 +123,8 @@ class search_simpledb_engine_testcase extends advanced_testcase {
     public function test_search() {
         global $USER, $DB;
 
+        $this->add_mock_search_area();
+
         $this->generator->create_record();
         $record = new \stdClass();
         $record->title = "Special title";
@@ -138,7 +133,7 @@ class search_simpledb_engine_testcase extends advanced_testcase {
         $this->search->index();
         $this->update_index();
 
-        $querydata = new stdClass();
+        $querydata = new \stdClass();
         $querydata->q = 'message';
         $results = $this->search->search($querydata);
         $this->assertCount(2, $results);
@@ -214,12 +209,14 @@ class search_simpledb_engine_testcase extends advanced_testcase {
      */
     public function test_delete() {
 
+        $this->add_mock_search_area();
+
         $this->generator->create_record();
         $this->generator->create_record();
         $this->search->index();
         $this->update_index();
 
-        $querydata = new stdClass();
+        $querydata = new \stdClass();
         $querydata->q = 'message';
 
         $this->assertCount(2, $this->search->search($querydata));
@@ -237,7 +234,9 @@ class search_simpledb_engine_testcase extends advanced_testcase {
      */
     public function test_alloweduserid() {
 
-        $area = new core_mocksearch\search\mock_search_area();
+        $this->add_mock_search_area();
+
+        $area = new \core_mocksearch\search\mock_search_area();
 
         $record = $this->generator->create_record();
 
@@ -264,7 +263,7 @@ class search_simpledb_engine_testcase extends advanced_testcase {
 
         $this->engine->area_index_complete($area->get_area_id());
 
-        $querydata = new stdClass();
+        $querydata = new \stdClass();
         $querydata->q = 'message';
         $querydata->title = $doc->get('title');
 
@@ -309,12 +308,14 @@ class search_simpledb_engine_testcase extends advanced_testcase {
 
     public function test_delete_by_id() {
 
+        $this->add_mock_search_area();
+
         $this->generator->create_record();
         $this->generator->create_record();
         $this->search->index();
         $this->update_index();
 
-        $querydata = new stdClass();
+        $querydata = new \stdClass();
 
         // Then search to make sure they are there.
         $querydata->q = 'message';
@@ -332,6 +333,64 @@ class search_simpledb_engine_testcase extends advanced_testcase {
         $this->assertCount(1, $results);
         $result = reset($results);
         $this->assertNotEquals($deleteid, $result->get('id'));
+    }
+
+    /**
+     * Tries out deleting data for a context or a course.
+     */
+    public function test_deleted_contexts_and_courses() {
+        // Create some courses and activities.
+        $generator = $this->getDataGenerator();
+        $course1 = $generator->create_course(['fullname' => 'C1', 'summary' => 'xyzzy']);
+        $course1page1 = $generator->create_module('page', ['course' => $course1, 'name' => 'C1P1', 'content' => 'xyzzy']);
+        $generator->create_module('page', ['course' => $course1, 'name' => 'C1P2', 'content' => 'xyzzy']);
+        $course2 = $generator->create_course(['fullname' => 'C2', 'summary' => 'xyzzy']);
+        $course2page = $generator->create_module('page', ['course' => $course2, 'name' => 'C2P', 'content' => 'xyzzy']);
+        $course2pagecontext = \context_module::instance($course2page->cmid);
+
+        $this->search->index();
+
+        // By default we have all data in the index.
+        $this->assert_raw_index_contents('xyzzy', ['C1', 'C1P1', 'C1P2', 'C2', 'C2P']);
+
+        // Say we delete the course2pagecontext...
+        $this->engine->delete_index_for_context($course2pagecontext->id);
+        $this->assert_raw_index_contents('xyzzy', ['C1', 'C1P1', 'C1P2', 'C2']);
+
+        // Now delete the second course...
+        $this->engine->delete_index_for_course($course2->id);
+        $this->assert_raw_index_contents('xyzzy', ['C1', 'C1P1', 'C1P2']);
+
+        // Finally let's delete using Moodle functions to check that works. Single context first.
+        course_delete_module($course1page1->cmid);
+        $this->assert_raw_index_contents('xyzzy', ['C1', 'C1P2']);
+        delete_course($course1, false);
+        $this->assert_raw_index_contents('xyzzy', []);
+    }
+
+    /**
+     * Check the contents of the index.
+     *
+     * @param string $searchword Word to match within the content field
+     * @param string[] $expected Array of expected result titles, in alphabetical order
+     */
+    protected function assert_raw_index_contents(string $searchword, array $expected) {
+        global $DB;
+        $results = $DB->get_records_select('search_simpledb_index',
+                $DB->sql_like('content', '?'), ['%' . $searchword . '%'], "id, {$DB->sql_order_by_text('title')}");
+        $titles = array_map(function($x) {
+            return $x->title;
+        }, $results);
+        sort($titles);
+        $this->assertEquals($expected, $titles);
+    }
+
+    /**
+     * Adds a mock search area to the search system.
+     */
+    protected function add_mock_search_area() {
+        $areaid = \core_search\manager::generate_areaid('core_mocksearch', 'mock_search_area');
+        $this->search->add_search_area($areaid, new \core_mocksearch\search\mock_search_area());
     }
 
     /**

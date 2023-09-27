@@ -86,6 +86,18 @@ require_once($CFG->dirroot.'/auth/ldap/locallib.php');
  */
 class auth_plugin_ldap extends auth_plugin_base {
 
+    /** @var string */
+    protected $roleauth;
+
+    /** @var string */
+    public $pluginconfig;
+
+    /** @var LDAP\Connection LDAP connection. */
+    protected $ldapconnection;
+
+    /** @var int */
+    protected $ldapconns = 0;
+
     /**
      * Init plugin config from database settings depending on the plugin auth type.
      */
@@ -148,7 +160,7 @@ class auth_plugin_ldap extends auth_plugin_base {
      */
     function user_login($username, $password) {
         if (! function_exists('ldap_bind')) {
-            print_error('auth_ldapnotinstalled', 'auth_ldap');
+            throw new \moodle_exception('auth_ldapnotinstalled', 'auth_ldap');
             return false;
         }
 
@@ -450,12 +462,12 @@ class auth_plugin_ldap extends auth_plugin_base {
                 // strings (UCS-2 Little Endian format) and surrounded with
                 // double quotes. See http://support.microsoft.com/?kbid=269190
                 if (!function_exists('mb_convert_encoding')) {
-                    print_error('auth_ldap_no_mbstring', 'auth_ldap');
+                    throw new \moodle_exception('auth_ldap_no_mbstring', 'auth_ldap');
                 }
 
                 // Check for invalid sAMAccountName characters.
                 if (preg_match('#[/\\[\]:;|=,+*?<>@"]#', $extusername)) {
-                    print_error ('auth_ldap_ad_invalidchars', 'auth_ldap');
+                    throw new \moodle_exception ('auth_ldap_ad_invalidchars', 'auth_ldap');
                 }
 
                 // First create the user account, and mark it as disabled.
@@ -465,7 +477,7 @@ class auth_plugin_ldap extends auth_plugin_base {
                                                  AUTH_AD_ACCOUNTDISABLE;
                 $userdn = 'cn='.ldap_addslashes($extusername).','.$this->config->create_context;
                 if (!ldap_add($ldapconnection, $userdn, $newuser)) {
-                    print_error('auth_ldap_ad_create_req', 'auth_ldap');
+                    throw new \moodle_exception('auth_ldap_ad_create_req', 'auth_ldap');
                 }
 
                 // Now set the password
@@ -475,12 +487,12 @@ class auth_plugin_ldap extends auth_plugin_base {
                 if(!ldap_modify($ldapconnection, $userdn, $newuser)) {
                     // Something went wrong: delete the user account and error out
                     ldap_delete ($ldapconnection, $userdn);
-                    print_error('auth_ldap_ad_create_req', 'auth_ldap');
+                    throw new \moodle_exception('auth_ldap_ad_create_req', 'auth_ldap');
                 }
                 $uadd = true;
                 break;
             default:
-               print_error('auth_ldap_unsupportedusertype', 'auth_ldap', '', $this->config->user_type_name);
+               throw new \moodle_exception('auth_ldap_unsupportedusertype', 'auth_ldap', '', $this->config->user_type_name);
         }
         $this->ldap_close();
         return $uadd;
@@ -528,14 +540,14 @@ class auth_plugin_ldap extends auth_plugin_base {
         require_once($CFG->dirroot.'/user/lib.php');
 
         if ($this->user_exists($user->username)) {
-            print_error('auth_ldap_user_exists', 'auth_ldap');
+            throw new \moodle_exception('auth_ldap_user_exists', 'auth_ldap');
         }
 
         $plainslashedpassword = $user->password;
         unset($user->password);
 
         if (! $this->user_create($user, $plainslashedpassword)) {
-            print_error('auth_ldap_create_error', 'auth_ldap');
+            throw new \moodle_exception('auth_ldap_create_error', 'auth_ldap');
         }
 
         $user->id = user_create_user($user, false, false);
@@ -558,7 +570,7 @@ class auth_plugin_ldap extends auth_plugin_base {
         \core\event\user_created::create_from_userid($user->id)->trigger();
 
         if (! send_confirmation_email($user)) {
-            print_error('noemail', 'auth_ldap');
+            throw new \moodle_exception('noemail', 'auth_ldap');
         }
 
         if ($notify) {
@@ -598,10 +610,10 @@ class auth_plugin_ldap extends auth_plugin_base {
             if ($user->auth != $this->authtype) {
                 return AUTH_CONFIRM_ERROR;
 
-            } else if ($user->secret == $confirmsecret && $user->confirmed) {
+            } else if ($user->secret === $confirmsecret && $user->confirmed) {
                 return AUTH_CONFIRM_ALREADY;
 
-            } else if ($user->secret == $confirmsecret) {   // They have provided the secret key to get in
+            } else if ($user->secret === $confirmsecret) {   // They have provided the secret key to get in
                 if (!$this->user_activate($username)) {
                     return AUTH_CONFIRM_FAIL;
                 }
@@ -691,6 +703,7 @@ class auth_plugin_ldap extends auth_plugin_base {
         ////
         // prepare some data we'll need
         $filter = '(&('.$this->config->user_attribute.'=*)'.$this->config->objectclass.')';
+        $servercontrols = array();
 
         $contexts = explode(';', $this->config->contexts);
 
@@ -698,8 +711,8 @@ class auth_plugin_ldap extends auth_plugin_base {
             array_push($contexts, $this->config->create_context);
         }
 
-        $ldap_pagedresults = ldap_paged_results_supported($this->config->ldap_version, $ldapconnection);
-        $ldap_cookie = '';
+        $ldappagedresults = ldap_paged_results_supported($this->config->ldap_version, $ldapconnection);
+        $ldapcookie = '';
         foreach ($contexts as $context) {
             $context = trim($context);
             if (empty($context)) {
@@ -707,23 +720,34 @@ class auth_plugin_ldap extends auth_plugin_base {
             }
 
             do {
-                if ($ldap_pagedresults) {
-                    ldap_control_paged_result($ldapconnection, $this->config->pagesize, true, $ldap_cookie);
+                if ($ldappagedresults) {
+                    $servercontrols = array(array(
+                        'oid' => LDAP_CONTROL_PAGEDRESULTS, 'value' => array(
+                            'size' => $this->config->pagesize, 'cookie' => $ldapcookie)));
                 }
                 if ($this->config->search_sub) {
                     // Use ldap_search to find first user from subtree.
-                    $ldap_result = ldap_search($ldapconnection, $context, $filter, array($this->config->user_attribute));
+                    $ldapresult = ldap_search($ldapconnection, $context, $filter, array($this->config->user_attribute),
+                        0, -1, -1, LDAP_DEREF_NEVER, $servercontrols);
                 } else {
                     // Search only in this context.
-                    $ldap_result = ldap_list($ldapconnection, $context, $filter, array($this->config->user_attribute));
+                    $ldapresult = ldap_list($ldapconnection, $context, $filter, array($this->config->user_attribute),
+                        0, -1, -1, LDAP_DEREF_NEVER, $servercontrols);
                 }
-                if(!$ldap_result) {
+                if (!$ldapresult) {
                     continue;
                 }
-                if ($ldap_pagedresults) {
-                    ldap_control_paged_result_response($ldapconnection, $ldap_result, $ldap_cookie);
+                if ($ldappagedresults) {
+                    // Get next server cookie to know if we'll need to continue searching.
+                    $ldapcookie = '';
+                    // Get next cookie from controls.
+                    ldap_parse_result($ldapconnection, $ldapresult, $errcode, $matcheddn,
+                        $errmsg, $referrals, $controls);
+                    if (isset($controls[LDAP_CONTROL_PAGEDRESULTS]['value']['cookie'])) {
+                        $ldapcookie = $controls[LDAP_CONTROL_PAGEDRESULTS]['value']['cookie'];
+                    }
                 }
-                if ($entry = @ldap_first_entry($ldapconnection, $ldap_result)) {
+                if ($entry = @ldap_first_entry($ldapconnection, $ldapresult)) {
                     do {
                         $value = ldap_get_values_len($ldapconnection, $entry, $this->config->user_attribute);
                         $value = core_text::convert($value[0], $this->config->ldapencoding, 'utf-8');
@@ -731,13 +755,13 @@ class auth_plugin_ldap extends auth_plugin_base {
                         $this->ldap_bulk_insert($value);
                     } while ($entry = ldap_next_entry($ldapconnection, $entry));
                 }
-                unset($ldap_result); // Free mem.
-            } while ($ldap_pagedresults && $ldap_cookie !== null && $ldap_cookie != '');
+                unset($ldapresult); // Free mem.
+            } while ($ldappagedresults && $ldapcookie !== null && $ldapcookie != '');
         }
 
         // If LDAP paged results were used, the current connection must be completely
         // closed and a new one created, to work without paged results from here on.
-        if ($ldap_pagedresults) {
+        if ($ldappagedresults) {
             $this->ldap_close(true);
             $ldapconnection = $this->ldap_connect();
         }
@@ -748,7 +772,9 @@ class auth_plugin_ldap extends auth_plugin_base {
         $count = $DB->count_records_sql('SELECT COUNT(username) AS count, 1 FROM {tmp_extuser}');
         if ($count < 1) {
             print_string('didntgetusersfromldap', 'auth_ldap');
-            exit;
+            $dbman->drop_table($table);
+            $this->ldap_close();
+            return false;
         } else {
             print_string('gotcountrecordsfromldap', 'auth_ldap', $count);
         }
@@ -852,11 +878,8 @@ class auth_plugin_ldap extends auth_plugin_base {
             if (!empty($users)) {
                 print_string('userentriestoupdate', 'auth_ldap', count($users));
 
-                $transaction = $DB->start_delegated_transaction();
-                $xcount = 0;
-                $maxxcount = 100;
-
                 foreach ($users as $user) {
+                    $transaction = $DB->start_delegated_transaction();
                     echo "\t"; print_string('auth_dbupdatinguser', 'auth_db', array('name'=>$user->username, 'id'=>$user->id));
                     $userinfo = $this->get_userinfo($user->username);
                     if (!$this->update_user_record($user->username, $updatekeys, true,
@@ -864,12 +887,11 @@ class auth_plugin_ldap extends auth_plugin_base {
                         echo ' - '.get_string('skipped');
                     }
                     echo "\n";
-                    $xcount++;
 
                     // Update system roles, if needed.
                     $this->sync_roles($user);
+                    $transaction->allow_commit();
                 }
-                $transaction->allow_commit();
                 unset($users); // free mem
             }
         } else { // end do updates
@@ -888,9 +910,10 @@ class auth_plugin_ldap extends auth_plugin_base {
 
         if (!empty($add_users)) {
             print_string('userentriestoadd', 'auth_ldap', count($add_users));
+            $errors = 0;
 
-            $transaction = $DB->start_delegated_transaction();
             foreach ($add_users as $user) {
+                $transaction = $DB->start_delegated_transaction();
                 $user = $this->get_userinfo_asobj($user->username);
 
                 // Prep a few params
@@ -907,14 +930,19 @@ class auth_plugin_ldap extends auth_plugin_base {
                 //
                 // The cast to int is a workaround for MDL-53959.
                 $user->suspended = (int)$this->is_user_suspended($user);
-                if (empty($user->lang)) {
-                    $user->lang = $CFG->lang;
-                }
+
                 if (empty($user->calendartype)) {
                     $user->calendartype = $CFG->calendartype;
                 }
 
-                $id = user_create_user($user, false);
+                // $id = user_create_user($user, false);
+                try {
+                    $id = user_create_user($user, false);
+                } catch (Exception $e) {
+                    print_string('invaliduserexception', 'auth_ldap', print_r($user, true) .  $e->getMessage());
+                    $errors++;
+                    continue;
+                }
                 echo "\t"; print_string('auth_dbinsertuser', 'auth_db', array('name'=>$user->username, 'id'=>$id)); echo "\n";
                 $euser = $DB->get_record('user', array('id' => $id));
 
@@ -927,9 +955,14 @@ class auth_plugin_ldap extends auth_plugin_base {
 
                 // Add roles if needed.
                 $this->sync_roles($euser);
-
+                $transaction->allow_commit();
             }
-            $transaction->allow_commit();
+
+            // Display number of user creation errors, if any.
+            if ($errors) {
+                print_string('invalidusererrors', 'auth_ldap', $errors);
+            }
+
             unset($add_users); // free mem
         } else {
             print_string('nouserstobeadded', 'auth_ldap');
@@ -992,7 +1025,7 @@ class auth_plugin_ldap extends auth_plugin_base {
                                                  & (~AUTH_AD_ACCOUNTDISABLE);
                 break;
             default:
-                print_error('user_activatenotsupportusertype', 'auth_ldap', '', $this->config->user_type_name);
+                throw new \moodle_exception('user_activatenotsupportusertype', 'auth_ldap', '', $this->config->user_type_name);
         }
         $result = ldap_modify($ldapconnection, $userdn, $newinfo);
         $this->ldap_close();
@@ -1188,18 +1221,18 @@ class auth_plugin_ldap extends auth_plugin_base {
                     empty($nuvalue) ? $nuvalue = array() : $nuvalue;
                     $ouvalue = core_text::convert($oldvalue, 'utf-8', $this->config->ldapencoding);
                     foreach ($ldapkeys as $ldapkey) {
-                        // Skip update if $ldapkey does not exist in LDAP.
-                        if (!isset($user_entry[$ldapkey][0])) {
-                            $success = false;
-                            error_log($this->errorlogtag.get_string('updateremfailfield', 'auth_ldap',
-                                                                     array('ldapkey' => $ldapkey,
-                                                                            'key' => $key,
-                                                                            'ouvalue' => $ouvalue,
-                                                                            'nuvalue' => $nuvalue)));
-                            continue;
+                        // If the field is empty in LDAP there are two options:
+                        // 1. We get the LDAP field using ldap_first_attribute.
+                        // 2. LDAP don't send the field using  ldap_first_attribute.
+                        // So, for option 1 we check the if the field is retrieve it.
+                        // And get the original value of field in LDAP if the field.
+                        // Otherwise, let value in blank and delegate the check in ldap_modify.
+                        if (isset($user_entry[$ldapkey][0])) {
+                            $ldapvalue = $user_entry[$ldapkey][0];
+                        } else {
+                            $ldapvalue = '';
                         }
 
-                        $ldapvalue = $user_entry[$ldapkey][0];
                         if (!$ambiguous) {
                             // Skip update if the values already match
                             if ($nuvalue !== $ldapvalue) {
@@ -1427,7 +1460,7 @@ class auth_plugin_ldap extends auth_plugin_base {
                 $result = $this->ldap_get_ad_pwdexpire($time, $ldapconnection, $user_dn);
                 break;
             default:
-                print_error('auth_ldap_usertypeundefined', 'auth_ldap');
+                throw new \moodle_exception('auth_ldap_usertypeundefined', 'auth_ldap');
         }
         return $result;
     }
@@ -1448,7 +1481,7 @@ class auth_plugin_ldap extends auth_plugin_base {
                 $result = $time ; // Already in correct format
                 break;
             default:
-                print_error('auth_ldap_usertypeundefined2', 'auth_ldap');
+                throw new \moodle_exception('auth_ldap_usertypeundefined2', 'auth_ldap');
         }
         return $result;
 
@@ -1497,6 +1530,7 @@ class auth_plugin_ldap extends auth_plugin_base {
         if ($filter == '*') {
            $filter = '(&('.$this->config->user_attribute.'=*)'.$this->config->objectclass.')';
         }
+        $servercontrols = array();
 
         $contexts = explode(';', $this->config->contexts);
         if (!empty($this->config->create_context)) {
@@ -1513,20 +1547,31 @@ class auth_plugin_ldap extends auth_plugin_base {
 
             do {
                 if ($ldap_pagedresults) {
-                    ldap_control_paged_result($ldapconnection, $this->config->pagesize, true, $ldap_cookie);
+                    $servercontrols = array(array(
+                        'oid' => LDAP_CONTROL_PAGEDRESULTS, 'value' => array(
+                            'size' => $this->config->pagesize, 'cookie' => $ldap_cookie)));
                 }
                 if ($this->config->search_sub) {
                     // Use ldap_search to find first user from subtree.
-                    $ldap_result = ldap_search($ldapconnection, $context, $filter, array($this->config->user_attribute));
+                    $ldap_result = ldap_search($ldapconnection, $context, $filter, array($this->config->user_attribute),
+                        0, -1, -1, LDAP_DEREF_NEVER, $servercontrols);
                 } else {
                     // Search only in this context.
-                    $ldap_result = ldap_list($ldapconnection, $context, $filter, array($this->config->user_attribute));
+                    $ldap_result = ldap_list($ldapconnection, $context, $filter, array($this->config->user_attribute),
+                        0, -1, -1, LDAP_DEREF_NEVER, $servercontrols);
                 }
                 if(!$ldap_result) {
                     continue;
                 }
                 if ($ldap_pagedresults) {
-                    ldap_control_paged_result_response($ldapconnection, $ldap_result, $ldap_cookie);
+                    // Get next server cookie to know if we'll need to continue searching.
+                    $ldap_cookie = '';
+                    // Get next cookie from controls.
+                    ldap_parse_result($ldapconnection, $ldap_result, $errcode, $matcheddn,
+                        $errmsg, $referrals, $controls);
+                    if (isset($controls[LDAP_CONTROL_PAGEDRESULTS]['value']['cookie'])) {
+                        $ldap_cookie = $controls[LDAP_CONTROL_PAGEDRESULTS]['value']['cookie'];
+                    }
                 }
                 $users = ldap_get_entries_moodle($ldapconnection, $ldap_result);
                 // Add found users to list.
@@ -1725,7 +1770,8 @@ class auth_plugin_ldap extends auth_plugin_base {
 
         // Here we want to trigger the whole authentication machinery
         // to make sure no step is bypassed...
-        $user = authenticate_user_login($username, $key);
+        $reason = null;
+        $user = authenticate_user_login($username, $key, false, $reason, false);
         if ($user) {
             complete_user_login($user);
 
@@ -1960,7 +2006,7 @@ class auth_plugin_ldap extends auth_plugin_base {
             return $ldapconnection;
         }
 
-        print_error('auth_ldap_noconnect_all', 'auth_ldap', '', $debuginfo);
+        throw new \moodle_exception('auth_ldap_noconnect_all', 'auth_ldap', '', $debuginfo);
     }
 
     /**
@@ -2082,41 +2128,97 @@ class auth_plugin_ldap extends auth_plugin_base {
     }
 
     /**
+     * Test a DN
+     *
+     * @param resource $ldapconn
+     * @param string $dn The DN to check for existence
+     * @param string $message The identifier of a string as in get_string()
+     * @param string|object|array $a An object, string or number that can be used
+     *      within translation strings as in get_string()
+     * @return true or a message in case of error
+     */
+    private function test_dn($ldapconn, $dn, $message, $a = null) {
+        $ldapresult = @ldap_read($ldapconn, $dn, '(objectClass=*)', array());
+        if (!$ldapresult) {
+            if (ldap_errno($ldapconn) == 32) {
+                // No such object.
+                return get_string($message, 'auth_ldap', $a);
+            }
+
+            $a = array('code' => ldap_errno($ldapconn), 'subject' => $a, 'message' => ldap_error($ldapconn));
+            return get_string('diag_genericerror', 'auth_ldap', $a);
+        }
+
+        return true;
+    }
+
+    /**
      * Test if settings are correct, print info to output.
      */
     public function test_settings() {
         global $OUTPUT;
 
         if (!function_exists('ldap_connect')) { // Is php-ldap really there?
-            echo $OUTPUT->notification(get_string('auth_ldap_noextension', 'auth_ldap'));
+            echo $OUTPUT->notification(get_string('auth_ldap_noextension', 'auth_ldap'), \core\output\notification::NOTIFY_ERROR);
             return;
         }
 
         // Check to see if this is actually configured.
-        if ((isset($this->config->host_url)) && ($this->config->host_url !== '')) {
-
-            try {
-                $ldapconn = $this->ldap_connect();
-                // Try to connect to the LDAP server.  See if the page size setting is supported on this server.
-                $pagedresultssupported = ldap_paged_results_supported($this->config->ldap_version, $ldapconn);
-            } catch (Exception $e) {
-
-                // If we couldn't connect and get the supported options, we can only assume we don't support paged results.
-                $pagedresultssupported = false;
-            }
-
-            // Display paged file results.
-            if ((!$pagedresultssupported)) {
-                echo $OUTPUT->notification(get_string('pagedresultsnotsupp', 'auth_ldap'), \core\output\notification::NOTIFY_INFO);
-            } else if ($ldapconn) {
-                // We were able to connect successfuly.
-                echo $OUTPUT->notification(get_string('connectingldapsuccess', 'auth_ldap'), \core\output\notification::NOTIFY_SUCCESS);
-            }
-
-        } else {
+        if (empty($this->config->host_url)) {
             // LDAP is not even configured.
-            echo $OUTPUT->notification(get_string('ldapnotconfigured', 'auth_ldap'), \core\output\notification::NOTIFY_INFO);
+            echo $OUTPUT->notification(get_string('ldapnotconfigured', 'auth_ldap'), \core\output\notification::NOTIFY_ERROR);
+            return;
         }
+
+        if ($this->config->ldap_version != 3) {
+            echo $OUTPUT->notification(get_string('diag_toooldversion', 'auth_ldap'), \core\output\notification::NOTIFY_WARNING);
+        }
+
+        try {
+            $ldapconn = $this->ldap_connect();
+        } catch (Exception $e) {
+            echo $OUTPUT->notification($e->getMessage(), \core\output\notification::NOTIFY_ERROR);
+            return;
+        }
+
+        // Display paged file results.
+        if (!ldap_paged_results_supported($this->config->ldap_version, $ldapconn)) {
+            echo $OUTPUT->notification(get_string('pagedresultsnotsupp', 'auth_ldap'), \core\output\notification::NOTIFY_INFO);
+        }
+
+        // Check contexts.
+        foreach (explode(';', $this->config->contexts) as $context) {
+            $context = trim($context);
+            if (empty($context)) {
+                echo $OUTPUT->notification(get_string('diag_emptycontext', 'auth_ldap'), \core\output\notification::NOTIFY_WARNING);
+                continue;
+            }
+
+            $message = $this->test_dn($ldapconn, $context, 'diag_contextnotfound', $context);
+            if ($message !== true) {
+                echo $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
+            }
+        }
+
+        // Create system role mapping field for each assignable system role.
+        $roles = get_ldap_assignable_role_names();
+        foreach ($roles as $role) {
+            foreach (explode(';', $this->config->{$role['settingname']}) as $groupdn) {
+                if (empty($groupdn)) {
+                    continue;
+                }
+
+                $role['group'] = $groupdn;
+                $message = $this->test_dn($ldapconn, $groupdn, 'diag_rolegroupnotfound', $role);
+                if ($message !== true) {
+                    echo $OUTPUT->notification($message, \core\output\notification::NOTIFY_WARNING);
+                }
+            }
+        }
+
+        $this->ldap_close(true);
+        // We were able to connect successfuly.
+        echo $OUTPUT->notification(get_string('connectingldapsuccess', 'auth_ldap'), \core\output\notification::NOTIFY_SUCCESS);
     }
 
     /**

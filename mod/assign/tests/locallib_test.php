@@ -22,13 +22,16 @@
  * @copyright  1999 onwards Martin Dougiamas  {@link http://moodle.com}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+namespace mod_assign;
 
+use mod_assign_grade_form;
+use mod_assign_test_generator;
+use mod_assign_testable_assign;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/mod/assign/locallib.php');
-require_once($CFG->dirroot . '/mod/assign/upgradelib.php');
 require_once($CFG->dirroot . '/mod/assign/tests/generator.php');
 
 /**
@@ -37,10 +40,16 @@ require_once($CFG->dirroot . '/mod/assign/tests/generator.php');
  * @copyright  1999 onwards Martin Dougiamas  {@link http://moodle.com}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class mod_assign_locallib_testcase extends advanced_testcase {
+class locallib_test extends \advanced_testcase {
 
     // Use the generator helper.
     use mod_assign_test_generator;
+
+    /** @var array */
+    public $extrastudents;
+
+    /** @var array */
+    public $extrasuspendedstudents;
 
     public function test_return_links() {
         global $PAGE;
@@ -49,7 +58,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $course = $this->getDataGenerator()->create_course();
 
         $assign = $this->create_instance($course);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         $assign->register_return_link('RETURNACTION', ['param' => 1]);
         $this->assertEquals('RETURNACTION', $assign->get_return_action());
@@ -63,7 +72,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $this->setUser($teacher);
         $assign = $this->create_instance($course);
-        $installedplugins = array_keys(core_component::get_plugin_list('assignfeedback'));
+        $installedplugins = array_keys(\core_component::get_plugin_list('assignfeedback'));
 
         foreach ($assign->get_feedback_plugins() as $plugin) {
             $this->assertContains($plugin->get_type(), $installedplugins, 'Feedback plugin not in list of installed plugins');
@@ -77,7 +86,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $this->setUser($teacher);
         $assign = $this->create_instance($course);
-        $installedplugins = array_keys(core_component::get_plugin_list('assignsubmission'));
+        $installedplugins = array_keys(\core_component::get_plugin_list('assignsubmission'));
 
         foreach ($assign->get_submission_plugins() as $plugin) {
             $this->assertContains($plugin->get_type(), $installedplugins, 'Submission plugin not in list of installed plugins');
@@ -95,7 +104,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->assertEquals(true, $assign->is_blind_marking());
 
         // Test cannot see student names.
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
         $this->assertEquals(true, strpos($output, get_string('hiddenuser', 'assign')));
 
@@ -128,7 +137,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $teacher->ignoresesskey = false;
 
         // Test student names are visible.
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
         $this->assertEquals(false, strpos($output, get_string('hiddenuser', 'assign')));
 
@@ -209,17 +218,17 @@ class mod_assign_locallib_testcase extends advanced_testcase {
                 'grade' => GRADE_TYPE_NONE
             ]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', array(
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', array(
             'id' => $assign->get_course_module()->id,
             'action' => 'grading',
         )));
 
         // Render the table with the requires grading filter.
-        $gradingtable = new assign_grading_table($assign, 1, ASSIGN_FILTER_REQUIRE_GRADING, 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, ASSIGN_FILTER_REQUIRE_GRADING, 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
 
         // Test that the filter function does not throw errors for assignments with no grade.
-        $this->assertContains(get_string('nothingtodisplay'), $output);
+        $this->assertStringContainsString(get_string('nothingtodisplay'), $output);
     }
 
 
@@ -241,31 +250,31 @@ class mod_assign_locallib_testcase extends advanced_testcase {
                 'assignsubmission_onlinetext_enabled' => 1,
                 'duedate' => time() - (4 * DAYSECS),
             ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', array(
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', array(
             'id' => $assign->get_course_module()->id,
             'action' => 'grading',
         )));
 
         // Check that the assignment is late.
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_', 'assign'), $output);
-        $this->assertContains(get_string('overdue', 'assign', format_time((4 * DAYSECS))), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_', 'assign'), $output);
+        $this->assertStringContainsString(get_string('overdue', 'assign', format_time((4 * DAYSECS))), $output);
 
         // Grant an extension.
         $extendedtime = $time + (2 * DAYSECS);
         $assign->testable_save_user_extension($student->id, $extendedtime);
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_', 'assign'), $output);
-        $this->assertContains(get_string('userextensiondate', 'assign', userdate($extendedtime)), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_', 'assign'), $output);
+        $this->assertStringContainsString(get_string('userextensiondate', 'assign', userdate($extendedtime)), $output);
 
         // Simulate a submission.
         $this->setUser($student);
         $submission = $assign->get_user_submission($student->id, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $student->id, true, false);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->onlinetext_editor = [
             'itemid' => file_get_unused_draft_itemid(),
             'text' => 'Submission text',
@@ -276,10 +285,10 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Verify output.
         $this->setUser($teacher);
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_submitted', 'assign'), $output);
-        $this->assertContains(get_string('userextensiondate', 'assign', userdate($extendedtime)), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_submitted', 'assign'), $output);
+        $this->assertStringContainsString(get_string('userextensiondate', 'assign', userdate($extendedtime)), $output);
     }
 
     /**
@@ -300,33 +309,33 @@ class mod_assign_locallib_testcase extends advanced_testcase {
                 'assignsubmission_onlinetext_enabled' => 1,
                 'duedate' => time() - (4 * DAYSECS),
             ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', array(
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', array(
             'id' => $assign->get_course_module()->id,
             'action' => 'grading',
         )));
 
         // Check that the assignment is late.
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_', 'assign'), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_', 'assign'), $output);
         $difftime = time() - $time;
-        $this->assertContains(get_string('overdue', 'assign', format_time((4 * DAYSECS) + $difftime)), $output);
+        $this->assertStringContainsString(get_string('overdue', 'assign', format_time((4 * DAYSECS) + $difftime)), $output);
 
         // Grant an extension that is in the past.
         $assign->testable_save_user_extension($student->id, $time - (2 * DAYSECS));
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_', 'assign'), $output);
-        $this->assertContains(get_string('userextensiondate', 'assign', userdate($time - (2 * DAYSECS))), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_', 'assign'), $output);
+        $this->assertStringContainsString(get_string('userextensiondate', 'assign', userdate($time - (2 * DAYSECS))), $output);
         $difftime = time() - $time;
-        $this->assertContains(get_string('overdue', 'assign', format_time((2 * DAYSECS) + $difftime)), $output);
+        $this->assertStringContainsString(get_string('overdue', 'assign', format_time((2 * DAYSECS) + $difftime)), $output);
 
         // Simulate a submission.
         $this->setUser($student);
         $submission = $assign->get_user_submission($student->id, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $student->id, true, false);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->onlinetext_editor = [
             'itemid' => file_get_unused_draft_itemid(),
             'text' => 'Submission text',
@@ -338,13 +347,14 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Verify output.
         $this->setUser($teacher);
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_submitted', 'assign'), $output);
-        $this->assertContains(get_string('userextensiondate', 'assign', userdate($time - (2 * DAYSECS))), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_submitted', 'assign'), $output);
+        $this->assertStringContainsString(get_string('userextensiondate', 'assign', userdate($time - (2 * DAYSECS))), $output);
 
         $difftime = $submittedtime - $time;
-        $this->assertContains(get_string('submittedlateshort', 'assign', format_time((2 * DAYSECS) + $difftime)), $output);
+        $this->assertStringContainsString(get_string('submittedlateshort', 'assign', format_time((2 * DAYSECS) + $difftime)),
+            $output);
     }
 
     public function test_gradingtable_status_rendering() {
@@ -362,17 +372,17 @@ class mod_assign_locallib_testcase extends advanced_testcase {
             'assignsubmission_onlinetext_enabled' => 1,
             'duedate' => $time - (4 * DAYSECS),
          ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', array(
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', array(
             'id' => $assign->get_course_module()->id,
             'action' => 'grading',
         )));
 
         // Check that the assignment is late.
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_', 'assign'), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_', 'assign'), $output);
         $difftime = time() - $time;
-        $this->assertContains(get_string('overdue', 'assign', format_time((4 * DAYSECS) + $difftime)), $output);
+        $this->assertStringContainsString(get_string('overdue', 'assign', format_time((4 * DAYSECS) + $difftime)), $output);
 
         // Simulate a student viewing the assignment without submitting.
         $this->setUser($student);
@@ -383,15 +393,15 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Verify output.
         $this->setUser($teacher);
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
         $difftime = $submittedtime - $time;
-        $this->assertContains(get_string('overdue', 'assign', format_time((4 * DAYSECS) + $difftime)), $output);
+        $this->assertStringContainsString(get_string('overdue', 'assign', format_time((4 * DAYSECS) + $difftime)), $output);
 
-        $document = new DOMDocument();
+        $document = new \DOMDocument();
         @$document->loadHTML($output);
-        $xpath = new DOMXPath($document);
-        $this->assertEquals('', $xpath->evaluate('string(//td[@id="mod_assign_grading_r0_c8"])'));
+        $xpath = new \DOMXPath($document);
+        $this->assertEmpty($xpath->evaluate('string(//td[@id="mod_assign_grading-' . $assign->get_context()->id. '_r0_c8"])'));
     }
 
     /**
@@ -434,14 +444,14 @@ class mod_assign_locallib_testcase extends advanced_testcase {
             'submissiondrafts' => 1,
             'requireallteammemberssubmit' => 0,
         ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', array(
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', array(
             'id' => $assign->get_course_module()->id,
             'action' => 'grading',
         )));
 
         // Add a submission.
         $this->setUser($student);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->onlinetext_editor = [
             'itemid' => file_get_unused_draft_itemid(),
             'text' => 'Submission text',
@@ -456,31 +466,36 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Check output.
         $this->setUser($teacher);
-        $gradingtable = new assign_grading_table($assign, 4, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 4, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $document = new DOMDocument();
+        $document = new \DOMDocument();
         @$document->loadHTML($output);
-        $xpath = new DOMXPath($document);
+        $xpath = new \DOMXPath($document);
+
+        // The XPath expression is based on the unique ID of the table.
+        $xpathuniqueidroot = 'mod_assign_grading-' . $assign->get_context()->id;
 
         // Check status.
-        $this->assertSame(get_string('submissionstatus_submitted', 'assign'), $xpath->evaluate('string(//td[@id="mod_assign_grading_r0_c4"]/div[@class="submissionstatussubmitted"])'));
-        $this->assertSame(get_string('submissionstatus_submitted', 'assign'), $xpath->evaluate('string(//td[@id="mod_assign_grading_r3_c4"]/div[@class="submissionstatussubmitted"])'));
+        $this->assertSame(get_string('submissionstatus_submitted', 'assign'),
+            $xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r0_c4"]/div[@class="submissionstatussubmitted"])'));
+        $this->assertSame(get_string('submissionstatus_submitted', 'assign'),
+            $xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r3_c4"]/div[@class="submissionstatussubmitted"])'));
 
-        // Check submission last modified date
-        $this->assertGreaterThan(0, strtotime($xpath->evaluate('string(//td[@id="mod_assign_grading_r0_c8"])')));
-        $this->assertGreaterThan(0, strtotime($xpath->evaluate('string(//td[@id="mod_assign_grading_r3_c8"])')));
+        // Check submission last modified date.
+        $this->assertGreaterThan(0, strtotime($xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r0_c8"])')));
+        $this->assertGreaterThan(0, strtotime($xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r3_c8"])')));
 
         // Check group.
-        $this->assertSame($group->name, $xpath->evaluate('string(//td[@id="mod_assign_grading_r0_c5"])'));
-        $this->assertSame($group->name, $xpath->evaluate('string(//td[@id="mod_assign_grading_r3_c5"])'));
+        $this->assertSame($group->name, $xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r0_c5"])'));
+        $this->assertSame($group->name, $xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r3_c5"])'));
 
         // Check submission text.
-        $this->assertSame('Submission text', $xpath->evaluate('string(//td[@id="mod_assign_grading_r0_c9"]/div/div)'));
-        $this->assertSame('Submission text', $xpath->evaluate('string(//td[@id="mod_assign_grading_r3_c9"]/div/div)'));
+        $this->assertSame('Submission text', $xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r0_c9"]/div/div)'));
+        $this->assertSame('Submission text', $xpath->evaluate('string(//td[@id="' . $xpathuniqueidroot . '_r3_c9"]/div/div)'));
 
         // Check comments can be made.
-        $this->assertSame(1, (int)$xpath->evaluate('count(//td[@id="mod_assign_grading_r0_c10"]//textarea)'));
-        $this->assertSame(1, (int)$xpath->evaluate('count(//td[@id="mod_assign_grading_r3_c10"]//textarea)'));
+        $this->assertEquals(1, $xpath->evaluate('count(//td[@id="' . $xpathuniqueidroot . '_r0_c10"]//textarea)'));
+        $this->assertEquals(1, $xpath->evaluate('count(//td[@id="' . $xpathuniqueidroot . '_r3_c10"]//textarea)'));
     }
 
     public function test_show_intro() {
@@ -532,10 +547,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Submit the submission.
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $student->id, true, false);
-        $data = new stdClass();
-        $data->onlinetext_editor = array('itemid'=>file_get_unused_draft_itemid(),
-                                         'text'=>'Submission text',
-                                         'format'=>FORMAT_MOODLE);
+        $data = new \stdClass();
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
@@ -554,7 +570,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Simulate adding a grade.
         $this->setUser($teacher);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->grade = '50.0';
         $assign->testable_apply_grade_to_user($data, $student->id, 0);
 
@@ -580,7 +596,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Simulate adding a grade.
         $this->setUser($teacher);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->grade = '50.0';
         $assign->testable_apply_grade_to_user($data, $student->id, 0);
 
@@ -615,16 +631,17 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Simulate a submission.
         $this->setUser($student);
         $submission = $assign->get_user_submission($student->id, true);
-        $data = new stdClass();
-        $data->onlinetext_editor = array('itemid'=>file_get_unused_draft_itemid(),
-                                         'text'=>'Submission text',
-                                         'format'=>FORMAT_MOODLE);
+        $data = new \stdClass();
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
         $this->assertEquals(true, $assign->has_submissions_or_grades());
         // Now try and reset.
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->reset_assign_submissions = 1;
         $data->reset_gradebook_grades = 1;
         $data->reset_assign_user_overrides = 1;
@@ -636,7 +653,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->assertEquals(false, $assign->has_submissions_or_grades());
 
         // Reload the instance data.
-        $instance = $DB->get_record('assign', array('id'=>$assign->get_instance()->id));
+        $instance = $DB->get_record('assign', array('id' => $assign->get_instance()->id));
         $this->assertEquals($now + DAYSECS, $instance->duedate);
 
         // Test reset using assign_reset_userdata().
@@ -652,12 +669,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
                 'duedate' => $now,
             ]);
         $assignduedate = $instance->duedate;
-        $data->timeshift = 3*DAYSECS;
+        $data->timeshift = 3 * DAYSECS;
         $assign2->reset_userdata($data);
         $instance = $DB->get_record('assign', array('id' => $assign->get_instance()->id));
         $this->assertEquals($assignduedate, $instance->duedate);
         $instance2 = $DB->get_record('assign', array('id' => $assign2->get_instance()->id));
-        $this->assertEquals($now + 3*DAYSECS, $instance2->duedate);
+        $this->assertEquals($now + 3 * DAYSECS, $instance2->duedate);
 
         // Reset both assignments using assign_reset_userdata() and make sure both assignments have same date.
         $assignduedate = $instance->duedate;
@@ -699,7 +716,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $this->setUser($teacher);
-        $userctx = context_user::instance($teacher->id)->id;
+        $userctx = \context_user::instance($teacher->id)->id;
 
         // Hack to pretend that there was an editor involved. We need both $_POST and $_REQUEST, and a sesskey.
         $draftid = file_get_unused_draft_itemid();
@@ -713,7 +730,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $fakearealink2 = file_rewrite_pluginfile_urls('<a href="@@PLUGINFILE@@/pic.gif">new</a>', 'draftfile.php', $userctx,
             'user', 'draft', $draftid);
 
-        // Create a new assignment with links to a draft area.
+        // Create a new \assignment with links to a draft area.
         $now = time();
         $assign = $this->create_instance($course, [
                 'duedate' => $now,
@@ -722,7 +739,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
             ]);
 
         // See if there is an event in the calendar.
-        $params = array('modulename'=>'assign', 'instance'=>$assign->get_instance()->id);
+        $params = array('modulename' => 'assign', 'instance' => $assign->get_instance()->id);
         $event = $DB->get_record('event', $params);
         $this->assertNotEmpty($event);
         $this->assertSame('link', $event->description);     // The pluginfile links are removed.
@@ -747,23 +764,23 @@ class mod_assign_locallib_testcase extends advanced_testcase {
             ]);
 
         // Get the event from the calendar.
-        $params = array('modulename'=>'assign', 'instance'=>$assign->get_instance()->id);
+        $params = array('modulename' => 'assign', 'instance' => $assign->get_instance()->id);
         $event = $DB->get_record('event', [
-                'modulename' => 'assign',
-                'instance' => $assign->get_instance()->id,
-            ]);
+            'modulename' => 'assign',
+            'instance' => $assign->get_instance()->id,
+        ]);
 
         $this->assertEmpty($event->description);
 
         // Change the allowsubmissionfromdate to the past - do this directly in the DB
         // because if we call the assignment update method - it will update the calendar
         // and we want to test that this works from cron.
-        $DB->set_field('assign', 'allowsubmissionsfromdate', $now - 60, array('id'=>$assign->get_instance()->id));
+        $DB->set_field('assign', 'allowsubmissionsfromdate', $now - 60, array('id' => $assign->get_instance()->id));
         // Run cron to update the event in the calendar.
-        assign::cron();
+        \assign::cron();
         $event = $DB->get_record('event', $params);
 
-        $this->assertContains('Some text', $event->description);
+        $this->assertStringContainsString('Some text', $event->description);
 
     }
 
@@ -800,12 +817,13 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $assign = $this->create_instance($course, ['submissiondrafts' => 1]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Test you cannot see the submit button for an offline assignment regardless.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotContains(get_string('submitassignment', 'assign'), $output, 'Can submit empty offline assignment');
+        $this->assertStringNotContainsString(get_string('submitassignment', 'assign'),
+            $output, 'Can submit empty offline assignment');
     }
 
     public function test_cannot_submit_empty_no_submission() {
@@ -821,12 +839,13 @@ class mod_assign_locallib_testcase extends advanced_testcase {
             'assignsubmission_onlinetext_enabled' => 1,
         ]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Test you cannot see the submit button for an online text assignment with no submission.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotContains(get_string('submitassignment', 'assign'), $output, 'Cannot submit empty onlinetext assignment');
+        $this->assertStringNotContainsString(get_string('submitassignment', 'assign'),
+            $output, 'Cannot submit empty onlinetext assignment');
     }
 
     public function test_can_submit_with_submission() {
@@ -842,15 +861,16 @@ class mod_assign_locallib_testcase extends advanced_testcase {
             'assignsubmission_onlinetext_enabled' => 1,
         ]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Add a draft.
         $this->add_submission($student, $assign);
 
         // Test you can see the submit button for an online text assignment with a submission.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
-        $this->assertContains(get_string('submitassignment', 'assign'), $output, 'Can submit non empty onlinetext assignment');
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertStringContainsString(get_string('submitassignment', 'assign'),
+            $output, 'Can submit non empty onlinetext assignment');
     }
 
     /**
@@ -859,7 +879,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
      * We only test combinations of plugins here. Individual plugins are tested
      * in their respective test files.
      *
-     * @dataProvider test_new_submission_empty_testcases
+     * @dataProvider new_submission_empty_testcases
      * @param string $data The file submission data
      * @param bool $expected The expected return value
      */
@@ -876,12 +896,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
                 'assignsubmission_onlinetext_enabled' => 1,
             ]);
         $this->setUser($student);
-        $submission = new stdClass();
+        $submission = new \stdClass();
 
         if ($data['file'] && isset($data['file']['filename'])) {
             $itemid = file_get_unused_draft_itemid();
             $submission->files_filemanager = $itemid;
-            $data['file'] += ['contextid' => context_user::instance($student->id)->id, 'itemid' => $itemid];
+            $data['file'] += ['contextid' => \context_user::instance($student->id)->id, 'itemid' => $itemid];
             $fs = get_file_storage();
             $fs->create_file_from_string((object)$data['file'], 'Content of ' . $data['file']['filename']);
         }
@@ -899,7 +919,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
      *
      * @return array of testcases
      */
-    public function test_new_submission_empty_testcases() {
+    public function new_submission_empty_testcases() {
         return [
             'With file and onlinetext' => [
                 [
@@ -976,11 +996,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $specialgroup = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
         $assign = $this->create_instance($course, [
-                'grade' => 100,
-                'availability' => json_encode(
-                    \core_availability\tree::get_root_json([\availability_group\condition::get_json($specialgroup->id)])
-                ),
-            ]);
+            'grade' => 100,
+            'availability' => json_encode(
+                \core_availability\tree::get_root_json([\availability_group\condition::get_json($specialgroup->id)])
+            ),
+        ]);
 
         groups_add_member($specialgroup, $student);
         groups_add_member($specialgroup, $otherstudent);
@@ -1054,6 +1074,56 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->assertFalse($participant->grantedextension);
     }
 
+    /**
+     * Tests that if a student with no submission who can no longer submit is not a participant.
+     */
+    public function test_get_participant_with_no_submission_no_capability() {
+        global $DB;
+        $this->resetAfterTest();
+        $course = self::getDataGenerator()->create_course();
+        $coursecontext = \context_course::instance($course->id);
+        $assign = $this->create_instance($course);
+        $teacher = self::getDataGenerator()->create_and_enrol($course, 'teacher');
+        $student = self::getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Remove the students capability to submit.
+        $role = $DB->get_field('role', 'id', ['shortname' => 'student']);
+        assign_capability('mod/assign:submit', CAP_PROHIBIT, $role, $coursecontext);
+
+        $participant = $assign->get_participant($student->id);
+
+        self::assertNull($participant);
+    }
+
+    /**
+     * Tests that if a student that has submitted but can no longer submit is a participant.
+     */
+    public function test_get_participant_with_submission_no_capability() {
+        global $DB;
+        $this->resetAfterTest();
+        $course = self::getDataGenerator()->create_course();
+        $coursecontext = \context_course::instance($course->id);
+        $assign = $this->create_instance($course);
+        $teacher = self::getDataGenerator()->create_and_enrol($course, 'teacher');
+        $student = self::getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Simulate a submission.
+        $this->add_submission($student, $assign);
+        $this->submit_for_grading($student, $assign);
+
+        // Remove the students capability to submit.
+        $role = $DB->get_field('role', 'id', ['shortname' => 'student']);
+        assign_capability('mod/assign:submit', CAP_PROHIBIT, $role, $coursecontext);
+
+        $participant = $assign->get_participant($student->id);
+
+        self::assertNotNull($participant);
+        self::assertEquals($student->id, $participant->id);
+        self::assertTrue($participant->submitted);
+        self::assertTrue($participant->requiregrading);
+        self::assertFalse($participant->grantedextension);
+    }
+
     public function test_get_participant_with_graded_submission() {
         $this->resetAfterTest();
         $course = $this->getDataGenerator()->create_course();
@@ -1067,7 +1137,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $this->mark_submission($teacher, $assign, $student, 50.0);
 
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->grade = '50.0';
         $assign->testable_apply_grade_to_user($data, $student->id, 0);
 
@@ -1125,10 +1195,10 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         groups_add_member($group2, $student2);
 
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-                'teamsubmissiongroupingid' => $grouping->id,
-                'preventsubmissionnotingroup' => false,
-            ]);
+            'teamsubmission' => 1,
+            'teamsubmissiongroupingid' => $grouping->id,
+            'preventsubmissionnotingroup' => false,
+        ]);
 
         $this->setUser($teacher);
         $this->assertEquals(3, $assign->count_teams());
@@ -1161,9 +1231,9 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         groups_add_member($group2, $student2);
 
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-                'preventsubmissionnotingroup' => true,
-            ]);
+            'teamsubmission' => 1,
+            'preventsubmissionnotingroup' => true,
+        ]);
 
         $this->setUser($teacher);
         $this->assertEquals(2, $assign->count_teams());
@@ -1183,10 +1253,10 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $grouping = $this->getDataGenerator()->create_grouping(array('courseid' => $course->id));
 
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-                'teamsubmissiongroupingid' => $grouping->id,
-                'preventsubmissionnotingroup' => false,
-            ]);
+            'teamsubmission' => 1,
+            'teamsubmissiongroupingid' => $grouping->id,
+            'preventsubmissionnotingroup' => false,
+        ]);
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $student1 = $this->getDataGenerator()->create_and_enrol($course, 'student');
@@ -1203,9 +1273,9 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->setUser($teacher);
 
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-                'preventsubmissionnotingroup' => true,
-            ]);
+            'teamsubmission' => 1,
+            'preventsubmissionnotingroup' => true,
+        ]);
         $this->assertEquals(2, $assign->count_teams());
     }
 
@@ -1222,11 +1292,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
 
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-                'assignsubmission_onlinetext_enabled' => 1,
-                'submissiondrafts' => 0,
-                'groupmode' => VISIBLEGROUPS,
-            ]);
+            'teamsubmission' => 1,
+            'assignsubmission_onlinetext_enabled' => 1,
+            'submissiondrafts' => 0,
+            'groupmode' => VISIBLEGROUPS,
+        ]);
 
         $usergroup = $assign->get_submission_group($student->id);
         $this->assertFalse($usergroup, 'New student is in default group');
@@ -1253,8 +1323,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
 
         $assign->get_user_submission($student->id, true);
 
@@ -1277,8 +1347,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
 
         $this->add_submission($student, $assign);
 
@@ -1303,8 +1373,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
 
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
@@ -1327,8 +1397,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
 
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
@@ -1358,9 +1428,9 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         groups_add_member($group, $student);
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-                'groupmode' => VISIBLEGROUPS,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+            'groupmode' => VISIBLEGROUPS,
+        ]);
 
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
@@ -1391,18 +1461,16 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         groups_add_member($group, $student);
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-                'teamsubmission' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+            'teamsubmission' => 1,
+        ]);
 
         // Add a graded submission.
         $this->add_submission($student, $assign);
 
-
-
         // Simulate adding a grade.
         $this->setUser($teacher);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->grade = '50.0';
         $assign->testable_apply_grade_to_user($data, $this->extrastudents[0]->id, 0);
 
@@ -1411,10 +1479,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $submission = $assign->get_group_submission($this->extrastudents[1]->id, $groupid, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $this->extrastudents[1]->id, true, false);
-        $data = new stdClass();
-        $data->onlinetext_editor = array('itemid' => file_get_unused_draft_itemid(),
-                                         'text' => 'Submission text',
-                                         'format' => FORMAT_MOODLE);
+        $data = new \stdClass();
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
@@ -1423,10 +1492,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $submission = $assign->get_group_submission($this->extrastudents[2]->id, $groupid, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $this->extrastudents[2]->id, true, false);
-        $data = new stdClass();
-        $data->onlinetext_editor = array('itemid' => file_get_unused_draft_itemid(),
-                                         'text' => 'Submission text',
-                                         'format' => FORMAT_MOODLE);
+        $data = new \stdClass();
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
@@ -1435,16 +1505,17 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $submission = $assign->get_group_submission($this->extrastudents[3]->id, $groupid, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $this->extrastudents[3]->id, true, false);
-        $data = new stdClass();
-        $data->onlinetext_editor = array('itemid' => file_get_unused_draft_itemid(),
-                                         'text' => 'Submission text',
-                                         'format' => FORMAT_MOODLE);
+        $data = new \stdClass();
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
         // Simulate adding a grade.
         $this->setUser($teacher);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->grade = '50.0';
         $assign->testable_apply_grade_to_user($data, $this->extrastudents[3]->id, 0);
         $assign->testable_apply_grade_to_user($data, $this->extrasuspendedstudents[0]->id, 0);
@@ -1466,7 +1537,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $course = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
-        $suspendedstudent = $this->getDataGenerator()->create_and_enrol($course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
+        $suspendedstudent = $this->getDataGenerator()->create_and_enrol(
+            $course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
 
         $this->setUser($teacher);
 
@@ -1480,7 +1552,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $course = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
-        $suspendedstudent = $this->getDataGenerator()->create_and_enrol($course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
+        $suspendedstudent = $this->getDataGenerator()->create_and_enrol(
+            $course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
 
         $this->setUser($teacher);
         set_user_preference('grade_report_showonlyactiveenrol', false);
@@ -1490,11 +1563,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
     }
 
     public function test_cron() {
+        global $PAGE;
         $this->resetAfterTest();
 
         // First run cron so there are no messages waiting to be sent (from other tests).
-        cron_setup_user();
-        assign::cron();
+        \core\cron::setup_user();
+        \assign::cron();
 
         $course = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
@@ -1503,30 +1577,40 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Now create an assignment and add some feedback.
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'sendstudentnotifications' => 1,
-            ]);
+            'sendstudentnotifications' => 1,
+        ]);
 
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
         $this->mark_submission($teacher, $assign, $student, 50.0);
 
         $this->expectOutputRegex('/Done processing 1 assignment submissions/');
-        cron_setup_user();
+        \core\cron::setup_user();
         $sink = $this->redirectMessages();
-        assign::cron();
+        \assign::cron();
         $messages = $sink->get_messages();
 
         $this->assertEquals(1, count($messages));
         $this->assertEquals(1, $messages[0]->notification);
         $this->assertEquals($assign->get_instance()->name, $messages[0]->contexturlname);
+        // Test customdata.
+        $customdata = json_decode($messages[0]->customdata);
+        $this->assertEquals($assign->get_course_module()->id, $customdata->cmid);
+        $this->assertEquals($assign->get_instance()->id, $customdata->instance);
+        $this->assertEquals('feedbackavailable', $customdata->messagetype);
+        $userpicture = new \user_picture($teacher);
+        $userpicture->size = 1; // Use f1 size.
+        $this->assertEquals($userpicture->get_url($PAGE)->out(false), $customdata->notificationiconurl);
+        $this->assertEquals(0, $customdata->uniqueidforuser);   // Not used in this case.
+        $this->assertFalse($customdata->blindmarking);
     }
 
     public function test_cron_without_notifications() {
         $this->resetAfterTest();
 
         // First run cron so there are no messages waiting to be sent (from other tests).
-        cron_setup_user();
-        assign::cron();
+        \core\cron::setup_user();
+        \assign::cron();
 
         $course = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
@@ -1535,18 +1619,18 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Now create an assignment and add some feedback.
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'sendstudentnotifications' => 1,
-            ]);
+            'sendstudentnotifications' => 1,
+        ]);
 
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
         $this->mark_submission($teacher, $assign, $student, 50.0, [
-                'sendstudentnotifications' => 0,
-            ]);
+            'sendstudentnotifications' => 0,
+        ]);
 
-        cron_setup_user();
+        \core\cron::setup_user();
         $sink = $this->redirectMessages();
-        assign::cron();
+        \assign::cron();
         $messages = $sink->get_messages();
 
         $this->assertEquals(0, count($messages));
@@ -1556,8 +1640,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->resetAfterTest();
 
         // First run cron so there are no messages waiting to be sent (from other tests).
-        cron_setup_user();
-        assign::cron();
+        \core\cron::setup_user();
+        \assign::cron();
 
         $course = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
@@ -1566,24 +1650,24 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Now create an assignment and add some feedback.
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'sendstudentnotifications' => 1,
-            ]);
+            'sendstudentnotifications' => 1,
+        ]);
 
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
         $this->mark_submission($teacher, $assign, $student, 50.0);
 
         $this->expectOutputRegex('/Done processing 1 assignment submissions/');
-        cron_setup_user();
-        assign::cron();
+        \core\cron::setup_user();
+        \assign::cron();
 
         // Regrade.
         $this->mark_submission($teacher, $assign, $student, 50.0);
 
         $this->expectOutputRegex('/Done processing 1 assignment submissions/');
-        cron_setup_user();
+        \core\cron::setup_user();
         $sink = $this->redirectMessages();
-        assign::cron();
+        \assign::cron();
         $messages = $sink->get_messages();
 
         $this->assertEquals(1, count($messages));
@@ -1598,8 +1682,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->resetAfterTest();
 
         // First run cron so there are no messages waiting to be sent (from other tests).
-        cron_setup_user();
-        assign::cron();
+        \core\cron::setup_user();
+        \assign::cron();
 
         $course = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
@@ -1608,22 +1692,22 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Now create an assignment and add some feedback.
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'sendstudentnotifications' => 1,
-                'markingworkflow' => 1,
-            ]);
+            'sendstudentnotifications' => 1,
+            'markingworkflow' => 1,
+        ]);
 
         // Mark a submission but set the workflowstate to an unreleased state.
         // This should not trigger a notification.
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
         $this->mark_submission($teacher, $assign, $student, 50.0, [
-                'sendstudentnotifications' => 1,
-                'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORRELEASE,
-            ]);
+            'sendstudentnotifications' => 1,
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORRELEASE,
+        ]);
 
-        cron_setup_user();
+        \core\cron::setup_user();
         $sink = $this->redirectMessages();
-        assign::cron();
+        \assign::cron();
         $messages = $sink->get_messages();
 
         $this->assertEquals(0, count($messages));
@@ -1635,10 +1719,10 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $assign->testable_apply_grade_to_user($submission, $student->id, 0);
 
         // Now run cron and see that one message was sent.
-        cron_setup_user();
+        \core\cron::setup_user();
         $sink = $this->redirectMessages();
         $this->expectOutputRegex('/Done processing 1 assignment submissions/');
-        assign::cron();
+        \assign::cron();
         $messages = $sink->get_messages();
 
         $this->assertEquals(1, count($messages));
@@ -1650,8 +1734,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->resetAfterTest();
 
         // First run cron so there are no messages waiting to be sent (from other tests).
-        cron_setup_user();
-        assign::cron();
+        \core\cron::setup_user();
+        \assign::cron();
 
         $course = $this->getDataGenerator()->create_course();
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
@@ -1660,22 +1744,22 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Now create an assignment and add some feedback.
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'sendstudentnotifications' => 1,
-            ]);
+            'sendstudentnotifications' => 1,
+        ]);
 
         // Mark a submission but set the workflowstate to an unreleased state.
         // This should not trigger a notification.
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
         $this->mark_submission($teacher, $assign, $student);
-        phpunit_util::stop_message_redirection();
+        \phpunit_util::stop_message_redirection();
 
         // Now run cron and see that one message was sent.
-        cron_setup_user();
+        \core\cron::setup_user();
         $this->preventResetByRollback();
         $sink = $this->redirectEvents();
         $this->expectOutputRegex('/Done processing 1 assignment submissions/');
-        assign::cron();
+        \assign::cron();
 
         $events = $sink->get_events();
         $event = reset($events);
@@ -1720,6 +1804,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->setUser($teacher);
         $this->assertEquals(true, $assign->can_grade());
 
+        // Test the viewgrades capability for other users.
+        $this->setUser();
+        $this->assertTrue($assign->can_grade($teacher->id));
+        $this->assertFalse($assign->can_grade($student->id));
+
         // Test the viewgrades capability - without mod/assign:grade.
         $this->setUser($student);
 
@@ -1738,7 +1827,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $editingteacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
         $otherstudent = $this->getDataGenerator()->create_and_enrol($course, 'student');
-        $suspendedstudent = $this->getDataGenerator()->create_and_enrol($course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
+        $suspendedstudent = $this->getDataGenerator()->create_and_enrol(
+            $course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
 
         $assign = $this->create_instance($course);
 
@@ -1805,8 +1895,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         groups_add_member($group, $otherstudent);
 
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-            ]);
+            'teamsubmission' => 1,
+        ]);
 
         $gradinginfo = grade_get_grades($course->id, 'mod', 'assign', $assign->get_instance()->id, $student->id);
         $this->assertTrue(isset($gradinginfo->items[0]->grades[$student->id]));
@@ -1863,8 +1953,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'blindmarking' => 1,
-            ]);
+            'blindmarking' => 1,
+        ]);
 
         $this->add_submission($student, $assign);
         $submission = $assign->get_user_submission($student->id, 0);
@@ -1894,42 +1984,42 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         groups_add_member($group, $otherstudent);
 
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-                'assignsubmission_onlinetext_enabled' => 1,
-                'submissiondrafts' => 1,
-                'requireallteammemberssubmit' => 1,
-            ]);
+            'teamsubmission' => 1,
+            'assignsubmission_onlinetext_enabled' => 1,
+            'submissiondrafts' => 1,
+            'requireallteammemberssubmit' => 1,
+        ]);
 
         // Now verify group assignments.
         $this->setUser($teacher);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Add a submission.
         $this->add_submission($student, $assign);
 
         // Check we can see the submit button.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
-        $this->assertContains(get_string('submitassignment', 'assign'), $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertStringContainsString(get_string('submitassignment', 'assign'), $output);
 
         $submission = $assign->get_group_submission($student->id, 0, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $student->id, true, true);
 
         // Check that the student does not see "Submit" button.
-        $output = $assign->view_student_summary($student, true);
-        $this->assertNotContains(get_string('submitassignment', 'assign'), $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertStringNotContainsString(get_string('submitassignment', 'assign'), $output);
 
         // Change to another user in the same group.
         $this->setUser($otherstudent);
-        $output = $assign->view_student_summary($otherstudent, true);
-        $this->assertContains(get_string('submitassignment', 'assign'), $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $otherstudent);
+        $this->assertStringContainsString(get_string('submitassignment', 'assign'), $output);
 
         $submission = $assign->get_group_submission($otherstudent->id, 0, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $otherstudent->id, true, true);
-        $output = $assign->view_student_summary($otherstudent, true);
-        $this->assertNotContains(get_string('submitassignment', 'assign'), $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $otherstudent);
+        $this->assertStringNotContainsString(get_string('submitassignment', 'assign'), $output);
     }
 
     public function test_group_submissions_submit_for_marking() {
@@ -1951,48 +2041,49 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->setUser($teacher);
         $time = time();
         $assign = $this->create_instance($course, [
-                'teamsubmission' => 1,
-                'assignsubmission_onlinetext_enabled' => 1,
-                'submissiondrafts' => 1,
-                'requireallteammemberssubmit' => 0,
-                'duedate' => $time - (2 * DAYSECS),
-            ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+            'teamsubmission' => 1,
+            'assignsubmission_onlinetext_enabled' => 1,
+            'submissiondrafts' => 1,
+            'requireallteammemberssubmit' => 0,
+            'duedate' => $time - (2 * DAYSECS),
+        ]);
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Add a submission.
         $this->add_submission($student, $assign);
 
-
         // Check we can see the submit button.
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertStringContainsString(get_string('submitassignment', 'assign'), $output);
         $output = $assign->view_student_summary($student, true);
-        $this->assertContains(get_string('submitassignment', 'assign'), $output);
-        $this->assertContains(get_string('timeremaining', 'assign'), $output);
+        $this->assertStringContainsString(get_string('timeremaining', 'assign'), $output);
         $difftime = time() - $time;
-        $this->assertContains(get_string('overdue', 'assign', format_time((2 * DAYSECS) + $difftime)), $output);
+        $this->assertStringContainsString(get_string('overdue', 'assign', format_time((2 * DAYSECS) + $difftime)), $output);
 
         $submission = $assign->get_group_submission($student->id, 0, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $student->id, true, true);
 
         // Check that the student does not see "Submit" button.
-        $output = $assign->view_student_summary($student, true);
-        $this->assertNotContains(get_string('submitassignment', 'assign'), $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertStringNotContainsString(get_string('submitassignment', 'assign'), $output);
 
         // Change to another user in the same group.
         $this->setUser($otherstudent);
-        $output = $assign->view_student_summary($otherstudent, true);
-        $this->assertNotContains(get_string('submitassignment', 'assign'), $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $otherstudent);
+        $this->assertStringNotContainsString(get_string('submitassignment', 'assign'), $output);
 
         // Check that time remaining is not overdue.
-        $this->assertContains(get_string('timeremaining', 'assign'), $output);
+        $output = $assign->view_student_summary($otherstudent, true);
+        $this->assertStringContainsString(get_string('timeremaining', 'assign'), $output);
         $difftime = time() - $time;
-        $this->assertContains(get_string('submittedlate', 'assign', format_time((2 * DAYSECS) + $difftime)), $output);
+        $this->assertStringContainsString(get_string('submittedlate', 'assign', format_time((2 * DAYSECS) + $difftime)), $output);
 
         $submission = $assign->get_group_submission($otherstudent->id, 0, true);
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $otherstudent->id, true, true);
-        $output = $assign->view_student_summary($otherstudent, true);
-        $this->assertNotContains(get_string('submitassignment', 'assign'), $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $otherstudent);
+        $this->assertStringNotContainsString(get_string('submitassignment', 'assign'), $output);
     }
 
     public function test_submissions_open() {
@@ -2005,7 +2096,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $editingteacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
         $otherstudent = $this->getDataGenerator()->create_and_enrol($course, 'student');
-        $suspendedstudent = $this->getDataGenerator()->create_and_enrol($course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
+        $suspendedstudent = $this->getDataGenerator()->create_and_enrol(
+            $course, 'student', null, 'manual', 0, 0, ENROL_USER_SUSPENDED);
 
         $this->setAdminUser();
 
@@ -2085,9 +2177,9 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $grouping = $this->getDataGenerator()->create_grouping(array('courseid' => $course->id));
 
         $assign = $this->create_instance($course, [
-                'groupingid' => $grouping->id,
-                'groupmode' => SEPARATEGROUPS,
-            ]);
+            'groupingid' => $grouping->id,
+            'groupmode' => SEPARATEGROUPS,
+        ]);
 
         $this->assertCount(4, $assign->testable_get_graders($student->id));
 
@@ -2119,7 +2211,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $capability = 'mod/assign:receivegradernotifications';
-        $coursecontext = context_course::instance($course->id);
+        $coursecontext = \context_course::instance($course->id);
         $role = $DB->get_record('role', array('shortname' => 'teacher'));
 
         $this->setUser($teacher);
@@ -2164,9 +2256,9 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Force create an assignment with SEPARATEGROUPS.
         $assign = $this->create_instance($course, [
-                'groupingid' => $grouping->id,
-                'groupmode' => SEPARATEGROUPS,
-            ]);
+            'groupingid' => $grouping->id,
+            'groupmode' => SEPARATEGROUPS,
+        ]);
 
         // Student is in a group - only the tacher and editing teacher in the group shoudl be present.
         $this->setUser($student);
@@ -2178,7 +2270,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Change nonediting teachers role to not receive grader notifications.
         $capability = 'mod/assign:receivegradernotifications';
-        $coursecontext = context_course::instance($course->id);
+        $coursecontext = \context_course::instance($course->id);
         $role = $DB->get_record('role', ['shortname' => 'teacher']);
         assign_capability($capability, CAP_PROHIBIT, $role->id, $coursecontext);
 
@@ -2200,15 +2292,15 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $grouping = $this->getDataGenerator()->create_grouping(array('courseid' => $course->id));
         $group1 = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
         $this->getDataGenerator()->create_grouping_group([
-                'groupid' => $group1->id,
-                'groupingid' => $grouping->id,
-            ]);
+            'groupid' => $group1->id,
+            'groupingid' => $grouping->id,
+        ]);
 
         $group2 = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
         $this->getDataGenerator()->create_grouping_group([
-                'groupid' => $group2->id,
-                'groupingid' => $grouping->id,
-            ]);
+            'groupid' => $group2->id,
+            'groupingid' => $grouping->id,
+        ]);
 
         $group3 = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
 
@@ -2236,11 +2328,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $CFG->enableavailability = true;
         $assign = $this->create_instance($course, [], [
-                'availability' => json_encode(
-                    \core_availability\tree::get_root_json([\availability_grouping\condition::get_json()])
-                ),
-                'groupingid' => $grouping->id,
-            ]);
+            'availability' => json_encode(
+                \core_availability\tree::get_root_json([\availability_grouping\condition::get_json()])
+            ),
+            'groupingid' => $grouping->id,
+        ]);
 
         // The two students in groups should be returned, but not the teacher in the group, or the student not in the
         // group, or the student in an unrelated group.
@@ -2281,12 +2373,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
         $this->setUser($teacher);
         $assign = $this->create_instance($course);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // No feedback should be available because this student has not been graded.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotRegexp('/Feedback/', $output, 'Do not show feedback if there is no grade');
+        $this->assertDoesNotMatchRegularExpression('/Feedback/', $output, 'Do not show feedback if there is no grade');
 
         // Simulate adding a grade.
         $this->add_submission($student, $assign);
@@ -2296,12 +2388,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Now we should see the feedback.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertRegexp('/Feedback/', $output, 'Show feedback if there is a grade');
+        $this->assertMatchesRegularExpression('/Feedback/', $output, 'Show feedback if there is a grade');
 
         // Now hide the grade in gradebook.
         $this->setUser($teacher);
         require_once($CFG->libdir.'/gradelib.php');
-        $gradeitem = new grade_item(array(
+        $gradeitem = new \grade_item(array(
             'itemtype'      => 'mod',
             'itemmodule'    => 'assign',
             'iteminstance'  => $assign->get_instance()->id,
@@ -2312,7 +2404,27 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // No feedback should be available because the grade is hidden.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotRegexp('/Feedback/', $output, 'Do not show feedback if the grade is hidden in the gradebook');
+        $this->assertDoesNotMatchRegularExpression('/Feedback/', $output,
+            'Do not show feedback if the grade is hidden in the gradebook');
+
+        // Freeze the context.
+        $this->setAdminUser();
+        $context = $assign->get_context();
+        $CFG->contextlocking = true;
+        $context->set_locked(true);
+
+        // No feedback should be available because the grade is hidden.
+        $this->setUser($student);
+        $output = $assign->view_student_summary($student, true);
+        $this->assertDoesNotMatchRegularExpression('/Feedback/', $output, 'Do not show feedback if the grade is hidden in the gradebook');
+
+        // Show the feedback again - it should still be visible even in a frozen context.
+        $this->setUser($teacher);
+        $gradeitem->set_hidden(0, false);
+
+        $this->setUser($student);
+        $output = $assign->view_student_summary($student, true);
+        $this->assertMatchesRegularExpression('/Feedback/', $output, 'Show feedback if there is a grade');
     }
 
     public function test_show_student_summary_with_feedback() {
@@ -2325,52 +2437,52 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'assignfeedback_comments_enabled' => 1
-            ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+            'assignfeedback_comments_enabled' => 1
+        ]);
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // No feedback should be available because this student has not been graded.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotRegexp('/Feedback/', $output);
+        $this->assertDoesNotMatchRegularExpression('/Feedback/', $output);
 
         // Simulate adding a grade.
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign);
         $this->mark_submission($teacher, $assign, $student, null, [
-                'assignfeedbackcomments_editor' => [
-                    'text' => 'Tomato sauce',
-                    'format' => FORMAT_MOODLE,
-                ],
-            ]);
+            'assignfeedbackcomments_editor' => [
+                'text' => 'Tomato sauce',
+                'format' => FORMAT_MOODLE,
+            ],
+        ]);
 
         // Should have feedback but no grade.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertRegexp('/Feedback/', $output);
-        $this->assertRegexp('/Tomato sauce/', $output);
-        $this->assertNotRegexp('/Grade/', $output, 'Do not show grade when there is no grade.');
-        $this->assertNotRegexp('/Graded on/', $output, 'Do not show graded date when there is no grade.');
+        $this->assertMatchesRegularExpression('/Feedback/', $output);
+        $this->assertMatchesRegularExpression('/Tomato sauce/', $output);
+        $this->assertDoesNotMatchRegularExpression('/Grade/', $output, 'Do not show grade when there is no grade.');
+        $this->assertDoesNotMatchRegularExpression('/Graded on/', $output, 'Do not show graded date when there is no grade.');
 
         // Add a grade now.
         $this->mark_submission($teacher, $assign, $student, 50.0, [
-                'assignfeedbackcomments_editor' => [
-                    'text' => 'Bechamel sauce',
-                    'format' => FORMAT_MOODLE,
-                ],
-            ]);
+            'assignfeedbackcomments_editor' => [
+                'text' => 'Bechamel sauce',
+                'format' => FORMAT_MOODLE,
+            ],
+        ]);
 
         // Should have feedback but no grade.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotRegexp('/Tomato sauce/', $output);
-        $this->assertRegexp('/Bechamel sauce/', $output);
-        $this->assertRegexp('/Grade/', $output);
-        $this->assertRegexp('/Graded on/', $output);
+        $this->assertDoesNotMatchRegularExpression('/Tomato sauce/', $output);
+        $this->assertMatchesRegularExpression('/Bechamel sauce/', $output);
+        $this->assertMatchesRegularExpression('/Grade/', $output);
+        $this->assertMatchesRegularExpression('/Graded on/', $output);
 
         // Now hide the grade in gradebook.
         $this->setUser($teacher);
-        $gradeitem = new grade_item(array(
+        $gradeitem = new \grade_item(array(
             'itemtype'      => 'mod',
             'itemmodule'    => 'assign',
             'iteminstance'  => $assign->get_instance()->id,
@@ -2381,7 +2493,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // No feedback should be available because the grade is hidden.
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotRegexp('/Feedback/', $output, 'Do not show feedback if the grade is hidden in the gradebook');
+        $this->assertDoesNotMatchRegularExpression('/Feedback/', $output,
+            'Do not show feedback if the grade is hidden in the gradebook');
     }
 
     /**
@@ -2396,16 +2509,16 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $assign = $this->create_instance($course, [
-                'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_MANUAL,
-                'maxattempts' => 3,
-                'submissiondrafts' => 1,
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+            'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_MANUAL,
+            'maxattempts' => 3,
+            'submissiondrafts' => 1,
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Student should be able to see an add submission button.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
         $this->assertNotEquals(false, strpos($output, get_string('addsubmission', 'assign')));
 
         // Add a submission.
@@ -2436,18 +2549,20 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Need a better check.
         $this->assertNotEquals(false, strpos($output, 'Submission text'), 'Contains: Submission text');
 
-        // Check that the student now has a button for Add a new attempt".
-        $this->assertNotEquals(false, strpos($output, get_string('addnewattempt', 'assign')));
-        // Check that the student now does not have a button for Submit.
-        $this->assertEquals(false, strpos($output, get_string('submitassignment', 'assign')));
-
         // Check that the student now has a submission history.
         $this->assertNotEquals(false, strpos($output, get_string('attempthistory', 'assign')));
+
+        // Check that the student now does not have a button for Submit.
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertEquals(false, strpos($output, get_string('submitassignment', 'assign')));
+
+        // Check that the student now has a button for Add a new attempt".
+        $this->assertNotEquals(false, strpos($output, get_string('addnewattempt', 'assign')));
 
         $this->setUser($teacher);
         // Check that the grading table loads correctly and contains this user.
         // This is also testing that we do not get duplicate rows in the grading table.
-        $gradingtable = new assign_grading_table($assign, 100, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 100, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
         $this->assertEquals(true, strpos($output, $student->lastname));
 
@@ -2492,12 +2607,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $assign = $this->create_instance($course, [
-                'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_UNTILPASS,
-                'maxattempts' => 3,
-                'submissiondrafts' => 1,
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+            'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_UNTILPASS,
+            'maxattempts' => 3,
+            'submissiondrafts' => 1,
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Set grade to pass to 80.
         $gradeitem = $assign->get_grade_item();
@@ -2506,7 +2621,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Student should be able to see an add submission button.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
         $this->assertNotEquals(false, strpos($output, get_string('addsubmission', 'assign')));
 
         // Add a submission.
@@ -2525,15 +2640,15 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $output = $assign->view_student_summary($student, true);
         $this->assertNotEquals(false, strpos($output, '50.0'));
 
-        // Check that the student now has a button for Add a new attempt.
-        $output = $assign->view_student_summary($student, true);
-        $this->assertNotEquals(false, strpos($output, get_string('addnewattempt', 'assign')));
-
-        // Check that the student now does not have a button for Submit.
-        $this->assertEquals(false, strpos($output, get_string('submitassignment', 'assign')));
-
         // Check that the student now has a submission history.
         $this->assertNotEquals(false, strpos($output, get_string('attempthistory', 'assign')));
+
+        // Check that the student now does not have a button for Submit.
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertEquals(false, strpos($output, get_string('submitassignment', 'assign')));
+
+        // Check that the student now has a button for Add a new attempt.
+        $this->assertNotEquals(false, strpos($output, get_string('addnewattempt', 'assign')));
 
         // Add a second submission.
         $this->add_submission($student, $assign);
@@ -2552,8 +2667,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Check that the student now has a button for Add a new attempt.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
-        $this->assertRegexp('/' . get_string('addnewattempt', 'assign') . '/', $output);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
+        $this->assertMatchesRegularExpression('/' . get_string('addnewattempt', 'assign') . '/', $output);
         $this->assertNotEquals(false, strpos($output, get_string('addnewattempt', 'assign')));
     }
 
@@ -2566,12 +2681,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $assign = $this->create_instance($course, [
-                'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_UNTILPASS,
-                'maxattempts' => 3,
-                'submissiondrafts' => 1,
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+            'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_UNTILPASS,
+            'maxattempts' => 3,
+            'submissiondrafts' => 1,
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Set grade to pass to 80.
         $gradeitem = $assign->get_grade_item();
@@ -2580,7 +2695,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Student should be able to see an add submission button.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
         $this->assertNotEquals(false, strpos($output, get_string('addsubmission', 'assign')));
 
         // Add a submission as a student.
@@ -2609,12 +2724,12 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $assign = $this->create_instance($course, [
-                'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_UNTILPASS,
-                'maxattempts' => 3,
-                'submissiondrafts' => 1,
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+            'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_UNTILPASS,
+            'maxattempts' => 3,
+            'submissiondrafts' => 1,
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Set grade to pass to 0, so that no attempts should reopen.
         $gradeitem = $assign->get_grade_item();
@@ -2623,7 +2738,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Student should be able to see an add submission button.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
         $this->assertNotEquals(false, strpos($output, get_string('addsubmission', 'assign')));
 
         // Add a submission.
@@ -2655,15 +2770,15 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $assign = $this->create_instance($course, [
-                'markingworkflow' => 1,
-            ]);
+            'markingworkflow' => 1,
+        ]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Mark the submission and set to notmarked.
         $this->mark_submission($teacher, $assign, $student, 50.0,  [
-                'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_NOTMARKED,
-            ]);
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_NOTMARKED,
+        ]);
 
         // Check the student can't see the grade.
         $this->setUser($student);
@@ -2676,8 +2791,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Mark the submission and set to inmarking.
         $this->mark_submission($teacher, $assign, $student, 50.0,  [
-                'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_INMARKING,
-            ]);
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_INMARKING,
+        ]);
 
         // Check the student can't see the grade.
         $this->setUser($student);
@@ -2690,8 +2805,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Mark the submission and set to readyforreview.
         $this->mark_submission($teacher, $assign, $student, 50.0,  [
-                'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORREVIEW,
-            ]);
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORREVIEW,
+        ]);
 
         // Check the student can't see the grade.
         $this->setUser($student);
@@ -2704,8 +2819,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Mark the submission and set to inreview.
         $this->mark_submission($teacher, $assign, $student, 50.0,  [
-                'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_INREVIEW,
-            ]);
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_INREVIEW,
+        ]);
 
         // Check the student can't see the grade.
         $this->setUser($student);
@@ -2718,8 +2833,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Mark the submission and set to readyforrelease.
         $this->mark_submission($teacher, $assign, $student, 50.0,  [
-                'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORRELEASE,
-            ]);
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_READYFORRELEASE,
+        ]);
 
         // Check the student can't see the grade.
         $this->setUser($student);
@@ -2732,8 +2847,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Mark the submission and set to released.
         $this->mark_submission($teacher, $assign, $student, 50.0,  [
-                'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_RELEASED,
-            ]);
+            'workflowstate' => ASSIGN_MARKING_WORKFLOW_STATE_RELEASED,
+        ]);
 
         // Check the student can see the grade.
         $this->setUser($student);
@@ -2758,11 +2873,11 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $otherteacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
 
         $assign = $this->create_instance($course, [
-                'markingworkflow' => 1,
-                'markingallocation' => 1
-            ]);
+            'markingworkflow' => 1,
+            'markingallocation' => 1
+        ]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Allocate marker to submission.
         $this->mark_submission($teacher, $assign, $student, null, [
@@ -2776,7 +2891,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         $this->assertTrue(isset($users[$student->id]));
 
         $cm = get_coursemodule_from_instance('assign', $assign->get_instance()->id);
-        $context = context_module::instance($cm->id);
+        $context = \context_module::instance($cm->id);
         $assign = new mod_assign_testable_assign($context, $cm, $course);
 
         // Check that other teachers can't view this submission.
@@ -2801,14 +2916,14 @@ class mod_assign_locallib_testcase extends advanced_testcase {
             'submissiondrafts' => 1,
         ]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Add a submission but do not submit.
         $this->add_submission($student, $assign, 'Student submission text');
 
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertContains('Student submission text', $output, 'Contains student submission text');
+        $this->assertStringContainsString('Student submission text', $output, 'Contains student submission text');
 
         // Check that a teacher can not edit the submission as they do not have the capability.
         $this->setUser($teacher);
@@ -2840,14 +2955,14 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         role_assign($roleid, $teacher->id, $assign->get_context()->id);
         accesslib_clear_all_caches_for_unit_testing();
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Add a submission but do not submit.
         $this->add_submission($student, $assign, 'Student submission text');
 
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertContains('Student submission text', $output, 'Contains student submission text');
+        $this->assertStringContainsString('Student submission text', $output, 'Contains student submission text');
 
         // Check that a teacher can edit the submission.
         $this->setUser($teacher);
@@ -2855,8 +2970,8 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotContains('Student submission text', $output, 'Contains student submission text');
-        $this->assertContains('Teacher edited submission text', $output, 'Contains teacher edited submission text');
+        $this->assertStringNotContainsString('Student submission text', $output, 'Contains student submission text');
+        $this->assertStringContainsString('Teacher edited submission text', $output, 'Contains teacher edited submission text');
 
         // Check that the teacher can submit the students work.
         $this->setUser($teacher);
@@ -2869,13 +2984,13 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         // Check that the submission text was saved.
         $output = $assign->view_student_summary($student, true);
-        $this->assertContains('Teacher edited submission text', $output, 'Contains student submission text');
+        $this->assertStringContainsString('Teacher edited submission text', $output, 'Contains student submission text');
 
         // Check that the student can submit their work.
         $this->submit_for_grading($student, $assign, []);
 
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotContains(get_string('addsubmission', 'assign'), $output);
+        $this->assertStringNotContainsString(get_string('addsubmission', 'assign'), $output);
 
         // An editing teacher without the extra role should still be able to revert to draft.
         $this->setUser($otherteacher);
@@ -2901,16 +3016,16 @@ class mod_assign_locallib_testcase extends advanced_testcase {
 
         $this->setAdminUser();
         $assign = $this->create_instance($course, [
-                'duedate' => $yesterday,
-                'cutoffdate' => $tomorrow,
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
+            'duedate' => $yesterday,
+            'cutoffdate' => $tomorrow,
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Student should be able to see an add submission button.
         $this->setUser($student);
-        $output = $assign->view_student_summary($student, true);
+        $output = $assign->view_submission_action_bar($assign->get_instance(), $student);
         $this->assertNotEquals(false, strpos($output, get_string('addsubmission', 'assign')));
 
         // Add a submission but don't submit now.
@@ -2919,17 +3034,17 @@ class mod_assign_locallib_testcase extends advanced_testcase {
         // Create another instance with cut-off and due-date already passed.
         $this->setAdminUser();
         $assign = $this->create_instance($course, [
-                'duedate' => $lastweek,
-                'cutoffdate' => $yesterday,
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
+            'duedate' => $lastweek,
+            'cutoffdate' => $yesterday,
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
 
         $this->setUser($student);
         $output = $assign->view_student_summary($student, true);
-        $this->assertNotContains($output, get_string('editsubmission', 'assign'),
-                                 'Should not be able to edit after cutoff date.');
-        $this->assertNotContains($output, get_string('submitassignment', 'assign'),
-                                 'Should not be able to submit after cutoff date.');
+        $this->assertStringNotContainsString($output, get_string('editsubmission', 'assign'),
+            'Should not be able to edit after cutoff date.');
+        $this->assertStringNotContainsString($output, get_string('submitassignment', 'assign'),
+            'Should not be able to submit after cutoff date.');
     }
 
     /**
@@ -2999,7 +3114,7 @@ class mod_assign_locallib_testcase extends advanced_testcase {
      * Testing for comment inline settings
      */
     public function test_feedback_comment_commentinline() {
-        global $CFG;
+        global $CFG, $USER;
 
         $this->resetAfterTest();
         $course = $this->getDataGenerator()->create_course();
@@ -3021,28 +3136,12 @@ Anchor link 1:<a href=\"@@PLUGINFILE@@logo-240x60.gif\" alt=\"bananas\">Link tex
 Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 ";
 
-        // Note the internal images have been stripped and the html is purified (quotes fixed in this case).
-        $filteredtext = "Hello!
-
-I'm writing to you from the Moodle Majlis in Muscat, Oman, where we just had several days of Moodle community goodness.
-
-URL outside a tag: https://moodle.org/logo/logo-240x60.gif
-Plugin url outside a tag: @@PLUGINFILE@@/logo-240x60.gif
-
-External link 1:<img src=\"https://moodle.org/logo/logo-240x60.gif\" alt=\"Moodle\" />
-External link 2:<img alt=\"Moodle\" src=\"https://moodle.org/logo/logo-240x60.gif\" />
-Internal link 1:
-Internal link 2:
-Anchor link 1:Link text
-Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
-";
-
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-                'assignfeedback_comments_enabled' => 1,
-                'assignfeedback_comments_commentinline' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+            'assignfeedback_comments_enabled' => 1,
+            'assignfeedback_comments_commentinline' => 1,
+        ]);
 
         $this->setUser($student);
 
@@ -3051,17 +3150,38 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         $this->setUser($teacher);
 
-        $data = new stdClass();
+        $data = new \stdClass();
         require_once($CFG->dirroot . '/mod/assign/gradeform.php');
         $pagination = [
-                'userid' => $student->id,
-                'rownum' => 0,
-                'last' => true,
-                'useridlistid' => $assign->get_useridlist_key_id(),
-                'attemptnumber' => 0,
-            ];
+            'userid' => $student->id,
+            'rownum' => 0,
+            'last' => true,
+            'useridlistid' => $assign->get_useridlist_key_id(),
+            'attemptnumber' => 0,
+        ];
         $formparams = array($assign, $data, $pagination);
         $mform = new mod_assign_grade_form(null, [$assign, $data, $pagination]);
+
+        // We need to get the URL these will be transformed to.
+        $context = \context_user::instance($USER->id);
+        $itemid = $data->assignfeedbackcomments_editor['itemid'];
+        $url = $CFG->wwwroot . '/draftfile.php/' . $context->id . '/user/draft/' . $itemid;
+
+        // Note the internal images have been stripped and the html is purified (quotes fixed in this case).
+        $filteredtext = "Hello!
+
+I'm writing to you from the Moodle Majlis in Muscat, Oman, where we just had several days of Moodle community goodness.
+
+URL outside a tag: https://moodle.org/logo/logo-240x60.gif
+Plugin url outside a tag: $url/logo-240x60.gif
+
+External link 1:<img src=\"https://moodle.org/logo/logo-240x60.gif\" alt=\"Moodle\" />
+External link 2:<img alt=\"Moodle\" src=\"https://moodle.org/logo/logo-240x60.gif\" />
+Internal link 1:<img src=\"$url/logo-240x60.gif\" alt=\"Moodle\" />
+Internal link 2:<img alt=\"Moodle\" src=\"@@PLUGINFILE@@logo-240x60.gif\" />
+Anchor link 1:<a href=\"@@PLUGINFILE@@logo-240x60.gif\">Link text</a>
+Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
+";
 
         $this->assertEquals($filteredtext, $data->assignfeedbackcomments_editor['text']);
     }
@@ -3117,9 +3237,9 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         // Create assignment with gradebook feedback enabled and grade = 0.
         $assign = $this->create_instance($course, [
-                "{$gradebookplugin}_enabled" => 1,
-                'grades' => 0,
-            ]);
+            "{$gradebookplugin}_enabled" => 1,
+            'grades' => 0,
+        ]);
 
         // Get gradebook feedback plugin.
         $gradebookplugintype = str_replace('assignfeedback_', '', $gradebookplugin);
@@ -3142,9 +3262,9 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         // Create assignment with gradebook feedback disabled and grade = 0.
         $assign = $this->create_instance($course, [
-                "{$gradebookplugin}_enabled" => 0,
-                'grades' => 0,
-            ]);
+            "{$gradebookplugin}_enabled" => 0,
+            'grades' => 0,
+        ]);
 
         $gradebookplugintype = str_replace('assignfeedback_', '', $gradebookplugin);
         $plugin = $assign->get_feedback_plugin_by_type($gradebookplugintype);
@@ -3162,9 +3282,9 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $otherstudent = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-                'submissiondrafts' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+            'submissiondrafts' => 1,
+        ]);
 
         // Check student can edit their own submission.
         $this->assertTrue($assign->can_edit_submission($student->id, $student->id));
@@ -3187,9 +3307,9 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $otherstudent = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-                'submissiondrafts' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+            'submissiondrafts' => 1,
+        ]);
 
         // Add the required capability to edit a student submission.
         $roleid = create_role('Dummy role', 'dummyrole', 'dummy role description');
@@ -3232,11 +3352,11 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         groups_add_member($group2, $student4);
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-                'submissiondrafts' => 1,
-                'groupingid' => $grouping->id,
-                'groupmode' => SEPARATEGROUPS,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+            'submissiondrafts' => 1,
+            'groupingid' => $grouping->id,
+            'groupmode' => SEPARATEGROUPS,
+        ]);
 
         // Verify a student does not have the ability to edit submissions for other users.
         $this->assertTrue($assign->can_edit_submission($student1->id, $student1->id));
@@ -3270,13 +3390,13 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         groups_add_member($group2, $student4);
 
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-                'submissiondrafts' => 1,
-                'groupingid' => $grouping->id,
-                'groupmode' => SEPARATEGROUPS,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+            'submissiondrafts' => 1,
+            'groupingid' => $grouping->id,
+            'groupmode' => SEPARATEGROUPS,
+        ]);
 
-        // Add the capability to the new assignment for student 1.
+        // Add the capability to the new \assignment for student 1.
         $roleid = create_role('Dummy role', 'dummyrole', 'dummy role description');
         assign_capability('mod/assign:editothersubmission', CAP_ALLOW, $roleid, $assign->get_context()->id);
         role_assign($roleid, $student1->id, $assign->get_context()->id);
@@ -3308,21 +3428,21 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
         $assign = $this->create_instance($course, [
-                'blindmarking' => 1,
-            ]);
+            'blindmarking' => 1,
+        ]);
 
         $this->assertTrue($assign->is_blind_marking());
 
         // Test student names are hidden to teacher.
         $this->setUser($teacher);
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
         $this->assertEquals(true, strpos($output, get_string('hiddenuser', 'assign')));    // "Participant" is somewhere on the page.
         $this->assertEquals(false, strpos($output, fullname($student)));    // Students full name doesn't appear.
 
         // Test student names are visible to manager.
         $this->setUser($manager);
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
         $this->assertEquals(true, strpos($output, get_string('hiddenuser', 'assign')));
         $this->assertEquals(true, strpos($output, fullname($student)));
@@ -3353,32 +3473,32 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         groups_add_member($group2, $student4);
 
         $assign = $this->create_instance($course, [
-                'groupingid' => $grouping->id,
-                'groupmode' => SEPARATEGROUPS,
-            ]);
+            'groupingid' => $grouping->id,
+            'groupmode' => SEPARATEGROUPS,
+        ]);
 
         $cm = $assign->get_course_module();
 
         // Get shared group members for students 0 and 1.
         $groupmembers = $assign->get_shared_group_members($cm, $student1->id);
         $this->assertCount(2, $groupmembers);
-        $this->assertContains($student1->id, $groupmembers);
-        $this->assertContains($student2->id, $groupmembers);
+        $this->assertContainsEquals($student1->id, $groupmembers);
+        $this->assertContainsEquals($student2->id, $groupmembers);
 
         $groupmembers = $assign->get_shared_group_members($cm, $student2->id);
         $this->assertCount(2, $groupmembers);
-        $this->assertContains($student1->id, $groupmembers);
-        $this->assertContains($student2->id, $groupmembers);
+        $this->assertContainsEquals($student1->id, $groupmembers);
+        $this->assertContainsEquals($student2->id, $groupmembers);
 
         $groupmembers = $assign->get_shared_group_members($cm, $student3->id);
         $this->assertCount(2, $groupmembers);
-        $this->assertContains($student3->id, $groupmembers);
-        $this->assertContains($student4->id, $groupmembers);
+        $this->assertContainsEquals($student3->id, $groupmembers);
+        $this->assertContainsEquals($student4->id, $groupmembers);
 
         $groupmembers = $assign->get_shared_group_members($cm, $student4->id);
         $this->assertCount(2, $groupmembers);
-        $this->assertContains($student3->id, $groupmembers);
-        $this->assertContains($student4->id, $groupmembers);
+        $this->assertContainsEquals($student3->id, $groupmembers);
+        $this->assertContainsEquals($student4->id, $groupmembers);
     }
 
     /**
@@ -3406,9 +3526,9 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         groups_add_member($group2, $student4);
 
         $assign = $this->create_instance($course, [
-                'groupingid' => $grouping->id,
-                'groupmode' => SEPARATEGROUPS,
-            ]);
+            'groupingid' => $grouping->id,
+            'groupmode' => SEPARATEGROUPS,
+        ]);
 
         $cm = $assign->get_course_module();
 
@@ -3421,25 +3541,25 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         // Get shared group members for students 0 and 1.
         $groupmembers = $assign->get_shared_group_members($cm, $student1->id);
         $this->assertCount(4, $groupmembers);
-        $this->assertContains($student1->id, $groupmembers);
-        $this->assertContains($student2->id, $groupmembers);
-        $this->assertContains($student3->id, $groupmembers);
-        $this->assertContains($student4->id, $groupmembers);
+        $this->assertContainsEquals($student1->id, $groupmembers);
+        $this->assertContainsEquals($student2->id, $groupmembers);
+        $this->assertContainsEquals($student3->id, $groupmembers);
+        $this->assertContainsEquals($student4->id, $groupmembers);
 
         $groupmembers = $assign->get_shared_group_members($cm, $student2->id);
         $this->assertCount(2, $groupmembers);
-        $this->assertContains($student1->id, $groupmembers);
-        $this->assertContains($student2->id, $groupmembers);
+        $this->assertContainsEquals($student1->id, $groupmembers);
+        $this->assertContainsEquals($student2->id, $groupmembers);
 
         $groupmembers = $assign->get_shared_group_members($cm, $student3->id);
         $this->assertCount(2, $groupmembers);
-        $this->assertContains($student3->id, $groupmembers);
-        $this->assertContains($student4->id, $groupmembers);
+        $this->assertContainsEquals($student3->id, $groupmembers);
+        $this->assertContainsEquals($student4->id, $groupmembers);
 
         $groupmembers = $assign->get_shared_group_members($cm, $student4->id);
         $this->assertCount(2, $groupmembers);
-        $this->assertContains($student3->id, $groupmembers);
-        $this->assertContains($student4->id, $groupmembers);
+        $this->assertContainsEquals($student3->id, $groupmembers);
+        $this->assertContainsEquals($student4->id, $groupmembers);
     }
 
     /**
@@ -3456,7 +3576,7 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         // Test that all the submission and feedback plugins are returning the expected file aras.
         $usingfilearea = 0;
-        $coreplugins = core_plugin_manager::standard_plugins_list('assignsubmission');
+        $coreplugins = \core_plugin_manager::standard_plugins_list('assignsubmission');
         foreach ($assign->get_submission_plugins() as $plugin) {
             $type = $plugin->get_type();
             if (!in_array($type, $coreplugins)) {
@@ -3477,7 +3597,7 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $this->assertEquals(2, $usingfilearea);
 
         $usingfilearea = 0;
-        $coreplugins = core_plugin_manager::standard_plugins_list('assignfeedback');
+        $coreplugins = \core_plugin_manager::standard_plugins_list('assignfeedback');
         foreach ($assign->get_feedback_plugins() as $plugin) {
             $type = $plugin->get_type();
             if (!in_array($type, $coreplugins)) {
@@ -3486,16 +3606,30 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
             $fileareas = $plugin->get_file_areas();
 
             if ($type == 'editpdf') {
-                $this->assertEquals(array('download' => 'Annotate PDF'), $fileareas);
+                $checkareas = [
+                    'download' => 'Annotate PDF',
+                    'combined' => 'Annotate PDF',
+                    'partial' => 'Annotate PDF',
+                    'importhtml' => 'Annotate PDF',
+                    'pages' => 'Annotate PDF',
+                    'readonlypages' => 'Annotate PDF',
+                    'stamps' => 'Annotate PDF',
+                    'tmp_jpg_to_pdf' => 'Annotate PDF',
+                    'tmp_rotated_jpg' => 'Annotate PDF'
+                ];
+                $this->assertEquals($checkareas, $fileareas);
                 $usingfilearea++;
             } else if ($type == 'file') {
                 $this->assertEquals(array('feedback_files' => 'Feedback files'), $fileareas);
+                $usingfilearea++;
+            } else if ($type == 'comments') {
+                $this->assertEquals(array('feedback' => 'Feedback comments'), $fileareas);
                 $usingfilearea++;
             } else {
                 $this->assertEmpty($fileareas);
             }
         }
-        $this->assertEquals(2, $usingfilearea);
+        $this->assertEquals(3, $usingfilearea);
     }
 
     /**
@@ -3514,7 +3648,6 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $grouping = $this->getDataGenerator()->create_grouping(array('courseid' => $course->id));
         $group1 = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
         $group2 = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
-
 
         // Data:
         // - student1 => group A only
@@ -3551,7 +3684,8 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
                 'sortorder' => 1,
                 'allowsubmissionsfromdate' => 1,
                 'duedate' => 2,
-                'cutoffdate' => 3
+                'cutoffdate' => 3,
+                'timelimit' => null
             ],
             (object) [
                 // Override for group 2, lower priority (numerically higher sortorder).
@@ -3561,7 +3695,8 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
                 'sortorder' => 2,
                 'allowsubmissionsfromdate' => 5,
                 'duedate' => 6,
-                'cutoffdate' => 6
+                'cutoffdate' => 6,
+                'timelimit' => null
             ],
             (object) [
                 // User override.
@@ -3571,7 +3706,8 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
                 'sortorder' => null,
                 'allowsubmissionsfromdate' => 7,
                 'duedate' => 8,
-                'cutoffdate' => 9
+                'cutoffdate' => 9,
+                'timelimit' => null
             ],
         ];
 
@@ -3615,19 +3751,19 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         // Initially grade the user.
         $grade = (object) [
-                'attemptnumber' => '',
-                'timemodified' => '',
-            ];
+            'attemptnumber' => '',
+            'timemodified' => '',
+        ];
         $data = [
-                "grademodified_{$student->id}" => $grade->timemodified,
-                "gradeattempt_{$student->id}" => $grade->attemptnumber,
-                "quickgrade_{$student->id}" => '60.0',
-            ];
+            "grademodified_{$student->id}" => $grade->timemodified,
+            "gradeattempt_{$student->id}" => $grade->attemptnumber,
+            "quickgrade_{$student->id}" => '60.0',
+        ];
 
         $result = $assign->testable_process_save_quick_grades($data);
-        $this->assertContains(get_string('quickgradingchangessaved', 'assign'), $result);
+        $this->assertStringContainsString(get_string('quickgradingchangessaved', 'assign'), $result);
         $grade = $assign->get_user_grade($student->id, false);
-        $this->assertEquals('60.0', $grade->grade);
+        $this->assertEquals(60.0, $grade->grade);
 
         // Attempt to grade with a past attempts grade info.
         $assign->testable_process_add_attempt($student->id);
@@ -3637,7 +3773,7 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
             'quickgrade_' . $student->id => '50.0'
         );
         $result = $assign->testable_process_save_quick_grades($data);
-        $this->assertContains(get_string('errorrecordmodified', 'assign'), $result);
+        $this->assertStringContainsString(get_string('errorrecordmodified', 'assign'), $result);
         $grade = $assign->get_user_grade($student->id, false);
         $this->assertFalse($grade);
 
@@ -3649,9 +3785,9 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
             'quickgrade_' . $student->id => '40.0'
         );
         $result = $assign->testable_process_save_quick_grades($data);
-        $this->assertContains(get_string('quickgradingchangessaved', 'assign'), $result);
+        $this->assertStringContainsString(get_string('quickgradingchangessaved', 'assign'), $result);
         $grade = $assign->get_user_grade($student->id, false);
-        $this->assertEquals('40.0', $grade->grade);
+        $this->assertEquals(40.0, $grade->grade);
 
         // Catch grade update conflicts.
         // Save old data for later.
@@ -3663,15 +3799,15 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
             'quickgrade_' . $student->id => '30.0'
         );
         $result = $assign->testable_process_save_quick_grades($data);
-        $this->assertContains(get_string('quickgradingchangessaved', 'assign'), $result);
+        $this->assertStringContainsString(get_string('quickgradingchangessaved', 'assign'), $result);
         $grade = $assign->get_user_grade($student->id, false);
-        $this->assertEquals('30.0', $grade->grade);
+        $this->assertEquals(30.0, $grade->grade);
 
         // Now update using 'old' data. Should fail.
         $result = $assign->testable_process_save_quick_grades($pastdata);
-        $this->assertContains(get_string('errorrecordmodified', 'assign'), $result);
+        $this->assertStringContainsString(get_string('errorrecordmodified', 'assign'), $result);
         $grade = $assign->get_user_grade($student->id, false);
-        $this->assertEquals('30.0', $grade->grade);
+        $this->assertEquals(30.0, $grade->grade);
     }
 
     /**
@@ -3686,24 +3822,24 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'grade' => 100,
-                'completion' => COMPLETION_TRACKING_AUTOMATIC,
-                'requireallteammemberssubmit' => 0,
-            ]);
+            'grade' => 100,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+            'requireallteammemberssubmit' => 0,
+        ]);
         $cm = $assign->get_course_module();
 
         // Submit the assignment as the student.
         $this->add_submission($student, $assign);
 
         // Check that completion is not met yet.
-        $completion = new completion_info($course);
+        $completion = new \completion_info($course);
         $completiondata = $completion->get_data($cm, false, $student->id);
         $this->assertEquals(0, $completiondata->completionstate);
 
         // Update to mark as complete.
         $submission = $assign->get_user_submission($student->id, true);
         $assign->testable_update_activity_completion_records(0, 0, $submission,
-                $student->id, COMPLETION_COMPLETE, $completion);
+            $student->id, COMPLETION_COMPLETE, $completion);
 
         // Completion should now be met.
         $completiondata = $completion->get_data($cm, false, $student->id);
@@ -3728,17 +3864,17 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         groups_add_member($group1, $otherstudent);
 
         $assign = $this->create_instance($course, [
-                'grade' => 100,
-                'completion' => COMPLETION_TRACKING_AUTOMATIC,
-                'teamsubmission' => 1,
-            ]);
+            'grade' => 100,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+            'teamsubmission' => 1,
+        ]);
 
         $cm = $assign->get_course_module();
 
         $this->add_submission($student, $assign);
         $this->submit_for_grading($student, $assign, ['groupid' => $group1->id]);
 
-        $completion = new completion_info($course);
+        $completion = new \completion_info($course);
 
         // Check that completion is not met yet.
         $completiondata = $completion->get_data($cm, false, $student->id);
@@ -3761,69 +3897,43 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $this->assertEquals(1, $completiondata->completionstate);
     }
 
-    public function get_assignments_with_rescaled_null_grades_provider() {
-        return [
-            'Negative less than one is errant' => [
-                'grade' => -0.64,
-                'count' => 1,
-            ],
-            'Negative more than one is errant' => [
-                'grade' => -30.18,
-                'count' => 1,
-            ],
-            'Negative one exactly is not errant' => [
-                'grade' => ASSIGN_GRADE_NOT_SET,
-                'count' => 0,
-            ],
-            'Positive grade is not errant' => [
-                'grade' => 1,
-                'count' => 0,
-            ],
-            'Large grade is not errant' => [
-                'grade' => 100,
-                'count' => 0,
-            ],
-            'Zero grade is not errant' => [
-                'grade' => 0,
-                'count' => 0,
-            ],
-        ];
-    }
-
     /**
-     * Test determining if the assignment as any null grades that were rescaled.
-     * @dataProvider get_assignments_with_rescaled_null_grades_provider
+     * Test updating activity completion when submitting an assessment for MDL-67126.
      */
-    public function test_get_assignments_with_rescaled_null_grades($grade, $count) {
-        global $DB;
-
+    public function test_update_activity_completion_records_team_submission_new() {
         $this->resetAfterTest();
 
-        $course = $this->getDataGenerator()->create_course();
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
         $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $otherstudent = $this->getDataGenerator()->create_and_enrol($course, 'student');
 
-        $this->setUser($teacher);
+        $grouping = $this->getDataGenerator()->create_grouping(array('courseid' => $course->id));
+        $group1 = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
+
+        groups_add_member($group1, $student);
+        groups_add_member($group1, $otherstudent);
+
         $assign = $this->create_instance($course, [
-                'grade' => 100,
-            ]);
+            'submissiondrafts' => 0,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+            'completionsubmit' => 1,
+            'teamsubmission' => 1,
+            'assignsubmission_onlinetext_enabled' => 1
+        ]);
 
-        // Try getting a student's grade. This will give a grade of -1.
-        // Then we can override it with a bad negative grade.
-        $assign->get_user_grade($student->id, true);
+        $cm = $assign->get_course_module();
 
-        // Set the grade to something errant.
-        $DB->set_field(
-            'assign_grades',
-            'grade',
-            $grade,
-            [
-                'userid' => $student->id,
-                'assignment' => $assign->get_instance()->id,
-            ]
-        );
+        $this->add_submission($student, $assign);
 
-        $this->assertCount($count, get_assignments_with_rescaled_null_grades());
+        $completion = new \completion_info($course);
+
+        // Completion should now be met.
+        $completiondata = $completion->get_data($cm, false, $student->id);
+        $this->assertEquals(1, $completiondata->completionstate);
+
+        $completiondata = $completion->get_data($cm, false, $otherstudent->id);
+        $this->assertEquals(1, $completiondata->completionstate);
     }
 
     /**
@@ -3882,6 +3992,7 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $assign->get_user_grade($student->id, true);
 
         // Set the grade to something errant.
+        // We don't set the grader here, so we expect it to be -1 as a result.
         $DB->set_field(
             'assign_grades',
             'grade',
@@ -3898,17 +4009,21 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         // Check that the gradebook was updated with the assign grade. So we can guarentee test results later on.
         $expectedgrade = $grade == -1 ? null : $grade; // Assign sends null to the gradebook for -1 grades.
-        $gradegrade = grade_grade::fetch(array('userid' => $student->id, 'itemid' => $assign->get_grade_item()->id));
+        $gradegrade = \grade_grade::fetch(array('userid' => $student->id, 'itemid' => $assign->get_grade_item()->id));
+        $this->assertEquals(-1, $gradegrade->usermodified);
         $this->assertEquals($expectedgrade, $gradegrade->rawgrade);
 
         // Call fix_null_grades().
-        $method = new ReflectionMethod(assign::class, 'fix_null_grades');
+        $method = new \ReflectionMethod(\assign::class, 'fix_null_grades');
         $method->setAccessible(true);
         $result = $method->invoke($assign);
 
         $this->assertSame(true, $result);
 
-        $gradegrade = grade_grade::fetch(array('userid' => $student->id, 'itemid' => $assign->get_grade_item()->id));
+        $gradegrade = \grade_grade::fetch(array('userid' => $student->id, 'itemid' => $assign->get_grade_item()->id));
+
+        $this->assertEquals(-1, $gradegrade->usermodified);
+        $this->assertEquals($gradebookvalue, $gradegrade->finalgrade);
 
         // Check that the grade was updated in the gradebook by fix_null_grades.
         $this->assertEquals($gradebookvalue, $gradegrade->finalgrade);
@@ -3928,20 +4043,20 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
 
         $this->setUser($teacher);
         $assign = $this->create_instance($course, [
-                'assignsubmission_onlinetext_enabled' => 1,
-            ]);
+            'assignsubmission_onlinetext_enabled' => 1,
+        ]);
 
         // Simulate adding a grade.
         $this->setUser($teacher);
-        $data = new stdClass();
+        $data = new \stdClass();
         $data->grade = '50.0';
         $assign->testable_apply_grade_to_user($data, $student->id, 0);
 
         // Set grade override.
-        $gradegrade = grade_grade::fetch([
-                'userid' => $student->id,
-                'itemid' => $assign->get_grade_item()->id,
-            ]);
+        $gradegrade = \grade_grade::fetch([
+            'userid' => $student->id,
+            'itemid' => $assign->get_grade_item()->id,
+        ]);
 
         // Check that grade submission is not overridden yet.
         $this->assertEquals(false, $gradegrade->is_overridden());
@@ -3950,23 +4065,550 @@ Anchor link 2:<a title=\"bananas\" href=\"../logo-240x60.gif\">Link text</a>
         $this->setUser($student);
         $submission = $assign->get_user_submission($student->id, true);
 
-        $PAGE->set_url(new moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', ['id' => $assign->get_course_module()->id]));
 
         // Set override grade grade, and check that grade submission has been overridden.
         $gradegrade->set_overridden(true);
         $this->assertEquals(true, $gradegrade->is_overridden());
 
         // Check that submissionslocked message 'This assignment is not accepting submissions' does not appear for student.
-        $gradingtable = new assign_grading_table($assign, 1, '', 0, true);
+        $gradingtable = new \assign_grading_table($assign, 1, '', 0, true);
         $output = $assign->get_renderer()->render($gradingtable);
-        $this->assertContains(get_string('submissionstatus_', 'assign'), $output);
+        $this->assertStringContainsString(get_string('submissionstatus_', 'assign'), $output);
 
         $assignsubmissionstatus = $assign->get_assign_submission_status_renderable($student, true);
         $output2 = $assign->get_renderer()->render($assignsubmissionstatus);
 
         // Check that submissionslocked 'This assignment is not accepting submissions' message does not appear for student.
-        $this->assertNotContains(get_string('submissionslocked', 'assign'), $output2);
+        $this->assertStringNotContainsString(get_string('submissionslocked', 'assign'), $output2);
         // Check that submissionstatus_marked 'Graded' message does appear for student.
-        $this->assertContains(get_string('submissionstatus_marked', 'assign'), $output2);
+        $this->assertStringContainsString(get_string('submissionstatus_marked', 'assign'), $output2);
+    }
+
+    /**
+     * Test the result of get_filters is consistent.
+     */
+    public function test_get_filters() {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $assign = $this->create_instance($course);
+        $valid = $assign->get_filters();
+
+        $this->assertEquals(count($valid), 6);
+    }
+
+    /**
+     * Test assign->get_instance() for a number of cases, as defined in the data provider.
+     *
+     * @dataProvider assign_get_instance_provider
+     * @param array $courseconfig the config to use when creating the course.
+     * @param array $assignconfig the config to use when creating the assignment.
+     * @param array $enrolconfig the config to use when enrolling the user (this will be the active user).
+     * @param array $expectedproperties an map containing the expected names and values for the assign instance data.
+     */
+    public function test_assign_get_instance(array $courseconfig, array $assignconfig, array $enrolconfig,
+            array $expectedproperties) {
+        $this->resetAfterTest();
+
+        set_config('enablecourserelativedates', true); // Enable relative dates at site level.
+
+        $course = $this->getDataGenerator()->create_course($courseconfig);
+        $assign = $this->create_instance($course, $assignconfig);
+        $user = $this->getDataGenerator()->create_and_enrol($course, ...array_values($enrolconfig));
+
+        $instance = $assign->get_instance($user->id);
+
+        foreach ($expectedproperties as $propertyname => $propertyval) {
+            $this->assertEquals($propertyval, $instance->$propertyname);
+        }
+    }
+
+    /**
+     * The test_assign_get_instance data provider.
+     */
+    public function assign_get_instance_provider() {
+        $timenow = time();
+
+        // The get_default_instance() method shouldn't calculate any properties per-user. It should just return the record data.
+        // We'll confirm this works for a few different user types anyway, just like we do for get_instance().
+        return [
+            'Teacher whose enrolment starts after the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'teacher', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 6 * DAYSECS]
+            ],
+            'Teacher whose enrolment starts before the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'teacher', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 12 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+            'Teacher whose enrolment starts after the course start date, relative dates mode disabled' => [
+                'courseconfig' => ['relativedatesmode' => false, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'teacher', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+            'Student whose enrolment starts after the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'student', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 6 * DAYSECS]
+            ],
+            'Student whose enrolment starts before the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'student', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 12 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+            'Student whose enrolment starts after the course start date, relative dates mode disabled' => [
+                'courseconfig' => ['relativedatesmode' => false, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'student', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+        ];
+    }
+
+    /**
+     * Test assign->get_default_instance() for a number of cases, as defined in the date provider.
+     *
+     * @dataProvider assign_get_default_instance_provider
+     * @param array $courseconfig the config to use when creating the course.
+     * @param array $assignconfig the config to use when creating the assignment.
+     * @param array $enrolconfig the config to use when enrolling the user (this will be the active user).
+     * @param array $expectedproperties an map containing the expected names and values for the assign instance data.
+     */
+    public function test_assign_get_default_instance(array $courseconfig, array $assignconfig, array $enrolconfig,
+            array $expectedproperties) {
+        $this->resetAfterTest();
+
+        set_config('enablecourserelativedates', true); // Enable relative dates at site level.
+
+        $course = $this->getDataGenerator()->create_course($courseconfig);
+        $assign = $this->create_instance($course, $assignconfig);
+        $user = $this->getDataGenerator()->create_and_enrol($course, ...array_values($enrolconfig));
+
+        $this->setUser($user);
+        $defaultinstance = $assign->get_default_instance();
+
+        foreach ($expectedproperties as $propertyname => $propertyval) {
+            $this->assertEquals($propertyval, $defaultinstance->$propertyname);
+        }
+    }
+
+    /**
+     * The test_assign_get_default_instance data provider.
+     */
+    public function assign_get_default_instance_provider() {
+        $timenow = time();
+
+        // The get_default_instance() method shouldn't calculate any properties per-user. It should just return the record data.
+        // We'll confirm this works for a few different user types anyway, just like we do for get_instance().
+        return [
+            'Teacher whose enrolment starts after the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'teacher', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+            'Teacher whose enrolment starts before the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'teacher', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 12 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+            'Teacher whose enrolment starts after the course start date, relative dates mode disabled' => [
+                'courseconfig' => ['relativedatesmode' => false, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'teacher', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+            'Student whose enrolment starts after the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'student', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+        ];
+    }
+
+    /**
+     * Test that cron task uses task API to get its last run time.
+     */
+    public function test_cron_use_task_api_to_get_lastruntime() {
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create an assignment which allows submissions from 3 days ago.
+        $assign1 = $this->create_instance($course, [
+            'duedate' => time() + DAYSECS,
+            'alwaysshowdescription' => 0,
+            'allowsubmissionsfromdate' => time() - 3 * DAYSECS,
+            'intro' => 'This one should not be re-created',
+        ]);
+
+        // Create an assignment which allows submissions from 1 day ago.
+        $assign2 = $this->create_instance($course, [
+            'duedate' => time() + DAYSECS,
+            'alwaysshowdescription' => 0,
+            'allowsubmissionsfromdate' => time() - DAYSECS,
+            'intro' => 'This one should be re-created',
+        ]);
+
+        // Set last run time 2 days ago.
+        $DB->set_field('task_scheduled', 'lastruntime', time() - 2 * DAYSECS, ['classname' => '\mod_assign\task\cron_task']);
+
+        // Remove events to make sure cron will update calendar and re-create one of them.
+        $params = array('modulename' => 'assign', 'instance' => $assign1->get_instance()->id);
+        $DB->delete_records('event', $params);
+        $params = array('modulename' => 'assign', 'instance' => $assign2->get_instance()->id);
+        $DB->delete_records('event', $params);
+
+        // Run cron.
+        \assign::cron();
+
+        // Assert that calendar hasn't been updated for the first assignment as it's supposed to be
+        // updated as part of previous cron runs (allowsubmissionsfromdate is less than lastruntime).
+        $params = array('modulename' => 'assign', 'instance' => $assign1->get_instance()->id);
+        $event1 = $DB->get_record('event', $params);
+        $this->assertEmpty($event1);
+
+        // Assert that calendar has been updated for the second assignment
+        // because its allowsubmissionsfromdate is greater than lastruntime.
+        $params = array('modulename' => 'assign', 'instance' => $assign2->get_instance()->id);
+        $event2 = $DB->get_record('event', $params);
+        $this->assertNotEmpty($event2);
+        $this->assertSame('This one should be re-created', $event2->description);
+    }
+
+    /**
+     * Test submissions that need grading output after one ungraded submission
+     */
+    public function test_submissions_need_grading() {
+        global $PAGE;
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Setup the assignment.
+        $this->setUser($teacher);
+        $time = time();
+        $assign = $this->create_instance($course, [
+                'assignsubmission_onlinetext_enabled' => 1,
+            ]);
+        $PAGE->set_url(new \moodle_url('/mod/assign/view.php', [
+            'id' => $assign->get_course_module()->id,
+            'action' => 'grading',
+        ]));
+
+        // Check for 0 submissions.
+        $summary = $assign->view('viewcourseindex');
+
+        $this->assertStringContainsString('/mod/assign/view.php?id=' .
+            $assign->get_course_module()->id . '&amp;action=grading">' .
+            get_string('numberofsubmissionsneedgradinglabel', 'assign', 0) . '</a>', $summary);
+
+        // Simulate an assignment submission.
+        $this->setUser($student);
+        $submission = $assign->get_user_submission($student->id, true);
+        $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
+        $assign->testable_update_submission($submission, $student->id, true, false);
+        $data = new \stdClass();
+        $data->onlinetext_editor = [
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE,
+        ];
+        $plugin = $assign->get_submission_plugin_by_type('onlinetext');
+        $plugin->save($submission, $data);
+
+        // Check for 1 ungraded submission.
+        $this->setUser($teacher);
+
+        $summary = $assign->view('viewcourseindex');
+
+        $this->assertStringContainsString('/mod/assign/view.php?id=' .
+            $assign->get_course_module()->id .  '&amp;action=grading">' .
+            get_string('numberofsubmissionsneedgradinglabel', 'assign', 1) . '</a>', $summary);
+    }
+
+    /**
+     * Test that attachments should not be provided if \assign->show_intro returns false.
+     *
+     * @covers \assign::should_provide_intro_attachments
+     */
+    public function test_should_provide_intro_attachments_with_show_intro_disabled() {
+        $this->resetAfterTest();
+        $futuredate = time() + 300;
+        list($assign, $instance, $student) = $this->create_submission([
+            'alwaysshowdescription' => '0',
+            'allowsubmissionsfromdate' => $futuredate,
+        ]);
+        $this->assertFalse($assign->should_provide_intro_attachments($student->id));
+    }
+
+    /**
+     * Test that attachments should be provided if user has capability to manage activity.
+     *
+     * @covers \assign::should_provide_intro_attachments
+     */
+    public function test_should_provide_intro_attachments_with_bypass_capability() {
+        $this->resetAfterTest();
+        list($assign, $instance, $student) = $this->create_submission([
+            'submissionattachments' => 1,
+        ]);
+        // Provide teaching role to student1 so they are able to bypass time limit restrictions on viewing attachments.
+        $this->getDataGenerator()->enrol_user($student->id, $instance->course, 'editingteacher');
+        $this->assertTrue($assign->should_provide_intro_attachments($student->id));
+    }
+
+    /**
+     * Test that attachments should be provided if submissionattachments is disabled.
+     *
+     * @covers \assign::should_provide_intro_attachments
+     */
+    public function test_should_provide_intro_attachments_with_submissionattachments_disabled() {
+        $this->resetAfterTest();
+        list($assign, $instance, $student) = $this->create_submission();
+        $this->assertTrue($assign->should_provide_intro_attachments($student->id));
+    }
+
+    /**
+     * Test that attachments should not be provided if submissionattachments is enabled with no open submission.
+     *
+     * @covers \assign::should_provide_intro_attachments
+     */
+    public function test_should_provide_intro_attachments_with_submissionattachments_enabled_and_submissions_closed() {
+        $this->resetAfterTest();
+        // Set cut-off date to the past.
+        list($assign, $instance, $student) = $this->create_submission([
+            'timelimit' => '300',
+            'submissionattachments' => 1,
+            'cutoffdate' => time() - 300,
+        ]);
+        $this->assertFalse($assign->should_provide_intro_attachments($student->id));
+    }
+
+    /**
+     * Test that attachments should be provided if submissionattachments is enabled with an open submission.
+     *
+     * @covers \assign::should_provide_intro_attachments
+     */
+    public function test_should_provide_intro_attachments_submissionattachments_enabled_and_an_open_submission() {
+        $this->resetAfterTest();
+        set_config('enabletimelimit', '1', 'assign');
+        list($assign, $instance, $student) = $this->create_submission([
+            'timelimit' => '300',
+            'submissionattachments' => 1,
+        ]);
+
+        // Open a submission.
+        $assign->get_user_submission($student->id, true);
+
+        $this->assertTrue($assign->should_provide_intro_attachments($student->id));
+    }
+
+    /**
+     * Test that a submission using a time limit is currently open.
+     *
+     * @covers \assign::is_attempt_in_progress
+     */
+    public function test_is_attempt_in_progress_with_open_submission() {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('enabletimelimit', '1', 'assign');
+        list($assign, $instance, $student) = $this->create_submission([
+            'timelimit' => '300',
+        ]);
+        $submission = $assign->get_user_submission($student->id, true);
+        // Set a timestarted.
+        $submission->timestarted = time() - 300;
+        $DB->update_record('assign_submission', $submission);
+        $this->assertTrue($assign->is_attempt_in_progress());
+    }
+
+    /**
+     * Test that a submission using a time limit is started without a start time.
+     *
+     * @covers \assign::is_attempt_in_progress
+     */
+    public function test_is_attempt_in_progress_with_open_submission_and_no_timestarted() {
+        $this->resetAfterTest();
+        set_config('enabletimelimit', '1', 'assign');
+        list($assign, $instance, $student) = $this->create_submission([
+            'timelimit' => '300',
+        ]);
+        $assign->get_user_submission($student->id, true);
+        $this->assertFalse($assign->is_attempt_in_progress());
+    }
+
+    /**
+     * Test that a submission using a time limit is currently not open.
+     *
+     * @covers \assign::is_attempt_in_progress
+     */
+    public function test_is_attempt_in_progress_with_no_open_submission() {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('enabletimelimit', '1', 'assign');
+        list($assign, $instance, $student) = $this->create_submission([
+            'timelimit' => '300',
+        ]);
+        // Clear all current submissions.
+        $DB->delete_records('assign_submission', ['assignment' => $instance->id]);
+        $this->assertFalse($assign->is_attempt_in_progress());
+    }
+
+    /**
+     * Create a submission for testing.
+     * @param  array $params Optional params to use for creating assignment instance.
+     * @return array an array containing all the required data for testing
+     */
+    protected function create_submission(array $params = []) {
+        global $DB;
+
+        // Create a course and assignment and users.
+        $course = self::getDataGenerator()->create_course(array('groupmode' => SEPARATEGROUPS, 'groupmodeforce' => 1));
+
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
+        $params = array_merge(array(
+            'course' => $course->id,
+            'assignsubmission_file_maxfiles' => 1,
+            'assignsubmission_file_maxsizebytes' => 1024 * 1024,
+            'assignsubmission_onlinetext_enabled' => 1,
+            'assignsubmission_file_enabled' => 1,
+            'submissiondrafts' => 1,
+            'assignfeedback_file_enabled' => 1,
+            'assignfeedback_comments_enabled' => 1,
+            'attemptreopenmethod' => ASSIGN_ATTEMPT_REOPEN_METHOD_MANUAL,
+            'sendnotifications' => 0
+        ), $params);
+
+        set_config('submissionreceipts', 0, 'assign');
+
+        $instance = $generator->create_instance($params);
+        $cm = get_coursemodule_from_instance('assign', $instance->id);
+        $context = \context_module::instance($cm->id);
+
+        $assign = new \mod_assign_testable_assign($context, $cm, $course);
+
+        $student = self::getDataGenerator()->create_user();
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student->id, $course->id, $studentrole->id);
+
+        $this->setUser($student);
+
+        // Create a student1 with an online text submission.
+        // Simulate a submission.
+        $submission = $assign->get_user_submission($student->id, true);
+
+        $data = new \stdClass();
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text with a <a href="@@PLUGINFILE@@/intro.txt">link</a>',
+            'format' => FORMAT_MOODLE);
+
+        $draftidfile = file_get_unused_draft_itemid();
+        $usercontext = \context_user::instance($student->id);
+        $filerecord = array(
+            'contextid' => $usercontext->id,
+            'component' => 'user',
+            'filearea'  => 'draft',
+            'itemid'    => $draftidfile,
+            'filepath'  => '/',
+            'filename'  => 't.txt',
+        );
+        $fs = get_file_storage();
+        $fs->create_file_from_string($filerecord, 'text contents');
+
+        $data->files_filemanager = $draftidfile;
+
+        $notices = array();
+        $assign->save_submission($data, $notices);
+
+        return array($assign, $instance, $student);
+    }
+
+    /**
+     * Test user filtering by First name, Last name and Submission status.
+     *
+     * @covers \assign::is_userid_filtered
+     */
+    public function test_is_userid_filtered() {
+        $this->resetAfterTest();
+
+        // Generate data and simulate student submissions.
+        $course = $this->getDataGenerator()->create_course();
+        $params1 = ['firstname' => 'Valentin', 'lastname' => 'Ivanov'];
+        $student1 = $this->getDataGenerator()->create_and_enrol($course, 'student', $params1);
+        $params2 = ['firstname' => 'Nikolay', 'lastname' => 'Petrov'];
+        $student2 = $this->getDataGenerator()->create_and_enrol($course, 'student', $params2);
+        $assign = $this->create_instance($course, ['assignsubmission_onlinetext_enabled' => 1]);
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher');
+        $this->setUser($student1);
+        $submission = $assign->get_user_submission($student1->id, true);
+        $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
+        $assign->testable_update_submission($submission, $student1->id, true, false);
+        $this->setUser($student2);
+        $submission = $assign->get_user_submission($student2->id, true);
+        $submission->status = ASSIGN_SUBMISSION_STATUS_DRAFT;
+        $assign->testable_update_submission($submission, $student2->id, true, false);
+        $this->setUser($teacher);
+
+        // By default, both users should match filters.
+        $this->AssertTrue($assign->is_userid_filtered($student1->id));
+        $this->AssertTrue($assign->is_userid_filtered($student2->id));
+
+        // Filter by First name starting with V.
+        $_GET['tifirst'] = 'V';
+        $this->AssertTrue($assign->is_userid_filtered($student1->id));
+        $this->AssertFalse($assign->is_userid_filtered($student2->id));
+
+        // Add Last name to filter out both users.
+        $_GET['tilast'] = 'G';
+        $this->AssertFalse($assign->is_userid_filtered($student1->id));
+        $this->AssertFalse($assign->is_userid_filtered($student2->id));
+
+        // Unsetting variables doesn't change behaviour because filters are stored in user preferences.
+        unset($_GET['tifirst']);
+        unset($_GET['tilast']);
+        $this->AssertFalse($assign->is_userid_filtered($student1->id));
+        $this->AssertFalse($assign->is_userid_filtered($student2->id));
+
+        // Reset table preferences.
+        $_GET['treset'] = '1';
+        $this->AssertTrue($assign->is_userid_filtered($student1->id));
+        $this->AssertTrue($assign->is_userid_filtered($student2->id));
+
+        // Display users with submitted submissions only.
+        set_user_preference('assign_filter', ASSIGN_SUBMISSION_STATUS_SUBMITTED);
+        $this->AssertTrue($assign->is_userid_filtered($student1->id));
+        $this->AssertFalse($assign->is_userid_filtered($student2->id));
+
+        // Display users with drafts.
+        set_user_preference('assign_filter', ASSIGN_SUBMISSION_STATUS_DRAFT);
+        $this->AssertFalse($assign->is_userid_filtered($student1->id));
+        $this->AssertTrue($assign->is_userid_filtered($student2->id));
+
+        // Reset the filter.
+        set_user_preference('assign_filter', '');
+        $this->AssertTrue($assign->is_userid_filtered($student1->id));
+        $this->AssertTrue($assign->is_userid_filtered($student2->id));
     }
 }

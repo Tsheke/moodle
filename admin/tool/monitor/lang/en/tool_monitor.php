@@ -32,6 +32,7 @@ $string['areatomonitor'] = 'Area to monitor';
 $string['cachedef_eventsubscriptions'] = 'This stores the list of event subscriptions for individual courses';
 $string['contactadmin'] = 'Contact your administrator to enable it.';
 $string['core'] = 'Core';
+$string['coresubsystem'] = 'Subsystem ({$a})';
 $string['currentsubscriptions'] = 'Your current subscriptions';
 $string['defaultmessagetemplate'] = 'Rule name: {rulename}<br />Description: {description}<br />Event name: {eventname}';
 $string['deleterule'] = 'Delete rule';
@@ -64,12 +65,15 @@ $string['managerules'] = 'Event monitoring rules';
 $string['messageprovider:notification'] = 'Notifications of rule subscriptions';
 $string['messagetemplate'] = 'Notification message';
 $string['messagetemplate_help'] = 'A notification message is sent to subscribers once the notification threshold has been reached. It can include any or all of the following placeholders:
-<br /><br />
-* Link to the location of the event {link}<br />
-* Link to the area monitored {modulelink}<br />
-* Rule name {rulename}<br />
-* Description {description}<br />
-* Event {eventname}';
+
+* Link to the location of the event {link}
+* Link to the area monitored {modulelink}
+* Name of the course module {modulename}
+* Rule name {rulename}
+* Description {description}
+* Event {eventname}
+* Full name of the course {coursefullname}
+* Short name of the course {courseshortname}';
 $string['messagetemplate_link'] = 'admin/tool/monitor/managerules';
 $string['moduleinstance'] = 'Instance';
 $string['monitorenabled'] = 'Event monitoring is currently enabled. ';

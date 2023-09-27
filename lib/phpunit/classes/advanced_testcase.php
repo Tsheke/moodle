@@ -56,14 +56,28 @@ abstract class advanced_testcase extends base_testcase {
 
         $this->setBackupGlobals(false);
         $this->setBackupStaticAttributes(false);
-        $this->setRunTestInSeparateProcess(false);
+        $this->setPreserveGlobalState(false);
+
+    }
+
+    /**
+     * Hook into the setInIsolation method to define an optional constant.
+     *
+     * @param bool $inisolation
+     */
+    public function setInIsolation(bool $inisolation): void {
+        parent::setInIsolation($inisolation);
+        if ($inisolation) {
+            // Note: This is safe to do because it will only be set once per test run.
+            define('PHPUNIT_ISOLATED_TEST', true);
+        }
     }
 
     /**
      * Runs the bare test sequence.
      * @return void
      */
-    final public function runBare() {
+    final public function runBare(): void {
         global $DB;
 
         if (phpunit_util::$lastdbwrites != $DB->perf_get_writes()) {
@@ -132,6 +146,9 @@ abstract class advanced_testcase extends base_testcase {
             self::resetAllData(true);
         }
 
+        // Reset context cache.
+        context_helper::reset_caches();
+
         // make sure test did not forget to close transaction
         if ($DB->is_transaction_started()) {
             self::resetAllData();
@@ -144,87 +161,85 @@ abstract class advanced_testcase extends base_testcase {
     }
 
     /**
-     * Creates a new FlatXmlDataSet with the given $xmlFile. (absolute path.)
-     *
-     * @param string $xmlFile
-     * @return PHPUnit\DbUnit\DataSet\FlatXmlDataSet
+     * @deprecated since Moodle 3.10 - See MDL-67673 and MDL-64600 for more info.
      */
-    protected function createFlatXMLDataSet($xmlFile) {
-        return new PHPUnit\DbUnit\DataSet\FlatXmlDataSet($xmlFile);
+    protected function createXMLDataSet() {
+        throw new coding_exception(__FUNCTION__ . '() is deprecated. Please use dataset_from_files() instead.');
     }
 
     /**
-     * Creates a new XMLDataSet with the given $xmlFile. (absolute path.)
-     *
-     * @param string $xmlFile
-     * @return PHPUnit\DbUnit\DataSet\XmlDataSet
+     * @deprecated since Moodle 3.10 - See MDL-67673 and MDL-64600 for more info.
      */
-    protected function createXMLDataSet($xmlFile) {
-        return new PHPUnit\DbUnit\DataSet\XmlDataSet($xmlFile);
+    protected function createCsvDataSet() {
+        throw new coding_exception(__FUNCTION__ . '() is deprecated. Please use dataset_from_files() instead.');
     }
 
     /**
-     * Creates a new CsvDataSet from the given array of csv files. (absolute paths.)
-     *
-     * @param array $files array tablename=>cvsfile
-     * @param string $delimiter
-     * @param string $enclosure
-     * @param string $escape
-     * @return PHPUnit\DbUnit\DataSet\CsvDataSet
+     * @deprecated since Moodle 3.10 - See MDL-67673 and MDL-64600 for more info.
      */
-    protected function createCsvDataSet($files, $delimiter = ',', $enclosure = '"', $escape = '"') {
-        $dataSet = new PHPUnit\DbUnit\DataSet\CsvDataSet($delimiter, $enclosure, $escape);
-        foreach($files as $table=>$file) {
-            $dataSet->addTable($table, $file);
-        }
-        return $dataSet;
+    protected function createArrayDataSet() {
+        throw new coding_exception(__FUNCTION__ . '() is deprecated. Please use dataset_from_array() instead.');
     }
 
     /**
-     * Creates new ArrayDataSet from given array
-     *
-     * @param array $data array of tables, first row in each table is columns
-     * @return phpunit_ArrayDataSet
+     * @deprecated since Moodle 3.10 - See MDL-67673 and MDL-64600 for more info.
      */
-    protected function createArrayDataSet(array $data) {
-        return new phpunit_ArrayDataSet($data);
+    protected function loadDataSet() {
+        throw new coding_exception(__FUNCTION__ . '() is deprecated. Please use dataset->to_database() instead.');
     }
 
     /**
-     * Load date into moodle database tables from standard PHPUnit data set.
+     * Creates a new dataset from CVS/XML files.
      *
-     * Note: it is usually better to use data generators
+     * This method accepts an array of full paths to CSV or XML files to be loaded
+     * into the dataset. For CSV files, the name of the table which the file belongs
+     * to needs to be specified. Example:
      *
-     * @param PHPUnit\DbUnit\DataSet\IDataSet $dataset
-     * @return void
+     *   $fullpaths = [
+     *       '/path/to/users.xml',
+     *       'course' => '/path/to/courses.csv',
+     *   ];
+     *
+     * @since Moodle 3.10
+     *
+     * @param array $files full paths to CSV or XML files to load.
+     * @return phpunit_dataset
      */
-    protected function loadDataSet(PHPUnit\DbUnit\DataSet\IDataSet $dataset) {
-        global $DB;
+    protected function dataset_from_files(array $files) {
+        // We ignore $delimiter, $enclosure and $escape, use the default ones in your fixtures.
+        $dataset = new phpunit_dataset();
+        $dataset->from_files($files);
+        return $dataset;
+    }
 
-        $structure = phpunit_util::get_tablestructure();
+    /**
+     * Creates a new dataset from string (CSV or XML).
+     *
+     * @since Moodle 3.10
+     *
+     * @param string $content contents (CSV or XML) to load.
+     * @param string $type format of the content to be loaded (csv or xml).
+     * @param string $table name of the table which the file belongs to (only for CSV files).
+     * @return phpunit_dataset
+     */
+    protected function dataset_from_string(string $content, string $type, ?string $table = null) {
+        $dataset = new phpunit_dataset();
+        $dataset->from_string($content, $type, $table);
+        return $dataset;
+    }
 
-        foreach($dataset->getTableNames() as $tablename) {
-            $table = $dataset->getTable($tablename);
-            $metadata = $dataset->getTableMetaData($tablename);
-            $columns = $metadata->getColumns();
-
-            $doimport = false;
-            if (isset($structure[$tablename]['id']) and $structure[$tablename]['id']->auto_increment) {
-                $doimport = in_array('id', $columns);
-            }
-
-            for($r=0; $r<$table->getRowCount(); $r++) {
-                $record = $table->getRow($r);
-                if ($doimport) {
-                    $DB->import_record($tablename, $record);
-                } else {
-                    $DB->insert_record($tablename, $record);
-                }
-            }
-            if ($doimport) {
-                $DB->get_manager()->reset_sequence(new xmldb_table($tablename));
-            }
-        }
+    /**
+     * Creates a new dataset from PHP array.
+     *
+     * @since Moodle 3.10
+     *
+     * @param array $data array of tables, see {@see phpunit_dataset::from_array()} for supported formats.
+     * @return phpunit_dataset
+     */
+    protected function dataset_from_array(array $data) {
+        $dataset = new phpunit_dataset();
+        $dataset->from_array($data);
+        return $dataset;
     }
 
     /**
@@ -416,9 +431,6 @@ abstract class advanced_testcase extends base_testcase {
         // Test event methods should not use event->context.
         $event->get_url();
         $event->get_description();
-        $event->get_legacy_eventname();
-        phpunit_event_mock::testable_get_legacy_eventdata($event);
-        phpunit_event_mock::testable_get_legacy_logdata($event);
 
         // Restore event->context.
         phpunit_event_mock::testable_set_event_context($event, $eventcontext);
@@ -488,17 +500,24 @@ abstract class advanced_testcase extends base_testcase {
     }
 
     /**
-     * Cleanup after all tests are executed.
+     * Override hook callbacks.
      *
-     * Note: do not forget to call this if overridden...
-     *
-     * @static
+     * @param string $hookname
+     * @param callable $callback
      * @return void
      */
-    public static function tearDownAfterClass() {
-        self::resetAllData();
+    public function redirectHook(string $hookname, callable $callback): void {
+        \core\hook\manager::get_instance()->phpunit_redirect_hook($hookname, $callback);
     }
 
+    /**
+     * Remove all hook overrides.
+     *
+     * @return void
+     */
+    public function stopHookRedirections(): void {
+        \core\hook\manager::get_instance()->phpunit_stop_redirections();
+    }
 
     /**
      * Reset all database tables, restore global state and clear caches and optionally purge dataroot dir.
@@ -661,6 +680,74 @@ abstract class advanced_testcase extends base_testcase {
         $starttime = time();
         while (time() == $starttime) {
             usleep(50000);
+        }
+    }
+
+    /**
+     * Run adhoc tasks, optionally matching the specified classname.
+     *
+     * @param   string  $matchclass The name of the class to match on.
+     * @param   int     $matchuserid The userid to match.
+     */
+    protected function runAdhocTasks($matchclass = '', $matchuserid = null) {
+        global $DB;
+
+        $params = [];
+        if (!empty($matchclass)) {
+            if (strpos($matchclass, '\\') !== 0) {
+                $matchclass = '\\' . $matchclass;
+            }
+            $params['classname'] = $matchclass;
+        }
+
+        if (!empty($matchuserid)) {
+            $params['userid'] = $matchuserid;
+        }
+
+        $lock = $this->createMock(\core\lock\lock::class);
+        $cronlock = $this->createMock(\core\lock\lock::class);
+
+        $tasks = $DB->get_recordset('task_adhoc', $params);
+        foreach ($tasks as $record) {
+            // Note: This is for cron only.
+            // We do not lock the tasks.
+            $task = \core\task\manager::adhoc_task_from_record($record);
+
+            $user = null;
+            if ($userid = $task->get_userid()) {
+                // This task has a userid specified.
+                $user = \core_user::get_user($userid);
+
+                // User found. Check that they are suitable.
+                \core_user::require_active_user($user, true, true);
+            }
+
+            $task->set_lock($lock);
+            if (!$task->is_blocking()) {
+                $cronlock->release();
+            } else {
+                $task->set_cron_lock($cronlock);
+            }
+
+            \core\cron::prepare_core_renderer();
+            \core\cron::setup_user($user);
+
+            $task->execute();
+            \core\task\manager::adhoc_task_complete($task);
+
+            unset($task);
+        }
+        $tasks->close();
+    }
+
+    /**
+     * Run adhoc tasks.
+     */
+    protected function run_all_adhoc_tasks(): void {
+        // Run the adhoc task.
+        while ($task = \core\task\manager::get_next_adhoc_task(time())) {
+            $task->execute();
+            \core\task\manager::adhoc_task_complete($task);
         }
     }
 }

@@ -18,17 +18,20 @@
  * Privacy Subsystem implementation for core_question.
  *
  * @package    core_question
+ * @category   privacy
  * @copyright  2018 Andrew Nicols <andrew@nicols.co.uk>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace core_question\privacy;
 
-use \core_privacy\local\metadata\collection;
-use \core_privacy\local\request\writer;
-use \core_privacy\local\request\transform;
-use \core_privacy\local\request\contextlist;
-use \core_privacy\local\request\approved_contextlist;
+use core_privacy\local\metadata\collection;
+use core_privacy\local\request\approved_contextlist;
+use core_privacy\local\request\approved_userlist;
+use core_privacy\local\request\contextlist;
+use core_privacy\local\request\transform;
+use core_privacy\local\request\userlist;
+use core_privacy\local\request\writer;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -55,7 +58,13 @@ class provider implements
     \core_privacy\local\request\subsystem\provider,
 
     // This is a subsysytem which provides information to plugins.
-    \core_privacy\local\request\subsystem\plugin_provider
+    \core_privacy\local\request\subsystem\plugin_provider,
+
+    // This plugin is capable of determining which users have data within it.
+    \core_privacy\local\request\core_userlist_provider,
+
+    // This plugin is capable of determining which users have data within it for the plugins it provides data to.
+    \core_privacy\local\request\shared_userlist_provider
 {
 
     /**
@@ -117,6 +126,10 @@ class provider implements
         // The 'question_statistics' table contains aggregated statistics about responses.
         // It does not contain any identifiable user data.
 
+        $items->add_database_table('question_bank_entries', [
+            'ownerid' => 'privacy:metadata:database:question_bank_entries:ownerid',
+        ], 'privacy:metadata:database:question_bank_entries');
+
         // The question subsystem makes use of the qtype, qformat, and qbehaviour plugin types.
         $items->add_plugintype_link('qtype', [], 'privacy:metadata:link:qtype');
         $items->add_plugintype_link('qformat', [], 'privacy:metadata:link:qformat');
@@ -156,7 +169,7 @@ class provider implements
         ]);
 
         foreach ($quba->get_attempt_iterator() as $qa) {
-            $question = $qa->get_question();
+            $question = $qa->get_question(false);
             $slotno = $qa->get_slot();
             $questionnocontext = array_merge($questionscontext, [$slotno]);
 
@@ -188,7 +201,6 @@ class provider implements
                 }
 
                 if ($options->manualcomment != \question_display_options::HIDDEN) {
-                    $behaviour = $qa->get_behaviour();
                     if ($qa->has_manual_comment()) {
                         // Note - the export of the step data will ensure that the files are exported.
                         // No need to do it again here.
@@ -202,7 +214,7 @@ class provider implements
                                 $step->get_id(),
                                 $comment
                             );
-                        $data->comment = $behaviour->format_comment($comment, $commentformat);
+                        $data->comment = $qa->get_behaviour(false)->format_comment($comment, $commentformat);
                     }
                 }
 
@@ -263,7 +275,6 @@ class provider implements
                 }
 
                 if ($step->has_behaviour_var('comment')) {
-                    $behaviour = $qa->get_behaviour();
                     $comment = $step->get_behaviour_var('comment');
                     $commentformat = $step->get_behaviour_var('commentformat');
 
@@ -291,7 +302,7 @@ class provider implements
                             $step->get_id()
                         );
 
-                    $stepdata->comment = $behaviour->format_comment($comment, $commentformat);
+                    $stepdata->comment = $qa->get_behaviour(false)->format_comment($comment, $commentformat);
                 }
 
                 // Export any response files associated with this step.
@@ -329,12 +340,13 @@ class provider implements
 
         // A user may have created or updated a question.
         // Questions are linked against a question category, which has a contextid field.
-        $sql = "SELECT cat.contextid
+        $sql = "SELECT qc.contextid
                   FROM {question} q
-            INNER JOIN {question_categories} cat ON cat.id = q.category
-                 WHERE
-                    q.createdby = :useridcreated OR
-                   q.modifiedby = :useridmodified";
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                  JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
+                 WHERE q.createdby = :useridcreated
+                       OR q.modifiedby = :useridmodified";
         $params = [
             'useridcreated' => $userid,
             'useridmodified' => $userid,
@@ -342,6 +354,31 @@ class provider implements
         $contextlist->add_from_sql($sql, $params);
 
         return $contextlist;
+    }
+
+    /**
+     * Get the list of users who have data within a context.
+     *
+     * @param   userlist    $userlist   The userlist containing the list of users who have data in this context/plugin combination.
+     */
+    public static function get_users_in_context(userlist $userlist) {
+        $context = $userlist->get_context();
+
+        // A user may have created or updated a question.
+        // Questions are linked against a question category, which has a contextid field.
+        $sql = "SELECT q.createdby, q.modifiedby
+                  FROM {question} q
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                  JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
+                 WHERE qc.contextid = :contextid";
+
+        $params = [
+            'contextid' => $context->id
+        ];
+
+        $userlist->add_from_sql('createdby', $sql, $params);
+        $userlist->add_from_sql('modifiedby', $sql, $params);
     }
 
     /**
@@ -365,6 +402,32 @@ class provider implements
                 "{$prefix}_stepuserid" => $userid,
                 "{$prefix}_usagecomponent" => $component,
             ]);
+    }
+
+    /**
+     * Add the list of users who have rated in the specified constraints.
+     *
+     * @param   userlist    $userlist   The userlist to add the users to.
+     * @param   string      $prefix     A unique prefix to add to the table alias to avoid interference with your own sql.
+     * @param   string      $insql      The SQL to use in a sub-select for the question_usages.id query.
+     * @param   array       $params     The params required for the insql.
+     * @param   int|null    $contextid  An optional context id, in case the $sql query is not already filtered by that.
+     */
+    public static function get_users_in_context_from_sql(userlist $userlist, string $prefix, string $insql, $params,
+            int $contextid = null) {
+
+        $sql = "SELECT {$prefix}_qas.userid
+                  FROM {question_attempt_steps} {$prefix}_qas
+                  JOIN {question_attempts} {$prefix}_qa ON {$prefix}_qas.questionattemptid = {$prefix}_qa.id
+                  JOIN {question_usages} {$prefix}_qu ON {$prefix}_qa.questionusageid = {$prefix}_qu.id
+                 WHERE {$prefix}_qu.id IN ({$insql})";
+
+        if ($contextid) {
+            $sql .= " AND {$prefix}_qu.contextid = :{$prefix}_contextid";
+            $params["{$prefix}_contextid"] = $contextid;
+        }
+
+        $userlist->add_from_sql('userid', $sql, $params);
     }
 
     /**
@@ -430,7 +493,8 @@ class provider implements
     /**
      * Delete all data for all users in the specified context.
      *
-     * @param   context                 $context   The specific context to delete data for.
+     * @param \context $context The specific context to delete data for.
+     * @throws \dml_exception
      */
     public static function delete_data_for_all_users_in_context(\context $context) {
         global $DB;
@@ -439,17 +503,19 @@ class provider implements
         // user. They are still exported in the list of a users data, but they are not removed.
         // The userid is instead anonymised.
 
-        $DB->set_field_select('question', 'createdby', 0,
-            'category IN (SELECT id FROM {question_categories} WHERE contextid = :contextid)',
-            [
-                'contextid' => $context->id,
-            ]);
+        $sql = 'SELECT q.*
+                  FROM {question} q
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                  JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
+                 WHERE qc.contextid = ?';
 
-        $DB->set_field_select('question', 'modifiedby', 0,
-            'category IN (SELECT id FROM {question_categories} WHERE contextid = :contextid)',
-            [
-                'contextid' => $context->id,
-            ]);
+        $questions = $DB->get_records_sql($sql, [$context->id]);
+        foreach ($questions as $question) {
+            $question->createdby = 0;
+            $question->modifiedby = 0;
+            $DB->update_record('question', $question);
+        }
     }
 
     /**
@@ -466,14 +532,84 @@ class provider implements
 
         list($contextsql, $contextparams) = $DB->get_in_or_equal($contextlist->get_contextids(), SQL_PARAMS_NAMED);
         $contextparams['createdby'] = $contextlist->get_user()->id;
-        $DB->set_field_select('question', 'createdby', 0, "
-                category IN (SELECT id FROM {question_categories} WHERE contextid {$contextsql})
-            AND createdby = :createdby", $contextparams);
+        $questiondata = $DB->get_records_sql(
+            "SELECT q.*
+               FROM {question} q
+               JOIN {question_versions} qv ON qv.questionid = q.id
+               JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+               JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
+              WHERE qc.contextid {$contextsql}
+                    AND q.createdby = :createdby", $contextparams);
+
+        foreach ($questiondata as $question) {
+            $question->createdby = 0;
+            $DB->update_record('question', $question);
+        }
 
         list($contextsql, $contextparams) = $DB->get_in_or_equal($contextlist->get_contextids(), SQL_PARAMS_NAMED);
         $contextparams['modifiedby'] = $contextlist->get_user()->id;
-        $DB->set_field_select('question', 'modifiedby', 0, "
-                category IN (SELECT id FROM {question_categories} WHERE contextid {$contextsql})
-            AND modifiedby = :modifiedby", $contextparams);
+        $questiondata = $DB->get_records_sql(
+            "SELECT q.*
+               FROM {question} q
+               JOIN {question_versions} qv ON qv.questionid = q.id
+               JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+               JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
+              WHERE qc.contextid {$contextsql}
+                    AND q.modifiedby = :modifiedby", $contextparams);
+
+        foreach ($questiondata as $question) {
+            $question->modifiedby = 0;
+            $DB->update_record('question', $question);
+        }
+
+    }
+
+    /**
+     * Delete multiple users within a single context.
+     *
+     * @param   approved_userlist   $userlist   The approved context and user information to delete information for.
+     */
+    public static function delete_data_for_users(approved_userlist $userlist) {
+        global $DB;
+
+        // Questions are considered to be 'owned' by the institution, even if they were originally written by a specific
+        // user. They are still exported in the list of a users data, but they are not removed.
+        // The userid is instead anonymised.
+
+        $context = $userlist->get_context();
+        $userids = $userlist->get_userids();
+
+        list($createdbysql, $createdbyparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED);
+        list($modifiedbysql, $modifiedbyparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED);
+
+        $params = ['contextid' => $context->id];
+
+        $questiondata = $DB->get_records_sql(
+            "SELECT q.*
+               FROM {question} q
+               JOIN {question_versions} qv ON qv.questionid = q.id
+               JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+               JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
+              WHERE qc.contextid = :contextid
+                    AND q.createdby {$createdbysql}", $params + $createdbyparams);
+
+        foreach ($questiondata as $question) {
+            $question->createdby = 0;
+            $DB->update_record('question', $question);
+        }
+
+        $questiondata = $DB->get_records_sql(
+            "SELECT q.*
+               FROM {question} q
+               JOIN {question_versions} qv ON qv.questionid = q.id
+               JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+               JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
+              WHERE qc.contextid = :contextid
+                    AND q.modifiedby {$modifiedbysql}", $params + $modifiedbyparams);
+
+        foreach ($questiondata as $question) {
+            $question->modifiedby = 0;
+            $DB->update_record('question', $question);
+        }
     }
 }

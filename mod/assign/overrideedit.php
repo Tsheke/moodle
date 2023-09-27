@@ -33,6 +33,8 @@ $cmid = optional_param('cmid', 0, PARAM_INT);
 $overrideid = optional_param('id', 0, PARAM_INT);
 $action = optional_param('action', null, PARAM_ALPHA);
 $reset = optional_param('reset', false, PARAM_BOOL);
+$userid = optional_param('userid', null, PARAM_INT);
+$userchange = optional_param('userchange', false, PARAM_BOOL);
 
 $pagetitle = get_string('editoverride', 'assign');
 
@@ -40,7 +42,7 @@ $override = null;
 if ($overrideid) {
 
     if (! $override = $DB->get_record('assign_overrides', array('id' => $overrideid))) {
-        print_error('invalidoverrideid', 'assign');
+        throw new \moodle_exception('invalidoverrideid', 'assign');
     }
 
     list($course, $cm) = get_course_and_cm_from_instance($override->assignid, 'assign');
@@ -49,7 +51,7 @@ if ($overrideid) {
     list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'assign');
 
 } else {
-    print_error('invalidcoursemodule');
+    throw new \moodle_exception('invalidcoursemodule');
 }
 
 $url = new moodle_url('/mod/assign/overrideedit.php');
@@ -68,7 +70,9 @@ require_login($course, false, $cm);
 
 $context = context_module::instance($cm->id);
 $assign = new assign($context, $cm, $course);
-$assigninstance = $assign->get_instance();
+$assigninstance = $assign->get_instance($userid);
+$shouldadduserid = $userid && !empty($course->relativedatesmode);
+$shouldresetform = optional_param('resetbutton', 0, PARAM_ALPHA) || ($userchange && $action !== 'duplicate');
 
 // Add or edit an override.
 require_capability('mod/assign:manageoverrides', $context);
@@ -76,13 +80,23 @@ require_capability('mod/assign:manageoverrides', $context);
 if ($overrideid) {
     // Editing an override.
     $data = clone $override;
+
+    if ($override->groupid) {
+        if (!groups_group_visible($override->groupid, $course, $cm)) {
+            throw new \moodle_exception('invalidoverrideid', 'assign');
+        }
+    } else {
+        if (!groups_user_groups_visible($course, $override->userid, $cm)) {
+            throw new \moodle_exception('invalidoverrideid', 'assign');
+        }
+    }
 } else {
     // Creating a new override.
     $data = new stdClass();
 }
 
 // Merge assign defaults with data.
-$keys = array('duedate', 'cutoffdate', 'allowsubmissionsfromdate');
+$keys = array('duedate', 'cutoffdate', 'allowsubmissionsfromdate', 'timelimit');
 foreach ($keys as $key) {
     if (!isset($data->{$key}) || $reset) {
         $data->{$key} = $assigninstance->{$key};
@@ -101,23 +115,30 @@ if ($action === 'duplicate') {
     $pagetitle = get_string('duplicateoverride', 'assign');
 }
 
+if ($shouldadduserid) {
+    $data->userid = $userid;
+}
+
 $overridelisturl = new moodle_url('/mod/assign/overrides.php', array('cmid' => $cm->id));
 if (!$groupmode) {
     $overridelisturl->param('mode', 'user');
 }
 
 // Setup the form.
-$mform = new assign_override_form($url, $cm, $assign, $context, $groupmode, $override);
+$mform = new assign_override_form($url, $cm, $assign, $context, $groupmode, $override, $userid);
 $mform->set_data($data);
 
 if ($mform->is_cancelled()) {
     redirect($overridelisturl);
 
-} else if (optional_param('resetbutton', 0, PARAM_ALPHA)) {
+} else if ($shouldresetform) {
     $url->param('reset', true);
+    if ($shouldadduserid) {
+        $url->param('userid', $userid);
+    }
     redirect($url);
 
-} else if ($fromform = $mform->get_data()) {
+} else if (!$userchange && $fromform = $mform->get_data()) {
     // Process the data.
     $fromform->assignid = $assigninstance->id;
 
@@ -166,6 +187,8 @@ if ($mform->is_cancelled()) {
     if (!empty($override->id)) {
         $fromform->id = $override->id;
         $DB->update_record('assign_overrides', $fromform);
+        $cachekey = $groupmode ? "{$fromform->assignid}_g_{$fromform->groupid}" : "{$fromform->assignid}_u_{$fromform->userid}";
+        cache::make('mod_assign', 'overrides')->delete($cachekey);
 
         // Determine which override updated event to fire.
         $params['objectid'] = $override->id;
@@ -198,6 +221,8 @@ if ($mform->is_cancelled()) {
             $DB->update_record('assign_overrides', $fromform);
             reorder_group_overrides($assigninstance->id);
         }
+        $cachekey = $groupmode ? "{$fromform->assignid}_g_{$fromform->groupid}" : "{$fromform->assignid}_u_{$fromform->userid}";
+        cache::make('mod_assign', 'overrides')->delete($cachekey);
 
         // Determine which override created event to fire.
         $params['objectid'] = $fromform->id;
@@ -230,10 +255,17 @@ if ($mform->is_cancelled()) {
 // Print the form.
 $PAGE->navbar->add($pagetitle);
 $PAGE->set_pagelayout('admin');
+$PAGE->add_body_class('limitedwidth');
 $PAGE->set_title($pagetitle);
 $PAGE->set_heading($course->fullname);
+$PAGE->set_secondary_active_tab('mod_assign_useroverrides');
+$activityheader = $PAGE->activityheader;
+$activityheader->set_attrs([
+    'description' => '',
+    'hidecompletion' => true,
+    'title' => $activityheader->is_title_allowed() ? format_string($assigninstance->name, true, ['context' => $context]) : ""
+]);
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($assigninstance->name, true, array('context' => $context)));
 
 $mform->display();
 

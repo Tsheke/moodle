@@ -23,6 +23,9 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @since      Moodle 3.0
  */
+namespace mod_scorm;
+
+use mod_scorm_get_completion_active_rule_descriptions;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -40,12 +43,36 @@ require_once($CFG->dirroot . '/mod/scorm/lib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @since      Moodle 3.0
  */
-class mod_scorm_lib_testcase extends externallib_advanced_testcase {
+class lib_test extends \advanced_testcase {
+
+    /** @var \stdClass course record. */
+    protected \stdClass $course;
+
+    /** @var \stdClass activity record. */
+    protected \stdClass $scorm;
+
+    /** @var \core\context\module context instance. */
+    protected \core\context\module $context;
+
+    /** @var \stdClass */
+    protected \stdClass $cm;
+
+    /** @var \stdClass user record. */
+    protected \stdClass $student;
+
+    /** @var \stdClass user record. */
+    protected \stdClass $teacher;
+
+    /** @var \stdClass a fieldset object, false or exception if error not found. */
+    protected \stdClass $studentrole;
+
+    /** @var \stdClass a fieldset object, false or exception if error not found. */
+    protected \stdClass $teacherrole;
 
     /**
      * Set up for every test
      */
-    public function setUp() {
+    public function setUp(): void {
         global $DB;
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -53,7 +80,7 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
         // Setup test data.
         $this->course = $this->getDataGenerator()->create_course();
         $this->scorm = $this->getDataGenerator()->create_module('scorm', array('course' => $this->course->id));
-        $this->context = context_module::instance($this->scorm->cmid);
+        $this->context = \context_module::instance($this->scorm->cmid);
         $this->cm = get_coursemodule_from_instance('scorm', $this->scorm->id);
 
         // Create users.
@@ -88,7 +115,7 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
         $this->assertEquals('on', $newattempt);
 
         // Now do the same with a SCORM 2004 package.
-        $record = new stdClass();
+        $record = new \stdClass();
         $record->course = $this->course->id;
         $record->packagefilepath = $CFG->dirroot.'/mod/scorm/tests/packages/RuntimeBasicCalls_SCORM20043rdEdition.zip';
         $scorm13 = $this->getDataGenerator()->create_module('scorm', $record);
@@ -140,6 +167,27 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
      */
     public function test_scorm_check_and_require_available() {
         global $DB;
+
+        $this->setAdminUser();
+
+        // User override case.
+        $this->scorm->timeopen = time() + DAYSECS;
+        $this->scorm->timeclose = time() - DAYSECS;
+        list($status, $warnings) = scorm_get_availability_status($this->scorm, true, $this->context);
+        $this->assertEquals(true, $status);
+        $this->assertCount(0, $warnings);
+
+        // Now check with a student.
+        list($status, $warnings) = scorm_get_availability_status($this->scorm, true, $this->context, $this->student->id);
+        $this->assertEquals(false, $status);
+        $this->assertCount(2, $warnings);
+        $this->assertArrayHasKey('notopenyet', $warnings);
+        $this->assertArrayHasKey('expired', $warnings);
+        $this->assertEquals(userdate($this->scorm->timeopen), $warnings['notopenyet']);
+        $this->assertEquals(userdate($this->scorm->timeclose), $warnings['expired']);
+
+        // Reset the scorm's times.
+        $this->scorm->timeopen = $this->scorm->timeclose = 0;
 
         // Set to the student user.
         self::setUser($this->student);
@@ -323,6 +371,39 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
         $this->assertFalse($actionevent->is_actionable());
     }
 
+    public function test_scorm_core_calendar_provide_event_action_with_different_user_as_admin() {
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a scorm activity.
+        $scorm = $this->getDataGenerator()->create_module('scorm', array('course' => $course->id,
+            'timeopen' => time() + DAYSECS));
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $scorm->id, SCORM_EVENT_TYPE_OPEN);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event override with a passed in user.
+        $actionevent = mod_scorm_core_calendar_provide_event_action($event, $factory, $this->student->id);
+        $actionevent2 = mod_scorm_core_calendar_provide_event_action($event, $factory);
+
+        // Only students see scorm events.
+        $this->assertNull($actionevent2);
+
+        // Confirm the event was decorated.
+        $this->assertInstanceOf('\core_calendar\local\event\value_objects\action', $actionevent);
+        $this->assertEquals(get_string('enter', 'scorm'), $actionevent->get_name());
+        $this->assertInstanceOf('moodle_url', $actionevent->get_url());
+        $this->assertEquals(1, $actionevent->get_item_count());
+        $this->assertFalse($actionevent->is_actionable());
+    }
+
     public function test_scorm_core_calendar_provide_event_action_no_time_specified() {
         $this->resetAfterTest();
 
@@ -354,6 +435,71 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
         $this->assertTrue($actionevent->is_actionable());
     }
 
+    public function test_scorm_core_calendar_provide_event_action_already_completed() {
+        $this->resetAfterTest();
+        set_config('enablecompletion', 1);
+        $this->setAdminUser();
+
+        // Create the activity.
+        $course = $this->getDataGenerator()->create_course(array('enablecompletion' => 1));
+        $scorm = $this->getDataGenerator()->create_module('scorm', array('course' => $course->id),
+            array('completion' => 2, 'completionview' => 1, 'completionexpected' => time() + DAYSECS));
+
+        // Get some additional data.
+        $cm = get_coursemodule_from_instance('scorm', $scorm->id);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $scorm->id,
+            \core_completion\api::COMPLETION_EVENT_TYPE_DATE_COMPLETION_EXPECTED);
+
+        // Mark the activity as completed.
+        $completion = new \completion_info($course);
+        $completion->set_module_viewed($cm);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event.
+        $actionevent = mod_scorm_core_calendar_provide_event_action($event, $factory);
+
+        // Ensure result was null.
+        $this->assertNull($actionevent);
+    }
+
+    public function test_scorm_core_calendar_provide_event_action_already_completed_for_user() {
+        $this->resetAfterTest();
+        set_config('enablecompletion', 1);
+        $this->setAdminUser();
+
+        // Create the activity.
+        $course = $this->getDataGenerator()->create_course(array('enablecompletion' => 1));
+        $scorm = $this->getDataGenerator()->create_module('scorm', array('course' => $course->id),
+            array('completion' => 2, 'completionview' => 1, 'completionexpected' => time() + DAYSECS));
+
+        // Enrol a student in the course.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Get some additional data.
+        $cm = get_coursemodule_from_instance('scorm', $scorm->id);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $scorm->id,
+            \core_completion\api::COMPLETION_EVENT_TYPE_DATE_COMPLETION_EXPECTED);
+
+        // Mark the activity as completed for the student.
+        $completion = new \completion_info($course);
+        $completion->set_module_viewed($cm, $student->id);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_scorm_core_calendar_provide_event_action($event, $factory, $student->id);
+
+        // Ensure result was null.
+        $this->assertNull($actionevent);
+    }
+
     /**
      * Creates an action event.
      *
@@ -364,7 +510,7 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
      * @return bool|calendar_event
      */
     private function create_action_event($courseid, $instanceid, $eventtype, $timestart = null) {
-        $event = new stdClass();
+        $event = new \stdClass();
         $event->name = 'Calendar event';
         $event->modulename = 'scorm';
         $event->courseid = $courseid;
@@ -379,7 +525,7 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
             $event->timestart = time();
         }
 
-        return calendar_event::create($event);
+        return \calendar_event::create($event);
     }
 
     /**
@@ -407,13 +553,13 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
             'completionscorerequired' => null,
             'completionstatusallscos' => null
         ]);
-        $cm1 = cm_info::create(get_coursemodule_from_instance('scorm', $scorm1->id));
-        $cm2 = cm_info::create(get_coursemodule_from_instance('scorm', $scorm2->id));
+        $cm1 = \cm_info::create(get_coursemodule_from_instance('scorm', $scorm1->id));
+        $cm2 = \cm_info::create(get_coursemodule_from_instance('scorm', $scorm2->id));
 
         // Data for the stdClass input type.
         // This type of input would occur when checking the default completion rules for an activity type, where we don't have
         // any access to cm_info, rather the input is a stdClass containing completion and customdata attributes, just like cm_info.
-        $moddefaults = new stdClass();
+        $moddefaults = new \stdClass();
         $moddefaults->customdata = ['customcompletionrules' => [
             'completionstatusrequired' => 6,
             'completionscorerequired' => 5,
@@ -438,7 +584,7 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
         $this->assertEquals(mod_scorm_get_completion_active_rule_descriptions($cm1), $activeruledescriptions);
         $this->assertEquals(mod_scorm_get_completion_active_rule_descriptions($cm2), []);
         $this->assertEquals(mod_scorm_get_completion_active_rule_descriptions($moddefaults), $activeruledescriptions);
-        $this->assertEquals(mod_scorm_get_completion_active_rule_descriptions(new stdClass()), []);
+        $this->assertEquals(mod_scorm_get_completion_active_rule_descriptions(new \stdClass()), []);
     }
 
     /**
@@ -735,5 +881,28 @@ class mod_scorm_lib_testcase extends externallib_advanced_testcase {
 
         $this->assertNull($min);
         $this->assertNull($max);
+    }
+
+    /**
+     * A user who does not have capabilities to add events to the calendar should be able to create a SCORM.
+     */
+    public function test_creation_with_no_calendar_capabilities() {
+        $this->resetAfterTest();
+        $course = self::getDataGenerator()->create_course();
+        $context = \context_course::instance($course->id);
+        $user = self::getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $roleid = self::getDataGenerator()->create_role();
+        self::getDataGenerator()->role_assign($roleid, $user->id, $context->id);
+        assign_capability('moodle/calendar:manageentries', CAP_PROHIBIT, $roleid, $context, true);
+        $generator = self::getDataGenerator()->get_plugin_generator('mod_scorm');
+        // Create an instance as a user without the calendar capabilities.
+        $this->setUser($user);
+        $time = time();
+        $params = array(
+            'course' => $course->id,
+            'timeopen' => $time + 200,
+            'timeclose' => $time + 2000,
+        );
+        $generator->create_instance($params);
     }
 }

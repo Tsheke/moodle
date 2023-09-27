@@ -23,6 +23,8 @@
  */
 namespace tool_dataprivacy;
 
+use core_privacy\local\metadata\types\type;
+
 defined('MOODLE_INTERNAL') || die();
 
 /**
@@ -70,11 +72,37 @@ class metadata_registry {
                     $internaldata['compliant'] = false;
                 }
                 // Check to see if we are an external plugin.
-                $componentshortname = explode('_', $component);
+                // Plugin names can contain _ characters, limit to 2 to just remove initial plugintype.
+                $componentshortname = explode('_', $component, 2);
                 $shortname = array_pop($componentshortname);
                 if (isset($contributedplugins[$plugintype][$shortname])) {
                     $internaldata['external'] = true;
                 }
+
+                // Additional interface checks.
+                if (!$manager->is_empty_subsystem($component)) {
+                    $classname = $manager->get_provider_classname_for_component($component);
+                    if (class_exists($classname)) {
+                        $componentclass = new $classname();
+                        // Check if the interface is deprecated.
+                        if ($componentclass instanceof \core_privacy\local\deprecated) {
+                            $internaldata['deprecated'] = true;
+                        }
+
+                        // Check that the core_userlist_provider is implemented for all user data providers.
+                        if ($componentclass instanceof \core_privacy\local\request\core_user_data_provider
+                                && !$componentclass instanceof \core_privacy\local\request\core_userlist_provider) {
+                            $internaldata['userlistnoncompliance'] = true;
+                        }
+
+                        // Check that any type of userlist_provider is implemented for all shared data providers.
+                        if ($componentclass instanceof \core_privacy\local\request\shared_data_provider
+                                && !$componentclass instanceof \core_privacy\local\request\userlist_provider) {
+                            $internaldata['userlistnoncompliance'] = true;
+                        }
+                    }
+                }
+
                 return $internaldata;
             }, $leaves['plugins']);
             $fullyrichtree[$branch]['plugin_type_raw'] = $plugintype;
@@ -88,7 +116,7 @@ class metadata_registry {
     /**
      * Formats the metadata for use with a template.
      *
-     * @param  array $collection The collection associated with the component that we want to expand and format.
+     * @param  type[] $collection The collection associated with the component that we want to expand and format.
      * @param  string $component The component that we are dealing in
      * @param  array $internaldata The array to add the formatted metadata to.
      * @return array The internal data array with the formatted metadata.

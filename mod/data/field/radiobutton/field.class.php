@@ -32,6 +32,26 @@ class data_field_radiobutton extends data_field_base {
      */
     protected static $priority = self::HIGH_PRIORITY;
 
+    public function supports_preview(): bool {
+        return true;
+    }
+
+    public function get_data_content_preview(int $recordid): stdClass {
+        $options = explode("\n", $this->field->param1);
+        $options = array_map('trim', $options);
+        $selected = $options[$recordid % count($options)];
+        return (object)[
+            'id' => 0,
+            'fieldid' => $this->field->id,
+            'recordid' => $recordid,
+            'content' => $selected,
+            'content1' => null,
+            'content2' => null,
+            'content3' => null,
+            'content4' => null,
+        ];
+    }
+
     function display_add_field($recordid = 0, $formdata = null) {
         global $CFG, $DB, $OUTPUT;
 
@@ -68,7 +88,7 @@ class data_field_radiobutton extends data_field_base {
                 continue; // skip empty lines
             }
             $str .= '<input type="radio" id="field_'.$this->field->id.'_'.$i.'" name="field_' . $this->field->id . '" ';
-            $str .= 'value="' . s($radio) . '" class="mod-data-input m-r-1" ';
+            $str .= 'value="' . s($radio) . '" class="mod-data-input mr-1" ';
 
             if ($content == $radio) {
                 // Selected by user.
@@ -103,7 +123,8 @@ class data_field_radiobutton extends data_field_base {
         }
         $return = html_writer::label(get_string('fieldtypelabel', "datafield_" . $this->type),
             'menuf_' . $this->field->id, false, array('class' => 'accesshide'));
-        $return .= html_writer::select($options, 'f_'.$this->field->id, $value, null, array('class' => 'custom-select'));
+        $return .= html_writer::select($options, 'f_'.$this->field->id, $value,
+            array('' => 'choosedots'), array('class' => 'custom-select'));
         return $return;
     }
 
@@ -152,4 +173,3 @@ class data_field_radiobutton extends data_field_base {
         return $configs;
     }
 }
-

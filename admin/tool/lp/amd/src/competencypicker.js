@@ -20,7 +20,7 @@
  * This will receive a object with either a single 'competencyId', or an array in 'competencyIds'
  * depending on the value of multiSelect.
  *
- * @package    tool_lp
+ * @module     tool_lp/competencypicker
  * @copyright  2015 Frédéric Massart - FMCorz.net
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -31,8 +31,10 @@ define(['jquery',
         'core/templates',
         'tool_lp/dialogue',
         'core/str',
-        'tool_lp/tree'],
-        function($, Notification, Ajax, Templates, Dialogue, Str, Tree) {
+        'tool_lp/tree',
+        'core/pending'
+        ],
+        function($, Notification, Ajax, Templates, Dialogue, Str, Tree, Pending) {
 
     /**
      * Competency picker class.
@@ -56,31 +58,31 @@ define(['jquery',
         }
     };
 
-    /** @type {Array} The competencies fetched. */
+    /** @property {Array} The competencies fetched. */
     Picker.prototype._competencies = null;
-    /** @type {Array} The competencies that cannot be picked. */
+    /** @property {Array} The competencies that cannot be picked. */
     Picker.prototype._disallowedCompetencyIDs = null;
-    /** @type {Node} The node we attach the events to. */
+    /** @property {Node} The node we attach the events to. */
     Picker.prototype._eventNode = null;
-    /** @type {Array} The list of frameworks fetched. */
+    /** @property {Array} The list of frameworks fetched. */
     Picker.prototype._frameworks = null;
-    /** @type {Number} The current framework ID. */
+    /** @property {Number} The current framework ID. */
     Picker.prototype._frameworkId = null;
-    /** @type {Number} The page context ID. */
+    /** @property {Number} The page context ID. */
     Picker.prototype._pageContextId = null;
-    /** @type {Number} Relevant contexts inclusion. */
+    /** @property {Number} Relevant contexts inclusion. */
     Picker.prototype._pageContextIncludes = null;
-    /** @type {Dialogue} The reference to the dialogue. */
+    /** @property {Dialogue} The reference to the dialogue. */
     Picker.prototype._popup = null;
-    /** @type {String} The string we filter the competencies with. */
+    /** @property {String} The string we filter the competencies with. */
     Picker.prototype._searchText = '';
-    /** @type {Object} The competency that was selected. */
+    /** @property {Object} The competency that was selected. */
     Picker.prototype._selectedCompetencies = null;
-    /** @type {Boolean} Whether we can browse frameworks or not. */
+    /** @property {Boolean} Whether we can browse frameworks or not. */
     Picker.prototype._singleFramework = false;
-    /** @type {Boolean} Do we allow multi select? */
+    /** @property {Boolean} Do we allow multi select? */
     Picker.prototype._multiSelect = true;
-    /** @type {Boolean} Do we allow to display hidden framework? */
+    /** @property {Boolean} Do we allow to display hidden framework? */
     Picker.prototype._onlyVisible = true;
 
     /**
@@ -157,6 +159,7 @@ define(['jquery',
         // Add listener for add.
         self._find('[data-region="competencylinktree"] [data-action="add"]').click(function(e) {
             e.preventDefault();
+            var pendingPromise = new Pending();
             if (!self._selectedCompetencies.length) {
                 return;
             }
@@ -168,7 +171,10 @@ define(['jquery',
                 self._trigger('save', {competencyId: self._selectedCompetencies[0]});
             }
 
+            // The dialogue here is a YUI dialogue and doesn't support Promises at all.
+            // However, it is typically synchronous so this shoudl suffice.
             self.close();
+            pendingPromise.resolve();
         });
 
         // The list of selected competencies will be modified while looping (because of the listeners above).
@@ -462,6 +468,6 @@ define(['jquery',
         this._eventNode.trigger(type, [data]);
     };
 
-    return /** @alias module:tool_lp/competencypicker */ Picker;
+    return Picker;
 
 });

@@ -18,24 +18,28 @@ Feature: The questions in the question bank can be filtered by tags
       | contextlevel | reference | name           |
       | Course       | C1        | Test questions |
     And the following "questions" exist:
-      | questioncategory | qtype     | name              | user     | questiontext    |
+      | questioncategory | qtype     | name            | user     | questiontext    |
       | Test questions   | essay     | question 1 name | admin    | Question 1 text |
       | Test questions   | essay     | question 2 name | teacher1 | Question 2 text |
-    And I log in as "teacher1"
-    And I am on "Course 1" course homepage
-    And I navigate to "Questions" node in "Course administration > Question bank"
-    And I click on "Edit" "link" in the "question 1 name" "table_row"
+    And I am on the "question 1 name" "core_question > edit" page logged in as "teacher1"
     And I set the following fields to these values:
       | Tags | foo |
     And I press "id_submitbutton"
-    And I click on "Edit" "link" in the "question 2 name" "table_row"
+    And I am on the "question 2 name" "core_question > edit" page
     And I set the following fields to these values:
       | Tags | bar |
     And I press "id_submitbutton"
 
   @javascript
   Scenario: The questions can be filtered by tag
-    When I set the field "Filter by tags..." to "foo"
-    And I press key "13" in the field "Filter by tags..."
+    When I apply question bank filter "Tag" with value "foo"
     Then I should see "question 1 name" in the "categoryquestions" "table"
     And I should not see "question 2 name" in the "categoryquestions" "table"
+
+  @javascript
+  Scenario: Empty condition should not result in exception
+    When I am on the "Course 1" "core_question > course question bank" page
+    And I set the field "Type or select..." in the "Filter 1" "fieldset" to "Test questions"
+    When I click on "Add condition" "button"
+    And I set the field "type" in the "Filter 2" "fieldset" to "Tag"
+    And I click on "Apply filters" "button"

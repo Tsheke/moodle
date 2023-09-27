@@ -23,6 +23,8 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use Psr\Http\Message\StreamInterface;
+
 defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/lib/filestorage/file_progress.php');
@@ -438,6 +440,18 @@ class stored_file {
     }
 
     /**
+     * Get a read-only PSR-7 stream for this file.
+     *
+     * Note: This stream is read-only. If you want to modify the file, create a new file and delete the old one.
+     * The File API creates immutable files.
+     *
+     * @return StreamInterface
+     */
+    public function get_psr_stream(): StreamInterface {
+        return $this->filesystem->get_psr_stream($this);
+    }
+
+    /**
      * Dumps file content to page.
      */
     public function readfile() {
@@ -494,6 +508,27 @@ class stored_file {
      */
     public function list_files(file_packer $packer) {
         return $this->filesystem->list_files($this, $packer);
+    }
+
+    /**
+     * Returns the total size (in bytes) of the contents of an archive.
+     *
+     * @param file_packer $packer file packer instance
+     * @return int|null total size in bytes
+     */
+    public function get_total_content_size(file_packer $packer): ?int {
+        // Fetch the contents of the archive.
+        $files = $this->list_files($packer);
+
+        // Early return if the value of $files is not of type array.
+        // This can happen when the utility class is unable to open or read the contents of the archive.
+        if (!is_array($files)) {
+            return null;
+        }
+
+        return array_reduce($files, function ($contentsize, $file) {
+            return $contentsize + $file->size;
+        }, 0);
     }
 
     /**
@@ -1106,6 +1141,9 @@ class stored_file {
 
         // Create a new image from the file.
         $original = @imagecreatefromstring($content);
+        if (empty($original)) {
+            return false;
+        }
 
         // Generate the resized image.
         return resize_image_from_image($original, $imageinfo, $width, $height);
@@ -1129,5 +1167,48 @@ class stored_file {
      */
     public function compare_to_string($content) {
         return $this->get_contenthash() === file_storage::hash_from_string($content);
+    }
+
+    /**
+     * Generate a rotated image for this stored_file based on exif information.
+     *
+     * @return array|false False when a problem occurs, else the image data and image size.
+     * @since Moodle 3.8
+     */
+    public function rotate_image() {
+        $content = $this->get_content();
+        $mimetype = $this->get_mimetype();
+
+        if ($mimetype === "image/jpeg" && function_exists("exif_read_data")) {
+            $exif = @exif_read_data("data://image/jpeg;base64," . base64_encode($content));
+            if (isset($exif['ExifImageWidth']) && isset($exif['ExifImageLength']) && isset($exif['Orientation'])) {
+                $rotation = [
+                    3 => -180,
+                    6 => -90,
+                    8 => -270,
+                ];
+                $orientation = $exif['Orientation'];
+                if ($orientation !== 1) {
+                    $source = @imagecreatefromstring($content);
+                    $data = @imagerotate($source, $rotation[$orientation], 0);
+                    if (!empty($data)) {
+                        if ($orientation == 1 || $orientation == 3) {
+                            $size = [
+                                'width' => $exif["ExifImageWidth"],
+                                'height' => $exif["ExifImageLength"],
+                            ];
+                        } else {
+                            $size = [
+                                'height' => $exif["ExifImageWidth"],
+                                'width' => $exif["ExifImageLength"],
+                            ];
+                        }
+                        imagedestroy($source);
+                        return [$data, $size];
+                    }
+                }
+            }
+        }
+        return [false, false];
     }
 }

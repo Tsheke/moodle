@@ -136,6 +136,25 @@ function blog_remove_associations_for_course($courseid) {
 }
 
 /**
+ * Remove module associated blogs and blog tag instances.
+ *
+ * @param  int $modcontextid Module context ID.
+ */
+function blog_remove_associations_for_module($modcontextid) {
+    global $DB;
+
+    if (!empty($assocblogids = $DB->get_fieldset_select('blog_association', 'blogid',
+        'contextid = :contextid', ['contextid' => $modcontextid]))) {
+        list($sql, $params) = $DB->get_in_or_equal($assocblogids, SQL_PARAMS_NAMED);
+
+        $DB->delete_records_select('tag_instance', "itemid $sql", $params);
+        $DB->delete_records_select('post', "id $sql AND module = :module",
+            array_merge($params, ['module' => 'blog']));
+        $DB->delete_records('blog_association', ['contextid' => $modcontextid]);
+    }
+}
+
+/**
  * Given a record in the {blog_external} table, checks the blog's URL
  * for new entries not yet copied into Moodle.
  * Also attempts to identify and remove deleted blog entries
@@ -609,20 +628,29 @@ function blog_get_options_for_module($module, $user=null) {
  * It uses the current URL to build these variables.
  * A number of mutually exclusive use cases are used to structure this function.
  *
+ * @param  int $courseid   course id the the blog is associated to (can be null).
+ * @param  int $groupid    group id to filter blogs I can see (can be null)
+ * @param  int $userid     blog author id (can be null)
+ * @param  int $tagid      tag id to filter (can be null)
+ * @param  string $tag     tag name to filter (can be null)
+ * @param  int $modid      module id the blog is associated to (can be null).
+ * @param  int $entryid    blog entry id to filter(can be null)
+ * @param  string $search  string to search (can be null)
  * @return array
  */
-function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=null) {
+function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=null, $tag=null, $modid=null, $entryid=null,
+        $search = null) {
     global $CFG, $PAGE, $DB, $USER;
 
     $id       = optional_param('id', null, PARAM_INT);
-    $tag      = optional_param('tag', null, PARAM_NOTAGS);
+    $tag      = optional_param('tag', $tag, PARAM_NOTAGS);
     $tagid    = optional_param('tagid', $tagid, PARAM_INT);
     $userid   = optional_param('userid', $userid, PARAM_INT);
-    $modid    = optional_param('modid', null, PARAM_INT);
-    $entryid  = optional_param('entryid', null, PARAM_INT);
+    $modid    = optional_param('modid', $modid, PARAM_INT);
+    $entryid  = optional_param('entryid', $entryid, PARAM_INT);
     $groupid  = optional_param('groupid', $groupid, PARAM_INT);
     $courseid = optional_param('courseid', $courseid, PARAM_INT);
-    $search   = optional_param('search', null, PARAM_RAW);
+    $search   = optional_param('search', $search, PARAM_RAW);
     $action   = optional_param('action', null, PARAM_ALPHA);
     $confirm  = optional_param('confirm', false, PARAM_BOOL);
 
@@ -688,9 +716,10 @@ function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=nu
     // Note: if action is set to 'add' or 'edit', we do this at the end.
     if (empty($entryid) && empty($modid) && empty($courseid) && empty($userid) && !in_array($action, array('edit', 'add'))) {
         $PAGE->navbar->add($strblogentries, $blogurl);
-        $PAGE->set_title($site->fullname);
+        $strsiteblog = get_string('siteblogheading', 'blog');
+        $PAGE->set_title($strsiteblog);
         $PAGE->set_heading($site->fullname);
-        $headers['heading'] = get_string('siteblogheading', 'blog');
+        $headers['heading'] = $strsiteblog;
     }
 
     // Case 2: only entryid is requested, ignore all other filters. courseid is used to give more contextual information.
@@ -714,9 +743,10 @@ function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=nu
 
         $blogurl->remove_params('userid');
         $PAGE->navbar->add($entry->subject, $blogurl);
-        $PAGE->set_title("$shortname: " . fullname($user) . ": $entry->subject");
+        $blogentryby = get_string('blogentrybyuser', 'blog', fullname($user));
+        $PAGE->set_title($entry->subject . moodle_page::TITLE_SEPARATOR . $blogentryby);
         $PAGE->set_heading("$shortname: " . fullname($user) . ": $entry->subject");
-        $headers['heading'] = get_string('blogentrybyuser', 'blog', fullname($user));
+        $headers['heading'] = $blogentryby;
 
         // We ignore tag and search params.
         if (empty($action) || !$CFG->useblogassociations) {
@@ -730,7 +760,7 @@ function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=nu
 
         $shortname = format_string($site->shortname, true, array('context' => context_course::instance(SITEID)));
         $blogurl->param('userid', $userid);
-        $PAGE->set_title("$shortname: " . fullname($user) . ": " . get_string('blog', 'blog'));
+        $PAGE->set_title(fullname($user) . ": " . get_string('blog', 'blog'));
         $PAGE->set_heading("$shortname: " . fullname($user) . ": " . get_string('blog', 'blog'));
         $headers['heading'] = get_string('userblog', 'blog', fullname($user));
         $headers['strview'] = get_string('viewuserentries', 'blog', fullname($user));
@@ -738,9 +768,10 @@ function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=nu
     } else if (!$CFG->useblogassociations && empty($userid) && !in_array($action, array('edit', 'add'))) {
         // Case 4: No blog associations, no userid.
 
-        $PAGE->set_title($site->fullname);
+        $strsiteblog = get_string('siteblogheading', 'blog');
+        $PAGE->set_title($strsiteblog);
         $PAGE->set_heading($site->fullname);
-        $headers['heading'] = get_string('siteblogheading', 'blog');
+        $headers['heading'] = $strsiteblog;
     } else if (!empty($userid) && !empty($modid) && empty($entryid)) {
         // Case 5: Blog entries associated with an activity by a specific user (courseid ignored).
 
@@ -753,7 +784,7 @@ function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=nu
         $PAGE->navbar->add(fullname($user), "$CFG->wwwroot/user/view.php?id=$user->id");
         $PAGE->navbar->add($strblogentries, $blogurl);
 
-        $PAGE->set_title("$shortname: $cm->name: " . fullname($user) . ': ' . get_string('blogentries', 'blog'));
+        $PAGE->set_title(fullname($user) . ': ' . get_string('blogentries', 'blog') . moodle_page::TITLE_SEPARATOR . $cm->name);
         $PAGE->set_heading("$shortname: $cm->name: " . fullname($user) . ': ' . get_string('blogentries', 'blog'));
 
         $a = new stdClass();
@@ -875,7 +906,7 @@ function blog_get_headers($courseid=null, $groupid=null, $userid=null, $tagid=nu
         if (!empty($search) && has_capability('moodle/blog:search', $sitecontext)) {
             $headers['filters']['search'] = $search;
             $blogurl->param('search', $search);
-            $PAGE->navbar->add(get_string('searchterm', 'blog', $search), $blogurl->out());
+            $PAGE->navbar->add(get_string('searchterm', 'blog', s($search)), $blogurl->out());
         }
     }
 
@@ -1146,4 +1177,132 @@ function blog_get_tagged_posts($tag, $exclusivemode = false, $fromctx = 0, $ctx 
             $exclusivemode, $fromctx, $ctx, $rec, $page, $totalpages);
     $rv->exclusiveurl = null;
     return $rv;
+}
+
+/**
+ * Validate the access to a blog.
+ *
+ * @param  int $courseid course id the the blog is associated to (can be null).
+ * @param  int $modid    module id the blog is associated to (can be null).
+ * @param  int $groupid  group id to filter blogs I can see (can be null)
+ * @param  int $entryid  blog entry id (can be null)
+ * @param  int $userid   blog author id (can be null)
+ * @return array with the calculated course and id
+ * @since  Moodle 3.6
+ */
+function blog_validate_access($courseid, $modid, $groupid, $entryid, $userid) {
+    global $CFG, $DB, $USER, $COURSE;
+
+    $sitecontext = context_system::instance();
+
+    // Add courseid if modid or groupid is specified: This is used for navigation and title.
+    if (!empty($modid) && empty($courseid)) {
+        $courseid = $DB->get_field('course_modules', 'course', array('id' => $modid));
+    }
+
+    if (!empty($groupid) && empty($courseid)) {
+        $courseid = $DB->get_field('groups', 'courseid', array('id' => $groupid));
+    }
+
+    if (!$userid && has_capability('moodle/blog:view', $sitecontext) && $CFG->bloglevel > BLOG_USER_LEVEL) {
+        if ($entryid) {
+            if (!$entryobject = $DB->get_record('post', array('id' => $entryid))) {
+                throw new \moodle_exception('nosuchentry', 'blog');
+            }
+            $userid = $entryobject->userid;
+        }
+    } else if (!$userid) {
+        $userid = $USER->id;
+    }
+
+    if (!empty($modid)) {
+        if ($CFG->bloglevel < BLOG_SITE_LEVEL) {
+            throw new \moodle_exception('courseblogdisable', 'blog');
+        }
+        if (!$mod = $DB->get_record('course_modules', array('id' => $modid))) {
+            throw new \moodle_exception('invalidmoduleid', 'error', $modid);
+        }
+        $courseid = $mod->course;
+    }
+
+    if ((empty($courseid) ? true : $courseid == SITEID) && empty($userid)) {
+        if ($CFG->bloglevel < BLOG_SITE_LEVEL) {
+            throw new \moodle_exception('siteblogdisable', 'blog');
+        }
+        if (!has_capability('moodle/blog:view', $sitecontext)) {
+            throw new \moodle_exception('cannotviewsiteblog', 'blog');
+        }
+
+        $COURSE = $DB->get_record('course', array('format' => 'site'));
+        $courseid = $COURSE->id;
+    }
+
+    if (!empty($courseid)) {
+        if (!$course = $DB->get_record('course', array('id' => $courseid))) {
+            throw new \moodle_exception('invalidcourseid');
+        }
+
+        $courseid = $course->id;
+
+        if (!has_capability('moodle/blog:view', $sitecontext)) {
+            throw new \moodle_exception('cannotviewcourseblog', 'blog');
+        }
+    } else {
+        $coursecontext = context_course::instance(SITEID);
+    }
+
+    if (!empty($groupid)) {
+        if ($CFG->bloglevel < BLOG_SITE_LEVEL) {
+            throw new \moodle_exception('groupblogdisable', 'blog');
+        }
+
+        if (! $group = groups_get_group($groupid)) {
+            throw new \moodle_exception('invalidgroupid', 'blog');
+        }
+
+        if (!$course = $DB->get_record('course', array('id' => $group->courseid))) {
+            throw new \moodle_exception('invalidcourseid');
+        }
+
+        $coursecontext = context_course::instance($course->id);
+        $courseid = $course->id;
+
+        if (!has_capability('moodle/blog:view', $sitecontext)) {
+            throw new \moodle_exception('cannotviewcourseorgroupblog', 'blog');
+        }
+
+        if (groups_get_course_groupmode($course) == SEPARATEGROUPS &&
+                !has_capability('moodle/site:accessallgroups', $coursecontext)) {
+
+            if (!groups_is_member($groupid)) {
+                throw new \moodle_exception('notmemberofgroup');
+            }
+        }
+    }
+
+    if (!empty($userid)) {
+        if ($CFG->bloglevel < BLOG_USER_LEVEL) {
+            throw new \moodle_exception('blogdisable', 'blog');
+        }
+
+        if (!$user = $DB->get_record('user', array('id' => $userid))) {
+            throw new \moodle_exception('invaliduserid');
+        }
+
+        if ($user->deleted) {
+            throw new \moodle_exception('userdeleted');
+        }
+
+        if ($USER->id == $userid) {
+            if (!has_capability('moodle/blog:create', $sitecontext)
+              && !has_capability('moodle/blog:view', $sitecontext)) {
+                throw new \moodle_exception('donothaveblog', 'blog');
+            }
+        } else {
+            if (!has_capability('moodle/blog:view', $sitecontext) || !blog_user_can_view_user_entry($userid)) {
+                throw new \moodle_exception('cannotviewcourseblog', 'blog');
+            }
+        }
+    }
+    return array($courseid, $userid);
 }

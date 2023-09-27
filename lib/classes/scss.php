@@ -31,7 +31,7 @@ defined('MOODLE_INTERNAL') || die();
  * @copyright  2016 Frédéric Massart
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class core_scss extends \Leafo\ScssPhp\Compiler {
+class core_scss extends \ScssPhp\ScssPhp\Compiler {
 
     /** @var string The path to the SCSS file. */
     protected $scssfile;
@@ -143,25 +143,30 @@ class core_scss extends \Leafo\ScssPhp\Compiler {
             }
         }
 
-        return parent::compile($code, $path);
+        return $this->compileString($code, $path)->getCss();
     }
 
     /**
      * Compile child; returns a value to halt execution
      *
      * @param array $child
-     * @param \Leafo\ScssPhp\Formatter\OutputBlock $out
+     * @param \ScssPhp\ScssPhp\Formatter\OutputBlock $out
      *
      * @return array|null
      */
-    protected function compileChild($child, \Leafo\ScssPhp\Formatter\OutputBlock $out) {
+    protected function compileChild($child, \ScssPhp\ScssPhp\Formatter\OutputBlock $out) {
         switch($child[0]) {
-            case \Leafo\ScssPhp\Type::T_SCSSPHP_IMPORT_ONCE:
-            case \Leafo\ScssPhp\Type::T_IMPORT:
+            case \ScssPhp\ScssPhp\Type::T_SCSSPHP_IMPORT_ONCE:
+            case \ScssPhp\ScssPhp\Type::T_IMPORT:
                 list(, $rawpath) = $child;
                 $rawpath = $this->reduce($rawpath);
                 $path = $this->compileStringContent($rawpath);
-                if ($path = $this->findImport($path)) {
+
+                // We need to find the import path relative to the directory of the currently processed file.
+                $currentdirectory = new ReflectionProperty(\ScssPhp\ScssPhp\Compiler::class, 'currentDirectory');
+                $currentdirectory->setAccessible(true);
+
+                if ($path = $this->findImport($path, $currentdirectory->getValue($this))) {
                     if ($this->is_valid_file($path)) {
                         return parent::compileChild($child, $out);
                     } else {

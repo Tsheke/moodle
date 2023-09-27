@@ -9,6 +9,14 @@
     display: none;
     z-index: 9999999;
 }
+.eupopup-container .eupopup-body a {
+    color: #fff;
+    text-decoration: underline;
+}
+
+.behat-site .eupopup-container-bottom {
+    position: relative;
+}
 
 .eupopup-container-bottom {
     position: fixed;
@@ -22,7 +30,7 @@
     font-weight: 100;
     line-height: 1;
     color: #a2a2a2;
-    filter: alpha(opacity=20);
+    opacity: 0.2;
     position: absolute;
     font-family: helvetica, arial, verdana, sans-serif;
     top: 0;

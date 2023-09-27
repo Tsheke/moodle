@@ -75,21 +75,19 @@ class mod_page_mod_form extends moodleform_mod {
         if (array_key_exists(RESOURCELIB_DISPLAY_POPUP, $options)) {
             $mform->addElement('text', 'popupwidth', get_string('popupwidth', 'page'), array('size'=>3));
             if (count($options) > 1) {
-                $mform->disabledIf('popupwidth', 'display', 'noteq', RESOURCELIB_DISPLAY_POPUP);
+                $mform->hideIf('popupwidth', 'display', 'noteq', RESOURCELIB_DISPLAY_POPUP);
             }
             $mform->setType('popupwidth', PARAM_INT);
             $mform->setDefault('popupwidth', $config->popupwidth);
 
             $mform->addElement('text', 'popupheight', get_string('popupheight', 'page'), array('size'=>3));
             if (count($options) > 1) {
-                $mform->disabledIf('popupheight', 'display', 'noteq', RESOURCELIB_DISPLAY_POPUP);
+                $mform->hideIf('popupheight', 'display', 'noteq', RESOURCELIB_DISPLAY_POPUP);
             }
             $mform->setType('popupheight', PARAM_INT);
             $mform->setDefault('popupheight', $config->popupheight);
         }
 
-        $mform->addElement('advcheckbox', 'printheading', get_string('printheading', 'page'));
-        $mform->setDefault('printheading', $config->printheading);
         $mform->addElement('advcheckbox', 'printintro', get_string('printintro', 'page'));
         $mform->setDefault('printintro', $config->printintro);
         $mform->addElement('advcheckbox', 'printlastmodified', get_string('printlastmodified', 'page'));
@@ -130,12 +128,9 @@ class mod_page_mod_form extends moodleform_mod {
             $defaultvalues['page']['itemid'] = $draftitemid;
         }
         if (!empty($defaultvalues['displayoptions'])) {
-            $displayoptions = unserialize($defaultvalues['displayoptions']);
+            $displayoptions = (array) unserialize_array($defaultvalues['displayoptions']);
             if (isset($displayoptions['printintro'])) {
                 $defaultvalues['printintro'] = $displayoptions['printintro'];
-            }
-            if (isset($displayoptions['printheading'])) {
-                $defaultvalues['printheading'] = $displayoptions['printheading'];
             }
             if (isset($displayoptions['printlastmodified'])) {
                 $defaultvalues['printlastmodified'] = $displayoptions['printlastmodified'];

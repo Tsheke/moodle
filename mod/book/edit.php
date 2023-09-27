@@ -42,6 +42,7 @@ require_capability('mod/book:edit', $context);
 
 $PAGE->set_url('/mod/book/edit.php', array('cmid'=>$cmid, 'id'=>$chapterid, 'pagenum'=>$pagenum, 'subchapter'=>$subchapter));
 $PAGE->set_pagelayout('admin'); // TODO: Something. This is a bloody hack!
+$PAGE->add_body_class('limitedwidth');
 
 if ($chapterid) {
     $chapter = $DB->get_record('book_chapters', array('id'=>$chapterid, 'bookid'=>$book->id), '*', MUST_EXIST);
@@ -53,6 +54,15 @@ if ($chapterid) {
     $chapter->pagenum    = $pagenum + 1;
 }
 $chapter->cmid = $cm->id;
+
+// Get the previous page number.
+$prevpage = $chapter->pagenum - 1;
+if ($prevpage) {
+    $currentchapter = $DB->get_record('book_chapters', ['pagenum' => $prevpage, 'bookid' => $book->id]);
+    if ($currentchapter) {
+        $chapter->currentchaptertitle = $currentchapter->title;
+    }
+}
 
 $options = array('noclean'=>true, 'subdirs'=>true, 'maxfiles'=>-1, 'maxbytes'=>0, 'context'=>$context);
 $chapter = file_prepare_standard_editor($chapter, 'content', $options, $context, 'mod_book', 'chapter', $chapter->id);
@@ -122,13 +132,17 @@ if ($mform->is_cancelled()) {
 // Otherwise fill and print the form.
 $PAGE->set_title($book->name);
 $PAGE->set_heading($course->fullname);
+$PAGE->set_secondary_active_tab('modulepage');
 
 if ($chapters = book_preload_chapters($book)) {
     book_add_fake_block($chapters, $chapter, $book, $cm);
 }
+$PAGE->activityheader->set_attrs([
+    "description" => '',
+    "hidecompletion" => true
+]);
 
 echo $OUTPUT->header();
-echo $OUTPUT->heading($book->name);
 
 $mform->display();
 

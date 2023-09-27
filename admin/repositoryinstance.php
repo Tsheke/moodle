@@ -42,7 +42,6 @@ if ($edit){
 }
 
 admin_externalpage_setup($pagename, '', null, new moodle_url('/admin/repositoryinstance.php'));
-require_capability('moodle/site:config', $context);
 
 $baseurl = new moodle_url("/$CFG->admin/repositoryinstance.php", array('sesskey'=>sesskey()));
 
@@ -105,7 +104,7 @@ if (!empty($edit) || !empty($new)) {
             core_plugin_manager::reset_caches();
             redirect($parenturl);
         } else {
-            print_error('instancenotsaved', 'repository', $parenturl);
+            throw new \moodle_exception('instancenotsaved', 'repository', $parenturl);
         }
         exit;
     } else {
@@ -135,7 +134,7 @@ if (!empty($edit) || !empty($new)) {
             core_plugin_manager::reset_caches();
             redirect($parenturl, $deletedstr, 3);
         } else {
-            print_error('instancenotdeleted', 'repository', $parenturl);
+            throw new \moodle_exception('instancenotdeleted', 'repository', $parenturl);
         }
         exit;
     }

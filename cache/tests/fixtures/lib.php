@@ -225,9 +225,15 @@ class cache_config_testing extends cache_config_writer {
     /**
      * Forcefully adds a file store.
      *
+     * You can turn off native TTL support if you want a way to test TTL wrapper objects.
+     *
      * @param string $name
+     * @param bool $nativettl If false, uses fixture that turns off native TTL support
      */
-    public function phpunit_add_file_store($name) {
+    public function phpunit_add_file_store(string $name, bool $nativettl = true): void {
+        if (!$nativettl) {
+            require_once(__DIR__ . '/cachestore_file_with_ttl_wrappers.php');
+        }
         $this->configstores[$name] = array(
             'name' => $name,
             'plugin' => 'file',
@@ -237,10 +243,22 @@ class cache_config_testing extends cache_config_writer {
             'features' => 6,
             'modes' => 3,
             'mappingsonly' => false,
-            'class' => 'cachestore_file',
+            'class' => $nativettl ? 'cachestore_file' : 'cachestore_file_with_ttl_wrappers',
             'default' => false,
             'lock' => 'cachelock_file_default'
         );
+    }
+
+    /**
+     * Hacks the in-memory configuration for a store.
+     *
+     * @param string $store Name of store to edit e.g. 'default_application'
+     * @param array $configchanges List of config changes
+     */
+    public function phpunit_edit_store_config(string $store, array $configchanges): void {
+        foreach ($configchanges as $name => $value) {
+            $this->configstores[$store]['configuration'][$name] = $value;
+        }
     }
 
     /**
@@ -465,6 +483,9 @@ class cache_phpunit_application extends cache_application {
  */
 class cache_phpunit_session extends cache_session {
 
+    /** @var Static member used for emulating the behaviour of session_id() during the tests. */
+    protected static $sessionidmockup = 'phpunitmockupsessionid';
+
     /**
      * Returns the class of the store immediately associated with this cache.
      * @return string
@@ -479,6 +500,31 @@ class cache_phpunit_session extends cache_session {
      */
     public function phpunit_get_store_implements() {
         return class_implements($this->get_store());
+    }
+
+    /**
+     * Provide access to the {@link cache_session::get_key_prefix()} method.
+     *
+     * @return string
+     */
+    public function phpunit_get_key_prefix() {
+        return $this->get_key_prefix();
+    }
+
+    /**
+     * Allows to inject the session identifier.
+     *
+     * @param string $sessionid
+     */
+    public static function phpunit_mockup_session_id($sessionid) {
+        static::$sessionidmockup = $sessionid;
+    }
+
+    /**
+     * Override the parent behaviour so that it does not need the actual session_id() call.
+     */
+    protected function set_session_id() {
+        $this->sessionid = static::$sessionidmockup;
     }
 }
 
@@ -533,5 +579,22 @@ class cache_phpunit_factory extends cache_factory {
      */
     public static function phpunit_disable() {
         parent::disable();
+    }
+}
+
+/**
+ * Cache PHPUnit specific Cache helper.
+ *
+ * @copyright  2018 Andrew Nicols <andrew@nicols.co.uk>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class cache_phpunit_cache extends cache {
+    /**
+     * Make the changes which simulate a new request within the cache.
+     * This essentially resets currently held static values in the class, and increments the current timestamp.
+     */
+    public static function simulate_new_request() {
+        self::$now += 0.1;
+        self::$purgetoken = null;
     }
 }

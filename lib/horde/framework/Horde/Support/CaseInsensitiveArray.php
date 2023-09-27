@@ -2,7 +2,7 @@
 /**
  * Copyright 2013-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (BSD). If you
+ * See the enclosed file LICENSE for license information (BSD). If you
  * did not receive this file, see http://www.horde.org/licenses/bsd.
  *
  * @category  Horde
@@ -24,6 +24,7 @@ class Horde_Support_CaseInsensitiveArray extends ArrayIterator
 {
     /**
      */
+    #[ReturnTypeWillChange]
     public function offsetGet($offset)
     {
         return (is_null($offset = $this->_getRealOffset($offset)))
@@ -33,6 +34,7 @@ class Horde_Support_CaseInsensitiveArray extends ArrayIterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function offsetSet($offset, $value)
     {
         if (is_null($roffset = $this->_getRealOffset($offset))) {
@@ -44,6 +46,7 @@ class Horde_Support_CaseInsensitiveArray extends ArrayIterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function offsetExists($offset)
     {
         return !is_null($offset = $this->_getRealOffset($offset));
@@ -51,6 +54,7 @@ class Horde_Support_CaseInsensitiveArray extends ArrayIterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function offsetUnset($offset)
     {
         if (!is_null($offset = $this->_getRealOffset($offset))) {

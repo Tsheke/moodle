@@ -14,14 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Unit tests for user/lib.php.
- *
- * @package    core_user
- * @category   phpunit
- * @copyright  2013 Rajesh Taneja <rajesh@moodle.com>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace core_user;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -32,11 +25,11 @@ require_once($CFG->dirroot.'/user/lib.php');
  * Unit tests for user lib api.
  *
  * @package    core_user
- * @category   phpunit
+ * @category   test
  * @copyright  2013 Rajesh Taneja <rajesh@moodle.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class core_userliblib_testcase extends advanced_testcase {
+class userlib_test extends \advanced_testcase {
     /**
      * Test user_get_user_details_courses
      */
@@ -48,9 +41,10 @@ class core_userliblib_testcase extends advanced_testcase {
         // Create user and modify user profile.
         $user1 = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
+        $user3 = $this->getDataGenerator()->create_user();
 
         $course1 = $this->getDataGenerator()->create_course();
-        $coursecontext = context_course::instance($course1->id);
+        $coursecontext = \context_course::instance($course1->id);
         $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
         $this->getDataGenerator()->enrol_user($user1->id, $course1->id);
         $this->getDataGenerator()->enrol_user($user2->id, $course1->id);
@@ -72,6 +66,111 @@ class core_userliblib_testcase extends advanced_testcase {
         $this->assertEquals(fullname($user2), $result['fullname']);
         $this->assertEquals($course1->id, $result['enrolledcourses'][0]['id']);
 
+        // Get user2 details as a user who doesn't share any course with user2.
+        $this->setUser($user3);
+        $result = user_get_user_details_courses($user2);
+        $this->assertNull($result);
+    }
+
+    /**
+     * Verify return when course groupmode set to 'no groups'.
+     */
+    public function test_user_get_user_details_courses_groupmode_nogroups() {
+        $this->resetAfterTest();
+
+        // Enrol 2 users into a course with groupmode set to 'no groups'.
+        // Profiles should be visible.
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course((object) ['groupmode' => 0]);
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($user2->id, $course->id);
+
+        $this->setUser($user1);
+        $userdetails = user_get_user_details_courses($user2);
+        $this->assertIsArray($userdetails);
+        $this->assertEquals($user2->id, $userdetails['id']);
+    }
+
+    /**
+     * Verify return when course groupmode set to 'separate groups'.
+     */
+    public function test_user_get_user_details_courses_groupmode_separate() {
+        $this->resetAfterTest();
+
+        // Enrol 2 users into a course with groupmode set to 'separate groups'.
+        // The users are not in any groups, so profiles should be hidden (same as if they were in separate groups).
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course((object) ['groupmode' => 1]);
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($user2->id, $course->id);
+
+        $this->setUser($user1);
+        $this->assertNull(user_get_user_details_courses($user2));
+    }
+
+    /**
+     * Verify return when course groupmode set to 'visible groups'.
+     */
+    public function test_user_get_user_details_courses_groupmode_visible() {
+        $this->resetAfterTest();
+
+        // Enrol 2 users into a course with groupmode set to 'visible groups'.
+        // The users are not in any groups, and profiles should be visible because of the groupmode.
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course((object) ['groupmode' => 2]);
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($user2->id, $course->id);
+
+        $this->setUser($user1);
+        $userdetails = user_get_user_details_courses($user2);
+        $this->assertIsArray($userdetails);
+        $this->assertEquals($user2->id, $userdetails['id']);
+    }
+
+    /**
+     * Tests that the user fields returned by the method can be limited.
+     *
+     * @covers ::user_get_user_details_courses
+     */
+    public function test_user_get_user_details_courses_limit_return() {
+        $this->resetAfterTest();
+
+        // Setup some data.
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course();
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($user2->id, $course->id);
+
+        // Calculate the minimum fields that can be returned.
+        $namefields = \core_user\fields::for_name()->get_required_fields();
+        $fields = array_intersect($namefields, user_get_default_fields());
+
+        $minimaluser = (object) [
+            'id' => $user2->id,
+            'deleted' => $user2->deleted,
+        ];
+
+        foreach ($namefields as $field) {
+            $minimaluser->$field = $user2->$field;
+        }
+
+        $this->setUser($user1);
+        $fulldetails = user_get_user_details_courses($user2);
+        $limiteddetails = user_get_user_details_courses($minimaluser, $fields);
+        $this->assertIsArray($fulldetails);
+        $this->assertIsArray($limiteddetails);
+        $this->assertEquals($user2->id, $fulldetails['id']);
+        $this->assertEquals($user2->id, $limiteddetails['id']);
+
+        // Test that less data was returned when using a filter.
+        $fullcount = count($fulldetails);
+        $limitedcount = count($limiteddetails);
+        $this->assertLessThan($fullcount, $limitedcount);
+        $this->assertNotEquals($fulldetails, $limiteddetails);
     }
 
     /**
@@ -102,11 +201,7 @@ class core_userliblib_testcase extends advanced_testcase {
         // Test event.
         $this->assertInstanceOf('\core\event\user_updated', $event);
         $this->assertSame($user->id, $event->objectid);
-        $this->assertSame('user_updated', $event->get_legacy_eventname());
-        $this->assertEventLegacyData($dbuser, $event);
-        $this->assertEquals(context_user::instance($user->id), $event->get_context());
-        $expectedlogdata = array(SITEID, 'user', 'update', 'view.php?id='.$user->id, '');
-        $this->assertEventLegacyLogData($expectedlogdata, $event);
+        $this->assertEquals(\context_user::instance($user->id), $event->get_context());
 
         // Update user with no password update.
         $password = $user->password = hash_internal_user_password('M00dLe@T');
@@ -137,19 +232,17 @@ class core_userliblib_testcase extends advanced_testcase {
         $user->lang = 'xy';
         $user->theme = 'somewrongthemename';
         $user->timezone = '30.5';
-        $user->url = 'wwww.somewrong@#$url.com.aus';
         $debugmessages = $this->getDebuggingMessages();
         user_update_user($user, true, false);
-        $this->assertDebuggingCalledCount(6, $debugmessages);
+        $this->assertDebuggingCalledCount(5, $debugmessages);
 
         // Now, with valid user data.
         $user->username = 'johndoe321';
         $user->auth = 'shibboleth';
         $user->country = 'AU';
         $user->lang = 'en';
-        $user->theme = 'clean';
+        $user->theme = 'classic';
         $user->timezone = 'Australia/Perth';
-        $user->url = 'www.moodle.org';
         user_update_user($user, true, false);
         $this->assertDebuggingNotCalled();
     }
@@ -199,11 +292,7 @@ class core_userliblib_testcase extends advanced_testcase {
         // Test event.
         $this->assertInstanceOf('\core\event\user_created', $event);
         $this->assertEquals($user['id'], $event->objectid);
-        $this->assertEquals('user_created', $event->get_legacy_eventname());
-        $this->assertEquals(context_user::instance($user['id']), $event->get_context());
-        $this->assertEventLegacyData($dbuser, $event);
-        $expectedlogdata = array(SITEID, 'user', 'add', '/view.php?id='.$event->objectid, fullname($dbuser));
-        $this->assertEventLegacyLogData($expectedlogdata, $event);
+        $this->assertEquals(\context_user::instance($user['id']), $event->get_context());
 
         // Verify event is not triggred by user_create_user when needed.
         $user = array('username' => 'usernametest2'); // Create another user.
@@ -220,10 +309,9 @@ class core_userliblib_testcase extends advanced_testcase {
         $user['lang'] = 'xy';
         $user['theme'] = 'somewrongthemename';
         $user['timezone'] = '-30.5';
-        $user['url'] = 'wwww.somewrong@#$url.com.aus';
         $debugmessages = $this->getDebuggingMessages();
         $user['id'] = user_create_user($user, true, false);
-        $this->assertDebuggingCalledCount(6, $debugmessages);
+        $this->assertDebuggingCalledCount(5, $debugmessages);
         $dbuser = $DB->get_record('user', array('id' => $user['id']));
         $this->assertEquals($dbuser->country, 0);
         $this->assertEquals($dbuser->lang, 'en');
@@ -234,11 +322,89 @@ class core_userliblib_testcase extends advanced_testcase {
         $user['auth'] = 'shibboleth';
         $user['country'] = 'AU';
         $user['lang'] = 'en';
-        $user['theme'] = 'clean';
+        $user['theme'] = 'classic';
         $user['timezone'] = 'Australia/Perth';
-        $user['url'] = 'www.moodle.org';
         user_create_user($user, true, false);
         $this->assertDebuggingNotCalled();
+    }
+
+    /**
+     * Test that creating users populates default values
+     *
+     * @covers ::user_create_user
+     */
+    public function test_user_create_user_default_values(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        // Update default values for city/country (both initially empty).
+        set_config('defaultcity', 'Nadi');
+        set_config('country', 'FJ');
+
+        $userid = user_create_user((object) [
+            'username' => 'newuser',
+        ], false, false);
+
+        $user = \core_user::get_user($userid);
+        $this->assertEquals($CFG->calendartype, $user->calendartype);
+        $this->assertEquals($CFG->defaultpreference_maildisplay, $user->maildisplay);
+        $this->assertEquals($CFG->defaultpreference_mailformat, $user->mailformat);
+        $this->assertEquals($CFG->defaultpreference_maildigest, $user->maildigest);
+        $this->assertEquals($CFG->defaultpreference_autosubscribe, $user->autosubscribe);
+        $this->assertEquals($CFG->defaultpreference_trackforums, $user->trackforums);
+        $this->assertEquals($CFG->lang, $user->lang);
+        $this->assertEquals($CFG->defaultcity, $user->city);
+        $this->assertEquals($CFG->country, $user->country);
+    }
+
+    /**
+     * Test that {@link user_create_user()} throws exception when invalid username is provided.
+     *
+     * @dataProvider data_create_user_invalid_username
+     * @param string $username Invalid username
+     * @param string $expectmessage Expected exception message
+     */
+    public function test_create_user_invalid_username($username, $expectmessage) {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $CFG->extendedusernamechars = false;
+
+        $user = [
+            'username' => $username,
+        ];
+
+        $this->expectException('moodle_exception');
+        $this->expectExceptionMessage($expectmessage);
+
+        user_create_user($user);
+    }
+
+    /**
+     * Data provider for {@link self::test_create_user_invalid_username()}.
+     *
+     * @return array
+     */
+    public function data_create_user_invalid_username() {
+        return [
+            'empty_string' => [
+                '',
+                'The username cannot be blank',
+            ],
+            'only_whitespace' => [
+                "\t\t  \t\n ",
+                'The username cannot be blank',
+            ],
+            'lower_case' => [
+                'Mudrd8mz',
+                'The username must be in lower case',
+            ],
+            'extended_chars' => [
+                'dmudrák',
+                'The given username contains invalid characters',
+            ],
+        ];
     }
 
     /**
@@ -444,7 +610,7 @@ class core_userliblib_testcase extends advanced_testcase {
 
         // Course without sections.
         $course = $this->getDataGenerator()->create_course();
-        $context = context_course::instance($course->id);
+        $context = \context_course::instance($course->id);
 
         $this->setAdminUser();
 
@@ -475,15 +641,13 @@ class core_userliblib_testcase extends advanced_testcase {
 
         $PAGE->set_url('/');
         $user = $this->getDataGenerator()->create_user();
+        $this->setUser($user);
         $opts = user_get_user_navigation_info($user, $PAGE, array('avatarsize' => $testsize));
         $avatarhtml = $opts->metadata['useravatar'];
 
         $matches = [];
-        preg_match('/(?:.*width=")(\d*)(?:" height=")(\d*)(?:".*\/>)/', $avatarhtml, $matches);
-        $this->assertCount(3, $matches);
-
-        $this->assertEquals(intval($matches[1]), $testsize);
-        $this->assertEquals(intval($matches[2]), $testsize);
+        preg_match('/size-100/', $avatarhtml, $matches);
+        $this->assertCount(1, $matches);
     }
 
     /**
@@ -514,9 +678,9 @@ class core_userliblib_testcase extends advanced_testcase {
          // Create two courses.
         $course1 = $this->getDataGenerator()->create_course();
         $course2 = $this->getDataGenerator()->create_course();
-        $coursecontext = context_course::instance($course2->id);
+        $coursecontext = \context_course::instance($course2->id);
         // Prepare another course with separate groups and groupmodeforce set to true.
-        $record = new stdClass();
+        $record = new \stdClass();
         $record->groupmode = 1;
         $record->groupmodeforce = 1;
         $course3 = $this->getDataGenerator()->create_course($record);
@@ -538,7 +702,6 @@ class core_userliblib_testcase extends advanced_testcase {
 
         // Remove capability moodle/user:viewdetails in course 2.
         assign_capability('moodle/user:viewdetails', CAP_PROHIBIT, $studentrole->id, $coursecontext);
-        $coursecontext->mark_dirty();
         // Set current user to user 1.
         $this->setUser($user1);
         // User 1 can see User 1's profile.
@@ -584,7 +747,7 @@ class core_userliblib_testcase extends advanced_testcase {
         // Test the user:viewalldetails cap check using the course creator role which, by default, can't see student profiles.
         $this->setUser($user7);
         $this->assertFalse(user_can_view_profile($user4));
-        assign_capability('moodle/user:viewalldetails', CAP_ALLOW, $coursecreatorrole->id, context_system::instance()->id, true);
+        assign_capability('moodle/user:viewalldetails', CAP_ALLOW, $coursecreatorrole->id, \context_system::instance()->id, true);
         reload_all_capabilities();
         $this->assertTrue(user_can_view_profile($user4));
         unassign_capability('moodle/user:viewalldetails', $coursecreatorrole->id, $coursecontext->id);
@@ -597,7 +760,6 @@ class core_userliblib_testcase extends advanced_testcase {
         $this->setUser($user8);
         $this->assertFalse(user_can_view_profile($user1));
 
-        $allroles = $DB->get_records_menu('role', array(), 'id', 'archetype, id');
         // Let us test with guest user.
         $this->setGuestUser();
         $CFG->forceloginforprofiles = 1;
@@ -607,7 +769,7 @@ class core_userliblib_testcase extends advanced_testcase {
 
         // Even with cap, still guests should not be allowed in.
         $guestrole = $DB->get_records_menu('role', array('shortname' => 'guest'), 'id', 'archetype, id');
-        assign_capability('moodle/user:viewdetails', CAP_ALLOW, $guestrole['guest'], context_system::instance()->id, true);
+        assign_capability('moodle/user:viewdetails', CAP_ALLOW, $guestrole['guest'], \context_system::instance()->id, true);
         reload_all_capabilities();
         foreach ($users as $user) {
             $this->assertFalse(user_can_view_profile($user));
@@ -641,20 +803,18 @@ class core_userliblib_testcase extends advanced_testcase {
         $this->getDataGenerator()->role_assign($managerrole->id, $user9->id);
 
         // Make sure viewalldetails and viewdetails are overridden to 'prevent' (i.e. can be overridden at a lower context).
-        $systemcontext = context_system::instance();
+        $systemcontext = \context_system::instance();
         assign_capability('moodle/user:viewdetails', CAP_PREVENT, $managerrole->id, $systemcontext, true);
         assign_capability('moodle/user:viewalldetails', CAP_PREVENT, $managerrole->id, $systemcontext, true);
-        $systemcontext->mark_dirty();
 
         // And override these to 'Allow' in a specific course.
-        $course4context = context_course::instance($course4->id);
+        $course4context = \context_course::instance($course4->id);
         assign_capability('moodle/user:viewalldetails', CAP_ALLOW, $managerrole->id, $course4context, true);
         assign_capability('moodle/user:viewdetails', CAP_ALLOW, $managerrole->id, $course4context, true);
-        $course4context->mark_dirty();
 
         // The manager now shouldn't have viewdetails in the system or user context.
         $this->setUser($user9);
-        $user1context = context_user::instance($user1->id);
+        $user1context = \context_user::instance($user1->id);
         $this->assertFalse(has_capability('moodle/user:viewdetails', $systemcontext));
         $this->assertFalse(has_capability('moodle/user:viewdetails', $user1context));
 
@@ -679,7 +839,7 @@ class core_userliblib_testcase extends advanced_testcase {
         $studentfullname = fullname($student);
 
         $course1 = $this->getDataGenerator()->create_course();
-        $coursecontext = context_course::instance($course1->id);
+        $coursecontext = \context_course::instance($course1->id);
         $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
         $studentrole = $DB->get_record('role', array('shortname' => 'student'));
         $this->getDataGenerator()->enrol_user($teacher->id, $course1->id);
@@ -725,204 +885,162 @@ class core_userliblib_testcase extends advanced_testcase {
         $this->resetAfterTest(true);
         $this->setAdminUser(); // We need capabilities to view the data.
         $user = self::getDataGenerator()->create_user([
-                                                          'auth'       => 'auth_something',
+                                                          'auth'       => 'email',
                                                           'confirmed'  => '0',
                                                           'idnumber'   => 'someidnumber',
                                                           'lang'       => 'en',
                                                           'theme'      => $CFG->theme,
-                                                          'timezone'   => '50',
+                                                          'timezone'   => '5',
                                                           'mailformat' => '0',
                                                       ]);
 
         // Fields that should get by default.
         $got = user_get_user_details($user);
-        self::assertSame('auth_something', $got['auth']);
+        self::assertSame('email', $got['auth']);
         self::assertSame('0', $got['confirmed']);
         self::assertSame('someidnumber', $got['idnumber']);
         self::assertSame('en', $got['lang']);
         self::assertSame($CFG->theme, $got['theme']);
-        self::assertSame('50', $got['timezone']);
+        self::assertSame('5', $got['timezone']);
         self::assertSame('0', $got['mailformat']);
     }
 
     /**
-     * Test returning the total number of participants.
+     * Test user_get_user_details_permissions.
+     * @covers ::user_get_user_details
      */
-    public function test_user_get_total_participants() {
-        global $DB;
+    public function test_user_get_user_details_permissions() {
+        global $CFG;
 
         $this->resetAfterTest();
 
-        // Create a course.
-        $course = self::getDataGenerator()->create_course();
+        // Create user and modify user profile.
+        $teacher = $this->getDataGenerator()->create_user();
+        $student1 = $this->getDataGenerator()->create_user(['idnumber' => 'user1id', 'city' => 'Barcelona', 'address' => 'BCN 1B']);
+        $student2 = $this->getDataGenerator()->create_user();
+        $student1fullname = fullname($student1);
 
-        // Create a teacher.
-        $teacher = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
+        $course = $this->getDataGenerator()->create_course();
+        $coursecontext = \context_course::instance($course->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id);
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id);
+        $this->getDataGenerator()->role_assign('teacher', $teacher->id, $coursecontext->id);
+        $this->getDataGenerator()->role_assign('student', $student1->id, $coursecontext->id);
+        $this->getDataGenerator()->role_assign('student', $student2->id, $coursecontext->id);
 
-        // Create a bunch of students.
-        $student1 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
-        $student2 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
-        $student3 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
+        accesslib_clear_all_caches_for_unit_testing();
 
-        // Create a group.
-        $group = self::getDataGenerator()->create_group(array('courseid' => $course->id));
+        // Get student details as a user with super system capabilities.
+        $result = user_get_user_details($student1, $course);
+        $this->assertEquals($student1->id, $result['id']);
+        $this->assertEquals($student1fullname, $result['fullname']);
+        $this->assertEquals($course->id, $result['enrolledcourses'][0]['id']);
 
-        // Enrol the students.
-        self::getDataGenerator()->enrol_user($student1->id, $course->id);
-        self::getDataGenerator()->enrol_user($student2->id, $course->id);
-        self::getDataGenerator()->enrol_user($student3->id, $course->id);
+        $this->setUser($student2);
 
-        // Enrol the teacher.
-        $roleids = $DB->get_records_menu('role', null, '', 'shortname, id');
-        self::getDataGenerator()->enrol_user($teacher->id, $course->id, $roleids['editingteacher']);
+        // Get student details with required fields.
+        $result = user_get_user_details($student1, $course, array('id', 'fullname', 'timezone', 'city', 'address', 'idnumber'));
+        $this->assertCount(4, $result); // Ensure address (never returned), idnumber (identity field) are not returned here.
+        $this->assertEquals($student1->id, $result['id']);
+        $this->assertEquals($student1fullname, $result['fullname']);
+        $this->assertEquals($student1->timezone, $result['timezone']);
+        $this->assertEquals($student1->city, $result['city']);
 
-        // Add the teacher and two of the students to the group.
-        groups_add_member($group->id, $teacher->id);
-        groups_add_member($group->id, $student1->id);
-        groups_add_member($group->id, $student2->id);
+        // Set new identity fields and hidden fields and try to retrieve them without permission.
+        $CFG->showuseridentity = $CFG->showuseridentity . ',idnumber';
+        $CFG->hiddenuserfields = 'city';
+        $result = user_get_user_details($student1, $course, array('id', 'fullname', 'timezone', 'city', 'address', 'idnumber'));
+        $this->assertCount(3, $result); // Ensure address, city and idnumber are not returned here.
+        $this->assertEquals($student1->id, $result['id']);
+        $this->assertEquals($student1fullname, $result['fullname']);
+        $this->assertEquals($student1->timezone, $result['timezone']);
 
-        // Set it so the teacher and two of the students have accessed the courses within the last day,
-        // but only one of the students is in the group.
-        $accesssince = time() - DAYSECS;
-        $lastaccess = new stdClass();
-        $lastaccess->userid = $teacher->id;
-        $lastaccess->courseid = $course->id;
-        $lastaccess->timeaccess = time() - DAYSECS;
-        $DB->insert_record('user_lastaccess', $lastaccess);
+        // Now, teacher should have permission to see the idnumber and city fields.
+        $this->setUser($teacher);
+        $result = user_get_user_details($student1, $course, array('id', 'fullname', 'timezone', 'city', 'address', 'idnumber'));
+        $this->assertCount(5, $result); // Ensure address is not returned here.
+        $this->assertEquals($student1->id, $result['id']);
+        $this->assertEquals($student1fullname, $result['fullname']);
+        $this->assertEquals($student1->timezone, $result['timezone']);
+        $this->assertEquals($student1->idnumber, $result['idnumber']);
+        $this->assertEquals($student1->city, $result['city']);
 
-        $lastaccess->userid = $student1->id;
-        $DB->insert_record('user_lastaccess', $lastaccess);
-
-        $lastaccess->userid = $student3->id;
-        $DB->insert_record('user_lastaccess', $lastaccess);
-
-        // Now, when we perform the following search we should only return 1 user. A student who belongs to
-        // the group and has the name 'searchforthis' and has also accessed the course in the last day.
-        $count = user_get_total_participants($course->id, $group->id, $accesssince + 1, $roleids['student'], 0, -1,
-            'searchforthis');
-
-        $this->assertEquals(1, $count);
+        // And admins can see anything.
+        $this->setAdminUser();
+        $result = user_get_user_details($student1, $course, array('id', 'fullname', 'timezone', 'city', 'address', 'idnumber'));
+        $this->assertCount(6, $result);
+        $this->assertEquals($student1->id, $result['id']);
+        $this->assertEquals($student1fullname, $result['fullname']);
+        $this->assertEquals($student1->timezone, $result['timezone']);
+        $this->assertEquals($student1->idnumber, $result['idnumber']);
+        $this->assertEquals($student1->city, $result['city']);
+        $this->assertEquals($student1->address, $result['address']);
     }
 
     /**
-     * Test returning the number of participants on the front page.
+     * Test user_get_user_details_groups.
+     * @covers ::user_get_user_details
      */
-    public function test_user_get_total_participants_on_front_page() {
+    public function test_user_get_user_details_groups() {
         $this->resetAfterTest();
 
-        // Set it so that only 3 users have accessed the site within the last day.
-        $accesssince = time() - DAYSECS;
+        // Create user and modify user profile.
+        $teacher = $this->getDataGenerator()->create_user();
+        $student1 = $this->getDataGenerator()->create_user(['idnumber' => 'user1id', 'city' => 'Barcelona', 'address' => 'BCN 1B']);
+        $student2 = $this->getDataGenerator()->create_user();
 
-        // Create a bunch of users.
-        $user1 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis', 'lastaccess' => $accesssince]);
-        $user2 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis', 'lastaccess' => $accesssince]);
-        $user3 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
-        $user4 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis', 'lastaccess' => $accesssince]);
+        $course = $this->getDataGenerator()->create_course();
+        $coursecontext = \context_course::instance($course->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id);
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id);
+        $this->getDataGenerator()->role_assign('teacher', $teacher->id, $coursecontext->id);
+        $this->getDataGenerator()->role_assign('student', $student1->id, $coursecontext->id);
+        $this->getDataGenerator()->role_assign('student', $student2->id, $coursecontext->id);
 
-        // Create a group.
-        $group = self::getDataGenerator()->create_group(array('courseid' => SITEID));
+        $group1 = $this->getDataGenerator()->create_group(['courseid' => $course->id, 'name' => 'G1']);
+        $group2 = $this->getDataGenerator()->create_group(['courseid' => $course->id, 'name' => 'G2']);
 
-        // Add 3 of the users to a group.
-        groups_add_member($group->id, $user1->id);
-        groups_add_member($group->id, $user2->id);
-        groups_add_member($group->id, $user3->id);
+        // Each student in one group but teacher in two.
+        groups_add_member($group1->id, $student1->id);
+        groups_add_member($group1->id, $teacher->id);
+        groups_add_member($group2->id, $student2->id);
+        groups_add_member($group2->id, $teacher->id);
 
-        // Now, when we perform the following search we should only return 2 users. Users who belong to
-        // the group and have the name 'searchforthis' and have also accessed the site in the last day.
-        $count = user_get_total_participants(SITEID, $group->id, $accesssince + 1, 0, 0, -1, 'searchforthis');
+        accesslib_clear_all_caches_for_unit_testing();
 
-        $this->assertEquals(2, $count);
-    }
+        // A student can see other users groups when separate groups are not forced.
+        $this->setUser($student2);
 
-    /**
-     * Test returning the participants.
-     */
-    public function test_user_get_participants() {
-        global $DB;
+        // Get student details with groups.
+        $result = user_get_user_details($student1, $course, array('id', 'fullname', 'groups'));
+        $this->assertCount(3, $result);
+        $this->assertEquals($group1->id, $result['groups'][0]['id']);
 
-        $this->resetAfterTest();
+        // Teacher is in two different groups.
+        $result = user_get_user_details($teacher, $course, array('id', 'fullname', 'groups'));
 
-        // Create a course.
-        $course = self::getDataGenerator()->create_course();
+        // Order by group id.
+        usort($result['groups'], function($a, $b) {
+            return $a['id'] - $b['id'];
+        });
 
-        // Create a teacher.
-        $teacher = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
+        $this->assertCount(3, $result);
+        $this->assertCount(2, $result['groups']);
+        $this->assertEquals($group1->id, $result['groups'][0]['id']);
+        $this->assertEquals($group2->id, $result['groups'][1]['id']);
 
-        // Create a bunch of students.
-        $student1 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
-        $student2 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
-        $student3 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
+        // Change to separate groups.
+        $course->groupmode = SEPARATEGROUPS;
+        $course->groupmodeforce = true;
+        update_course($course);
 
-        // Create a group.
-        $group = self::getDataGenerator()->create_group(array('courseid' => $course->id));
+        // Teacher is in two groups but I can only see the one shared with me.
+        $result = user_get_user_details($teacher, $course, array('id', 'fullname', 'groups'));
 
-        // Enrol the students.
-        self::getDataGenerator()->enrol_user($student1->id, $course->id);
-        self::getDataGenerator()->enrol_user($student2->id, $course->id);
-        self::getDataGenerator()->enrol_user($student3->id, $course->id);
-
-        // Enrol the teacher.
-        $roleids = $DB->get_records_menu('role', null, '', 'shortname, id');
-        self::getDataGenerator()->enrol_user($teacher->id, $course->id, $roleids['editingteacher']);
-
-        // Add the teacher and two of the students to the group.
-        groups_add_member($group->id, $teacher->id);
-        groups_add_member($group->id, $student1->id);
-        groups_add_member($group->id, $student2->id);
-
-        // Set it so the teacher and two of the students have accessed the course within the last day, but only one of
-        // the students is in the group.
-        $accesssince = time() - DAYSECS;
-        $lastaccess = new stdClass();
-        $lastaccess->userid = $teacher->id;
-        $lastaccess->courseid = $course->id;
-        $lastaccess->timeaccess = time() - DAYSECS;
-        $DB->insert_record('user_lastaccess', $lastaccess);
-
-        $lastaccess->userid = $student1->id;
-        $DB->insert_record('user_lastaccess', $lastaccess);
-
-        $lastaccess->userid = $student3->id;
-        $DB->insert_record('user_lastaccess', $lastaccess);
-
-        // Now, when we perform the following search we should only return 1 user. A student who belongs to
-        // the group and has the name 'searchforthis' and has also accessed the course in the last day.
-        $userset = user_get_participants($course->id, $group->id, $accesssince + 1, $roleids['student'], 0, -1, 'searchforthis');
-
-        $this->assertEquals($student1->id, $userset->current()->id);
-        $this->assertEquals(1, iterator_count($userset));
-    }
-
-    /**
-     * Test returning the participants on the front page.
-     */
-    public function test_user_get_participants_on_front_page() {
-        $this->resetAfterTest();
-
-        // Set it so that only 3 users have accessed the site within the last day.
-        $accesssince = time() - DAYSECS;
-
-        // Create a bunch of users.
-        $user1 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis', 'lastaccess' => $accesssince]);
-        $user2 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis', 'lastaccess' => $accesssince]);
-        $user3 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis']);
-        $user4 = self::getDataGenerator()->create_user(['firstname' => 'searchforthis', 'lastaccess' => $accesssince]);
-
-        // Create a group.
-        $group = self::getDataGenerator()->create_group(array('courseid' => SITEID));
-
-        // Add 3 of the users to a group.
-        groups_add_member($group->id, $user1->id);
-        groups_add_member($group->id, $user2->id);
-        groups_add_member($group->id, $user3->id);
-
-        // Now, when we perform the following search we should only return 2 users. Users who belong to
-        // the group and have the name 'searchforthis' and have also accessed the site in the last day.
-        $userset = user_get_participants(SITEID, $group->id, $accesssince + 1, 0, 0, -1, 'searchforthis', '', array(),
-            'ORDER BY id ASC');
-
-        $this->assertEquals($user1->id, $userset->current()->id);
-        $userset->next();
-        $this->assertEquals($user2->id, $userset->current()->id);
+        $this->assertCount(3, $result);
+        $this->assertCount(1, $result['groups']);
+        $this->assertEquals($group2->id, $result['groups'][0]['id']);
     }
 }

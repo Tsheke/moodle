@@ -14,9 +14,12 @@ Feature: Enable the upcoming events block in a course
     And the following "course enrolments" exist:
       | user | course | role |
       | teacher1 | C1 | editingteacher |
+    And the following "blocks" exist:
+      | blockname           | contextlevel | reference | pagetypepattern | defaultregion |
+      | calendar_upcoming   | System       | 1         | my-index        | side-post     |
 
   @javascript
-  Scenario: View a global event in the calendar block
+  Scenario: View a site event in the calendar block
     Given I log in as "admin"
     And I create a calendar event with form data:
       | id_eventtype | Site |

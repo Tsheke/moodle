@@ -24,9 +24,16 @@
  * @since      Moodle 3.2
  */
 
+use core_external\external_api;
+use core_external\external_format_value;
+use core_external\external_function_parameters;
+use core_external\external_multiple_structure;
+use core_external\external_single_structure;
+use core_external\external_value;
+use core_external\external_warnings;
+
 defined('MOODLE_INTERNAL') || die;
 
-require_once($CFG->libdir . '/externallib.php');
 require_once($CFG->libdir . '/authlib.php');
 require_once($CFG->dirroot . '/user/editlib.php');
 require_once($CFG->dirroot . '/user/profile/lib.php');
@@ -106,10 +113,10 @@ class auth_email_external extends external_api {
             $result['profilefields'] = array();
             foreach ($fields as $field) {
                 $fielddata = $field->object->get_field_config_for_external();
-                $fielddata['categoryname'] = external_format_string($field->categoryname, $context->id);
-                $fielddata['name'] = external_format_string($fielddata['name'], $context->id);
+                $fielddata['categoryname'] = \core_external\util::format_string($field->categoryname, $context->id);
+                $fielddata['name'] = \core_external\util::format_string($fielddata['name'], $context->id);
                 list($fielddata['defaultdata'], $fielddata['defaultdataformat']) =
-                    external_format_text($fielddata['defaultdata'], $fielddata['defaultdataformat'], $context->id);
+                    \core_external\util::format_text($fielddata['defaultdata'], $fielddata['defaultdataformat'], $context->id);
 
                 $result['profilefields'][] = $fielddata;
             }
@@ -117,10 +124,7 @@ class auth_email_external extends external_api {
 
         if (signup_captcha_enabled()) {
             // With reCAPTCHA v2 the captcha will be rendered by the mobile client using just the publickey.
-            // For now include placeholders for the v1 paramaters to support older mobile app versions.
             $result['recaptchapublickey'] = $CFG->recaptchapublickey;
-            list($result['recaptchachallengehash'], $result['recaptchachallengeimage'], $result['recaptchachallengejs']) =
-                array('', '', '');
         }
 
         $result['warnings'] = array();
@@ -149,13 +153,13 @@ class auth_email_external extends external_api {
                     new external_single_structure(
                         array(
                             'id' => new external_value(PARAM_INT, 'Profile field id', VALUE_OPTIONAL),
-                            'shortname' => new external_value(PARAM_ALPHANUM, 'Password policy', VALUE_OPTIONAL),
-                            'name' => new external_value(PARAM_TEXT, 'Profield field name', VALUE_OPTIONAL),
+                            'shortname' => new external_value(PARAM_ALPHANUMEXT, 'Profile field shortname', VALUE_OPTIONAL),
+                            'name' => new external_value(PARAM_RAW, 'Profield field name', VALUE_OPTIONAL),
                             'datatype' => new external_value(PARAM_ALPHANUMEXT, 'Profield field datatype', VALUE_OPTIONAL),
                             'description' => new external_value(PARAM_RAW, 'Profield field description', VALUE_OPTIONAL),
                             'descriptionformat' => new external_format_value('description'),
                             'categoryid' => new external_value(PARAM_INT, 'Profield field category id', VALUE_OPTIONAL),
-                            'categoryname' => new external_value(PARAM_TEXT, 'Profield field category name', VALUE_OPTIONAL),
+                            'categoryname' => new external_value(PARAM_RAW, 'Profield field category name', VALUE_OPTIONAL),
                             'sortorder' => new external_value(PARAM_INT, 'Profield field sort order', VALUE_OPTIONAL),
                             'required' => new external_value(PARAM_INT, 'Profield field required', VALUE_OPTIONAL),
                             'locked' => new external_value(PARAM_INT, 'Profield field locked', VALUE_OPTIONAL),

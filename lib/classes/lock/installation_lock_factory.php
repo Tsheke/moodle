@@ -14,18 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Lock factory for use during installation.
- *
- * @package    core
- * @category   lock
- * @copyright  Andrew Nicols <andrew@nicols.co.uk>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
 namespace core\lock;
 
-defined('MOODLE_INTERNAL') || die();
+use coding_exception;
 
 /**
  * Lock factory for use during installation.
@@ -74,12 +65,10 @@ class installation_lock_factory implements lock_factory {
     }
 
     /**
-     * Multiple locks for the same resource cannot be held from a single process.
-     *
-     * @return boolean - False
+     * @deprecated since Moodle 3.10.
      */
     public function supports_recursion() {
-        return false;
+        throw new coding_exception('The function supports_recursion() has been removed, please do not use it anymore.');
     }
 
     /**
@@ -113,15 +102,10 @@ class installation_lock_factory implements lock_factory {
     }
 
     /**
-     * Extend a lock that was previously obtained with @lock.
-     *
-     * @param lock $lock - not used
-     * @param int $maxlifetime - not used
-     * @return boolean - true if the lock was extended.
+     * @deprecated since Moodle 3.10.
      */
-    public function extend_lock(lock $lock, $maxlifetime = 86400) {
-        // Not supported by this factory.
-        return false;
+    public function extend_lock() {
+        throw new coding_exception('The function extend_lock() has been removed, please do not use it anymore.');
     }
 
 }

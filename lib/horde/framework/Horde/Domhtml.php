@@ -2,7 +2,7 @@
 /**
  * Copyright 2010-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -265,6 +265,7 @@ class Horde_Domhtml implements Iterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function current()
     {
         if ($this->_iterator instanceof DOMDocument) {
@@ -277,6 +278,7 @@ class Horde_Domhtml implements Iterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function key()
     {
         return 0;
@@ -284,6 +286,7 @@ class Horde_Domhtml implements Iterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function next()
     {
         /* Iterate in the reverse direction through the node list. This allows
@@ -321,6 +324,7 @@ class Horde_Domhtml implements Iterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function rewind()
     {
         $this->_iterator = $this->dom;
@@ -328,6 +332,7 @@ class Horde_Domhtml implements Iterator
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function valid()
     {
         return !is_null($this->_iterator);

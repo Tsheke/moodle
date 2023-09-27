@@ -26,15 +26,15 @@
 
 require_once(__DIR__ . '/../config.php');
 require_once($CFG->libdir . '/badgeslib.php');
-require_once($CFG->dirroot . '/badges/edit_form.php');
+require_once($CFG->libdir . '/filelib.php');
 
 $badgeid = required_param('id', PARAM_INT);
-$action = optional_param('action', 'details', PARAM_TEXT);
+$action = optional_param('action', 'badge', PARAM_TEXT);
 
 require_login();
 
 if (empty($CFG->enablebadges)) {
-    print_error('badgesdisabled', 'badges');
+    throw new \moodle_exception('badgesdisabled', 'badges');
 }
 
 $badge = new badge($badgeid);
@@ -49,14 +49,17 @@ if ($action == 'message') {
 
 if ($badge->type == BADGE_TYPE_COURSE) {
     if (empty($CFG->badges_allowcoursebadges)) {
-        print_error('coursebadgesdisabled', 'badges');
+        throw new \moodle_exception('coursebadgesdisabled', 'badges');
     }
     require_login($badge->courseid);
+    $course = get_course($badge->courseid);
+    $heading = format_string($course->fullname, true, ['context' => $context]);
     $navurl = new moodle_url('/badges/index.php', array('type' => $badge->type, 'id' => $badge->courseid));
     $PAGE->set_pagelayout('incourse');
     navigation_node::override_active_url($navurl);
 } else {
     $PAGE->set_pagelayout('admin');
+    $heading = get_string('administrationsite');
     navigation_node::override_active_url($navurl, true);
 }
 
@@ -64,8 +67,9 @@ $currenturl = new moodle_url('/badges/edit.php', array('id' => $badge->id, 'acti
 
 $PAGE->set_context($context);
 $PAGE->set_url($currenturl);
-$PAGE->set_heading($badge->name);
+$PAGE->set_heading($heading);
 $PAGE->set_title($badge->name);
+$PAGE->add_body_class('limitedwidth');
 $PAGE->navbar->add($badge->name);
 
 $output = $PAGE->get_renderer('core', 'badges');
@@ -84,19 +88,27 @@ $editoroptions = array(
         );
 $badge = file_prepare_standard_editor($badge, 'message', $editoroptions, $context);
 
-$form_class = 'edit_' . $action . '_form';
-$form = new $form_class($currenturl, array('badge' => $badge, 'action' => $action, 'editoroptions' => $editoroptions));
+$formclass = '\core_badges\form' . '\\' . $action;
+$form = new $formclass($currenturl, array('badge' => $badge, 'action' => $action, 'editoroptions' => $editoroptions));
 
 if ($form->is_cancelled()) {
     redirect(new moodle_url('/badges/overview.php', array('id' => $badgeid)));
 } else if ($form->is_submitted() && $form->is_validated() && ($data = $form->get_data())) {
-    if ($action == 'details') {
+    if ($action == 'badge') {
         $badge->name = $data->name;
+        $badge->version = trim($data->version);
+        $badge->language = $data->language;
         $badge->description = $data->description;
+        $badge->imageauthorname = $data->imageauthorname;
+        $badge->imageauthoremail = $data->imageauthoremail;
+        $badge->imageauthorurl = $data->imageauthorurl;
+        $badge->imagecaption = $data->imagecaption;
         $badge->usermodified = $USER->id;
-        $badge->issuername = $data->issuername;
-        $badge->issuerurl = $data->issuerurl;
-        $badge->issuercontact = $data->issuercontact;
+        if (badges_open_badges_backpack_api() == OPEN_BADGES_V1) {
+            $badge->issuername = $data->issuername;
+            $badge->issuerurl = $data->issuerurl;
+            $badge->issuercontact = $data->issuercontact;
+        }
         $badge->expiredate = ($data->expiry == 1) ? $data->expiredate : null;
         $badge->expireperiod = ($data->expiry == 2) ? $data->expireperiod : null;
 
@@ -105,6 +117,7 @@ if ($form->is_cancelled()) {
         unset($badge->message_editor);
 
         if ($badge->save()) {
+            core_tag_tag::set_item_tags('core_badges', 'badge', $badge->id, $context, $data->tags);
             badges_process_badge_image($badge, $form->save_temp_file('image'));
             $form->set_data($badge);
             $statusmsg = get_string('changessaved');
@@ -137,6 +150,9 @@ if ($form->is_cancelled()) {
 }
 
 echo $OUTPUT->header();
+$actionbar = new \core_badges\output\manage_badge_action_bar($badge, $PAGE);
+echo $output->render_tertiary_navigation($actionbar);
+
 echo $OUTPUT->heading(print_badge_image($badge, $context, 'small') . ' ' . $badge->name);
 
 if ($errormsg !== '') {
@@ -145,9 +161,7 @@ if ($errormsg !== '') {
 } else if ($statusmsg !== '') {
     echo $OUTPUT->notification($statusmsg, 'notifysuccess');
 }
-
 echo $output->print_badge_status_box($badge);
-$output->print_badge_tabs($badgeid, $context, $action);
 
 $form->display();
 

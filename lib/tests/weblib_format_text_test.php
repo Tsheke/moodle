@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace core;
+
 /**
  * Unit tests for format_text defined in weblib.php.
  *
@@ -22,23 +24,13 @@
  * @copyright 2015 The Open University
  * @license   http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
-
-defined('MOODLE_INTERNAL') || die();
-
-
-/**
- * Unit tests for format_text defined in weblib.php.
- *
- * @copyright 2015 The Open University
- * @license   http://www.gnu.org/copyleft/gpl.html GNU Public License
- */
-class core_weblib_format_text_testcase extends advanced_testcase {
+class weblib_format_text_test extends \advanced_testcase {
 
     public function test_format_text_format_html() {
         $this->resetAfterTest();
         filter_set_global_state('emoticon', TEXTFILTER_ON);
-        $this->assertRegExp('~^<p><img class="icon emoticon" alt="smile" title="smile" ' .
-                'src="https://www.example.com/moodle/theme/image.php/_s/boost/core/1/s/smiley" /></p>$~',
+        $this->assertMatchesRegularExpression('~^<p><img class="icon emoticon" alt="smile" title="smile" ' .
+                'src="https://www.example.com/moodle/theme/image.php/boost/core/1/s/smiley" /></p>$~',
                 format_text('<p>:-)</p>', FORMAT_HTML));
     }
 
@@ -67,8 +59,8 @@ class core_weblib_format_text_testcase extends advanced_testcase {
     public function test_format_text_format_markdown() {
         $this->resetAfterTest();
         filter_set_global_state('emoticon', TEXTFILTER_ON);
-        $this->assertRegExp('~^<p><em><img class="icon emoticon" alt="smile" title="smile" ' .
-                'src="https://www.example.com/moodle/theme/image.php/_s/boost/core/1/s/smiley" />' .
+        $this->assertMatchesRegularExpression('~^<p><em><img class="icon emoticon" alt="smile" title="smile" ' .
+                'src="https://www.example.com/moodle/theme/image.php/boost/core/1/s/smiley" />' .
                 '</em></p>\n$~',
                 format_text('*:-)*', FORMAT_MARKDOWN));
     }
@@ -83,9 +75,9 @@ class core_weblib_format_text_testcase extends advanced_testcase {
     public function test_format_text_format_moodle() {
         $this->resetAfterTest();
         filter_set_global_state('emoticon', TEXTFILTER_ON);
-        $this->assertRegExp('~^<div class="text_to_html"><p>' .
+        $this->assertMatchesRegularExpression('~^<div class="text_to_html"><p>' .
                 '<img class="icon emoticon" alt="smile" title="smile" ' .
-                'src="https://www.example.com/moodle/theme/image.php/_s/boost/core/1/s/smiley" /></p></div>$~',
+                'src="https://www.example.com/moodle/theme/image.php/boost/core/1/s/smiley" /></p></div>$~',
                 format_text('<p>:-)</p>', FORMAT_MOODLE));
     }
 
@@ -97,8 +89,8 @@ class core_weblib_format_text_testcase extends advanced_testcase {
     }
 
     public function test_format_text_overflowdiv() {
-        $this->assertEquals('<div class="no-overflow"><p>:-)</p></div>',
-                format_text('<p>:-)</p>', FORMAT_HTML, array('overflowdiv' => true)));
+        $this->assertEquals('<div class="no-overflow"><p>Hello world</p></div>',
+                format_text('<p>Hello world</p>', FORMAT_HTML, array('overflowdiv' => true)));
     }
 
     /**

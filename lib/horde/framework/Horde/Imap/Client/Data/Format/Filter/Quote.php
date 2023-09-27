@@ -2,7 +2,7 @@
 /**
  * Copyright 2012-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -31,6 +31,7 @@ class Horde_Imap_Client_Data_Format_Filter_Quote extends php_user_filter
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function onCreate()
     {
         $this->_prepend = false;
@@ -39,6 +40,7 @@ class Horde_Imap_Client_Data_Format_Filter_Quote extends php_user_filter
     /**
      * @see stream_filter_register()
      */
+    #[ReturnTypeWillChange]
     public function filter($in, $out, &$consumed, $closing)
     {
         if (!$this->_prepend) {

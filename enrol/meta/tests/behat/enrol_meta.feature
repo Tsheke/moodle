@@ -32,28 +32,25 @@ Feature: Enrolments are synchronised with meta courses
       | student1 | C4C4 | student | 0 |
       | student2 | C4C4 | student | 1 |
     And I log in as "admin"
-    And I navigate to "Manage enrol plugins" node in "Site administration > Plugins > Enrolments"
+    And I navigate to "Plugins > Enrolments > Manage enrol plugins" in site administration
     And I click on "Enable" "link" in the "Course meta link" "table_row"
     And I am on course index
 
   Scenario: Add meta enrolment instance without groups
-    When I am on "Course 3" course homepage
-    And I add "Course meta link" enrolment method with:
+    When I add "Course meta link" enrolment method in "Course 3" with:
       | Link course  | C1C1 |
-    And I navigate to "Enrolled users" node in "Course administration > Users"
+    And I am on the "Course 3" "enrolled users" page
     Then I should see "No groups" in the "Student 1" "table_row"
     And I should see "No groups" in the "Student 4" "table_row"
 
   Scenario: Add meta enrolment instance with groups
-    When I am on "Course 3" course homepage
-    And I add "Course meta link" enrolment method with:
+    When I add "Course meta link" enrolment method in "Course 3" with:
       | Link course  | C1C1      |
       | Add to group | Groupcourse 1 |
-    And I am on "Course 3" course homepage
-    And I add "Course meta link" enrolment method with:
+    And I add "Course meta link" enrolment method in "Course 3" with:
       | Link course  | C2C2      |
       | Add to group | Groupcourse 2 |
-    And I navigate to "Enrolled users" node in "Course administration > Users"
+    And I am on the "Course 3" "enrolled users" page
     Then I should see "Groupcourse 1" in the "Student 1" "table_row"
     And I should see "Groupcourse 1" in the "Student 2" "table_row"
     And I should see "Groupcourse 1" in the "Student 3" "table_row"
@@ -64,25 +61,22 @@ Feature: Enrolments are synchronised with meta courses
     And I should not see "Groupcourse 2" in the "Student 4" "table_row"
 
   Scenario: Add meta enrolment instance with auto-created groups
-    When I am on "Course 3" course homepage
-    And I add "Course meta link" enrolment method with:
+    When I add "Course meta link" enrolment method in "Course 3" with:
       | Link course  | C1C1      |
       | Add to group | Create new group |
-    And I navigate to "Enrolled users" node in "Course administration > Users"
+    And I am on the "Course 3" "enrolled users" page
     Then I should see "Course 1 course" in the "Student 1" "table_row"
     And I should see "Course 1 course" in the "Student 2" "table_row"
     And I should see "Course 1 course" in the "Student 3" "table_row"
     And I should see "Course 1 course" in the "Student 4" "table_row"
-    And I navigate to "Groups" node in "Course administration > Users"
+    And I am on the "Course 3" "groups" page
     And the "Groups" select box should contain "Course 1 course (4)"
 
   Scenario: Backup and restore of meta enrolment instance
-    When I am on "Course 3" course homepage
-    And I add "Course meta link" enrolment method with:
+    When I add "Course meta link" enrolment method in "Course 3" with:
       | Link course  | C1C1      |
       | Add to group | Groupcourse 1 |
-    And I am on "Course 3" course homepage
-    And I add "Course meta link" enrolment method with:
+    And I add "Course meta link" enrolment method in "Course 3" with:
       | Link course  | C2C2      |
     When I backup "Course 3" course using this options:
       | Confirmation | Filename | test_backup.mbz |
@@ -95,11 +89,10 @@ Feature: Enrolments are synchronised with meta courses
     And I press "Next"
     And I press "Perform restore"
     And I trigger cron
-    And I am on "Course 5 copy 1" course homepage
-    And I navigate to "Enrolment methods" node in "Course administration > Users"
+    And I am on the "Course 5 copy 1" "enrolment methods" page
     Then I should see "Course meta link (Course 1)"
     And I should see "Course meta link (Course 2)"
-    And I navigate to "Enrolled users" node in "Course administration > Users"
+    And I am on the "Course 5 copy 1" "enrolled users" page
     And I should see "Groupcourse 1" in the "Student 1" "table_row"
     And I should see "Groupcourse 1" in the "Student 2" "table_row"
     And I should see "Groupcourse 1" in the "Student 3" "table_row"
@@ -108,8 +101,7 @@ Feature: Enrolments are synchronised with meta courses
     And I should see "Course meta link (Course 2)" in the "Enrolment method" "table_row"
 
   Scenario: Unenrol a user from the course participants page that was enrolled via course meta link.
-    Given I am on "Course 3" course homepage
-    And I add "Course meta link" enrolment method with:
+    Given I add "Course meta link" enrolment method in "Course 3" with:
       | Link course  | C4C4 |
     And I navigate to course participants
     # Suspended users can be unenrolled.

@@ -143,7 +143,6 @@ class cache_config {
         $this->configlocks = array();
         $this->configmodemappings = array();
         $this->configdefinitionmappings = array();
-        $this->configlockmappings = array();
 
         $siteidentifier = 'unknown';
         if (array_key_exists('siteidentifier', $configuration)) {
@@ -323,7 +322,7 @@ class cache_config {
      * @throws cache_exception
      */
     protected function include_configuration() {
-        $configuration = array();
+        $configuration = null;
         // We need to allow for late static bindings to allow for class path mudling happending for unit tests.
         $cachefile = static::get_config_file_path();
 

@@ -18,7 +18,7 @@ Feature: Manager is able to delete tags
 
   Scenario: Deleting a tag with javascript disabled
     When I log in as "manager1"
-    And I navigate to "Manage tags" node in "Site administration > Appearance"
+    And I navigate to "Appearance > Manage tags" in site administration
     And I follow "Default collection"
     And I click on "Delete" "link" in the "Dog" "table_row"
     And I should see "Tag(s) deleted"
@@ -31,7 +31,7 @@ Feature: Manager is able to delete tags
 
   Scenario: Deleting multiple tags with javascript disabled
     When I log in as "manager1"
-    And I navigate to "Manage tags" node in "Site administration > Appearance"
+    And I navigate to "Appearance > Manage tags" in site administration
     And I follow "Default collection"
     And I set the following fields to these values:
       | Select tag Dog | 1 |
@@ -49,11 +49,11 @@ Feature: Manager is able to delete tags
   @javascript
   Scenario: Deleting a tag with javascript enabled
     When I log in as "manager1"
-    And I navigate to "Manage tags" node in "Site administration > Appearance"
+    And I navigate to "Appearance > Manage tags" in site administration
     And I follow "Default collection"
     And I click on "Delete" "link" in the "Turtle" "table_row"
     Then I should see "Are you sure you want to delete this tag?"
-    And I press "No"
+    And I click on "Cancel" "button" in the "Delete" "dialogue"
     And I should not see "Tag(s) deleted"
     And I should see "Turtle"
     And I click on "Delete" "link" in the "Dog" "table_row"
@@ -61,6 +61,7 @@ Feature: Manager is able to delete tags
     And I press "Yes"
     And I should see "Tag(s) deleted"
     And I should not see "Dog"
+    And I navigate to "Appearance > Manage tags" in site administration
     And I follow "Default collection"
     And I should not see "Dog"
     And I follow "Cat"
@@ -72,7 +73,7 @@ Feature: Manager is able to delete tags
   @javascript
   Scenario: Deleting multiple tags with javascript enabled
     When I log in as "manager1"
-    And I navigate to "Manage tags" node in "Site administration > Appearance"
+    And I navigate to "Appearance > Manage tags" in site administration
     And I follow "Default collection"
     And I press "Delete selected"
     And I should not see "Are you sure"
@@ -81,7 +82,7 @@ Feature: Manager is able to delete tags
       | Select tag Cat | 1 |
     And I press "Delete selected"
     And I should see "Are you sure you want to delete selected tags?"
-    And I press "No"
+    And I click on "Cancel" "button" in the "Delete" "dialogue"
     And I should not see "Tag(s) deleted"
     And I should see "Cat"
     And I set the following fields to these values:
@@ -94,6 +95,7 @@ Feature: Manager is able to delete tags
     And I should see "Tag(s) deleted"
     And I should not see "Dog"
     And I should not see "Neverusedtag"
+    And I navigate to "Appearance > Manage tags" in site administration
     And I follow "Default collection"
     And I should not see "Dog"
     And I should not see "Neverusedtag"
@@ -102,3 +104,18 @@ Feature: Manager is able to delete tags
     And I should see "Cat"
     And I should not see "Dog"
     And I log out
+
+  @javascript
+  Scenario: Delete all tags
+    When I log in as "manager1"
+    And I navigate to "Appearance > Manage tags" in site administration
+    And I follow "Default collection"
+    And I set the field "Select all" to "1"
+    And I press "Delete selected"
+    And I click on "Yes" "button" in the "Delete" "dialogue"
+    Then I should see "Tag(s) deleted"
+    And I should see "Nothing to display"
+    And I should not see "Cat"
+    And I should not see "Dog"
+    And I should not see "Turtle"
+    And I should not see "Neverusedtag"

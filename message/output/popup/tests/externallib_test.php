@@ -14,13 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * External message popup functions unit tests
- *
- * @package    message_popup
- * @copyright  2016 Ryan Wyllie <ryan@moodle.com>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace message_popup;
+
+use message_popup_external;
+use message_popup_test_helper;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -33,18 +30,22 @@ require_once($CFG->dirroot . '/message/output/popup/tests/base.php');
 /**
  * Class for external message popup functions unit tests.
  *
+ * @package    message_popup
  * @copyright  2016 Ryan Wyllie <ryan@moodle.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class message_popup_externallib_testcase extends advanced_testcase {
+class externallib_test extends \advanced_testcase {
     use message_popup_test_helper;
+
+    /** @var \phpunit_message_sink message redirection. */
+    public $messagesink;
 
     /**
      * Test set up.
      *
      * This is executed before running any test in this file.
      */
-    public function setUp() {
+    public function setUp(): void {
         $this->preventResetByRollback(); // Messaging is not compatible with transactions.
         $this->messagesink = $this->redirectMessages();
         $this->resetAfterTest();
@@ -96,6 +97,15 @@ class message_popup_externallib_testcase extends advanced_testcase {
         $this->setAdminUser();
         $result = message_popup_external::get_popup_notifications($recipient->id, false, 0, 0);
         $this->assertCount(4, $result['notifications']);
+        // Check we receive custom data as a unserialisable json.
+        $found = 0;
+        foreach ($result['notifications'] as $notification) {
+            if (!empty($notification->customdata)) {
+                $this->assertObjectHasAttribute('datakey', json_decode($notification->customdata));
+                $found++;
+            }
+        }
+        $this->assertEquals(2, $found);
 
         $this->setUser($recipient);
         $result = message_popup_external::get_popup_notifications($recipient->id, false, 0, 0);

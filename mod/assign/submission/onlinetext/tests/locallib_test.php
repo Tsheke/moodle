@@ -21,6 +21,9 @@
  * @copyright 2016 Cameron Ball
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+namespace assignsubmission_onlinetext;
+
+use mod_assign_test_generator;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -33,7 +36,7 @@ require_once($CFG->dirroot . '/mod/assign/tests/generator.php');
  * @copyright  2016 Cameron Ball
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class assignsubmission_onlinetext_locallib_testcase extends advanced_testcase {
+class locallib_test extends \advanced_testcase {
 
     // Use the generator helper.
     use mod_assign_test_generator;
@@ -103,7 +106,10 @@ class assignsubmission_onlinetext_locallib_testcase extends advanced_testcase {
             'Empty submission null' => [null, true],
             'Value 0' => [0, false],
             'String 0' => ['0', false],
-            'Text' => ['Ai! laurië lantar lassi súrinen, yéni únótimë ve rámar aldaron!', false]
+            'Text' => ['Ai! laurië lantar lassi súrinen, yéni únótimë ve rámar aldaron!', false],
+            'Image' => ['<img src="test.jpg" />', false],
+            'Video' => ['<video controls="true"><source src="test.mp4"></video>', false],
+            'Audio' => ['<audio controls="true"><source src="test.mp3"></audio>', false],
         ];
     }
 }

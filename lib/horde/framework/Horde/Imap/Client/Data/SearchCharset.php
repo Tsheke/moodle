@@ -2,7 +2,7 @@
 /**
  * Copyright 2014-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -133,6 +133,7 @@ implements Serializable, SplSubject
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function attach(SplObserver $observer)
     {
         $this->detach($observer);
@@ -141,6 +142,7 @@ implements Serializable, SplSubject
 
     /**
      */
+    #[ReturnTypeWillChange]
     public function detach(SplObserver $observer)
     {
         if (($key = array_search($observer, $this->_observers, true)) !== false) {
@@ -152,6 +154,7 @@ implements Serializable, SplSubject
      * Notification is triggered internally whenever the object's internal
      * data storage is altered.
      */
+    #[ReturnTypeWillChange]
     public function notify()
     {
         foreach ($this->_observers as $val) {
@@ -165,14 +168,31 @@ implements Serializable, SplSubject
      */
     public function serialize()
     {
-        return json_encode($this->_charsets);
+        return serialize($this->__serialize());
     }
 
     /**
      */
     public function unserialize($data)
     {
-        $this->_charsets = json_decode($data, true);
+        $data = @unserialize($data);
+        if (!is_array($data)) {
+            throw new Exception('Cache version change');
+        }
+        $this->__unserialize($data);
+    }
+
+    /**
+     * @return array
+     */
+    public function __serialize()
+    {
+        return $this->_charsets;
+    }
+
+    public function __unserialize(array $data)
+    {
+        $this->_charsets = $data;
     }
 
 }

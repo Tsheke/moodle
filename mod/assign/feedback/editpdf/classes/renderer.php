@@ -42,6 +42,8 @@ class assignfeedback_editpdf_renderer extends plugin_renderer_base {
     private function get_shortcut($name) {
 
         $shortcuts = array('navigate-previous-button' => 'j',
+            'rotateleft' => 'q',
+            'rotateright' => 'w',
             'navigate-page-select' => 'k',
             'navigate-next-button' => 'l',
             'searchcomments' => 'h',
@@ -110,16 +112,11 @@ class assignfeedback_editpdf_renderer extends plugin_renderer_base {
 
         $html .= html_writer::div(get_string('jsrequired', 'assignfeedback_editpdf'), 'hiddenifjs');
         $linkid = html_writer::random_id();
-        if ($widget->readonly) {
-            $launcheditorlink = html_writer::tag('a',
-                                              get_string('viewfeedbackonline', 'assignfeedback_editpdf'),
-                                              array('id'=>$linkid, 'class'=>'btn', 'href'=>'#'));
-        } else {
-            $launcheditorlink = html_writer::tag('a',
-                                              get_string('launcheditor', 'assignfeedback_editpdf'),
-                                              array('id'=>$linkid, 'class'=>'btn', 'href'=>'#'));
-        }
-        $links = $launcheditorlink;
+
+        $launcheditorstring = $widget->readonly ? get_string('viewfeedbackonline', 'assignfeedback_editpdf') :
+            get_string('launcheditor', 'assignfeedback_editpdf');
+        $links = html_writer::link('#', $launcheditorstring, ['id' => $linkid, 'class' => 'd-block mt-2']);
+
         $html .= '<input type="hidden" name="assignfeedback_editpdf_haschanges" value="false"/>';
 
         $html .= html_writer::div($links, 'visibleifjs');
@@ -161,6 +158,13 @@ class assignfeedback_editpdf_renderer extends plugin_renderer_base {
         $navigation3 .= $this->render_toolbar_button('comment_expcol', 'expcolcomments', $this->get_shortcut('expcolcomments'));
         $navigation3 = html_writer::div($navigation3, 'navigation-expcol', array('role' => 'navigation'));
 
+        $rotationtools = '';
+        if (!$widget->readonly) {
+            $rotationtools .= $this->render_toolbar_button('rotate_left', 'rotateleft', $this->get_shortcut('rotateleft'));
+            $rotationtools .= $this->render_toolbar_button('rotate_right', 'rotateright', $this->get_shortcut('rotateright'));
+            $rotationtools = html_writer::div($rotationtools, 'toolbar', array('role' => 'toolbar'));
+        }
+
         $toolbargroup = '';
         $clearfix = html_writer::div('', 'clearfix');
         if (!$widget->readonly) {
@@ -193,8 +197,8 @@ class assignfeedback_editpdf_renderer extends plugin_renderer_base {
             $toolbar4 = html_writer::div($toolbar4, 'toolbar', array('role'=>'toolbar'));
 
             // Add toolbars to toolbar_group in order of display, and float the toolbar_group right.
-            $toolbars = $toolbar1 . $toolbar2 . $toolbar3 . $toolbar4;
-            $toolbargroup = html_writer::div($toolbars, 'toolbar_group', array('role' => 'toolbar_group'));
+            $toolbars = $rotationtools . $toolbar1 . $toolbar2 . $toolbar3 . $toolbar4;
+            $toolbargroup = html_writer::div($toolbars, 'toolbar_group', ['role' => 'toolbar']);
         }
 
         $pageheader = html_writer::div($navigation1 .
@@ -217,14 +221,13 @@ class assignfeedback_editpdf_renderer extends plugin_renderer_base {
 
         $canvas = html_writer::div($loading, 'drawingcanvas');
         $canvas = html_writer::div($canvas, 'drawingregion');
-        $changesmessage = html_writer::tag('div',
-                                           get_string('draftchangessaved', 'assignfeedback_editpdf'),
-                                           array(
-                                               'class' => 'assignfeedback_editpdf_unsavedchanges warning label label-info'
-                                           ));
-
-        $changesmessage = html_writer::div($changesmessage, 'unsaved-changes');
+        // Place for messages, but no warnings displayed yet.
+        $changesmessage = html_writer::div('', 'warningmessages');
         $canvas .= $changesmessage;
+
+        $infoicon = $this->image_icon('i/info', '');
+        $infomessage = html_writer::div($infoicon, 'infoicon');
+        $canvas .= $infomessage;
 
         $body .= $canvas;
 
@@ -268,7 +271,9 @@ class assignfeedback_editpdf_renderer extends plugin_renderer_base {
             'stamp',
             'stamppicker',
             'cannotopenpdf',
-            'pagenumber'
+            'pagenumber',
+            'partialwarning',
+            'draftchangessaved'
         ), 'assignfeedback_editpdf');
 
         return $html;

@@ -126,6 +126,10 @@ class day_exporter extends exporter {
                 'type' => PARAM_URL,
                 'optional' => true,
             ],
+            'viewdaylinktitle' => [
+                'type' => PARAM_RAW,
+                'optional' => true,
+            ],
             'events' => [
                 'type' => calendar_event_exporter::read_properties_definition(),
                 'multiple' => true,
@@ -143,9 +147,6 @@ class day_exporter extends exporter {
             ],
             'nextperiod' => [
                 'type' => PARAM_INT,
-            ],
-            'navigation' => [
-                'type' => PARAM_RAW,
             ],
             'haslastdayofevent' => [
                 'type' => PARAM_BOOL,
@@ -179,9 +180,12 @@ class day_exporter extends exporter {
             'neweventtimestamp' => $neweventstarttime->getTimestamp(),
             'previousperiod' => $this->get_previous_day_timestamp($daytimestamp),
             'nextperiod' => $this->get_next_day_timestamp($daytimestamp),
-            'navigation' => $this->get_navigation(),
             'viewdaylink' => $this->url->out(false),
         ];
+
+        if ($viewdaylinktitle = $this->get_view_link_title()) {
+            $return['viewdaylinktitle'] = $viewdaylinktitle;
+        }
 
 
         $cache = $this->related['cache'];
@@ -257,14 +261,20 @@ class day_exporter extends exporter {
     }
 
     /**
-     * Get the calendar navigation controls.
+     * Get the title for view link.
      *
-     * @return string The html code to the calendar top navigation.
+     * @return string
      */
-    protected function get_navigation() {
-        return calendar_top_controls('day', [
-            'id' => $this->calendar->courseid,
-            'time' => $this->calendar->time,
-        ]);
+    protected function get_view_link_title() {
+        $title = null;
+
+        $userdate = userdate($this->data[0], get_string('strftimedayshort'));
+        if ($this->data['istoday']) {
+            $title = get_string('todayplustitle', 'calendar', $userdate);
+        } else if (count($this->related['events'])) {
+            $title = get_string('eventsfor', 'calendar', $userdate);
+        }
+
+        return $title;
     }
 }

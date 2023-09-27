@@ -17,14 +17,28 @@
  * Add policy consent modal to the page
  *
  * @module     tool_policy/acceptmodal
- * @class      AcceptOnBehalf
- * @package    tool_policy
  * @copyright  2018 Marina Glancy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-define(['jquery', 'core/str', 'core/modal_factory', 'core/modal_events', 'core/notification', 'core/fragment',
-        'core/ajax', 'core/yui'],
-    function($, Str, ModalFactory, ModalEvents, Notification, Fragment, Ajax, Y) {
+define([
+    'jquery',
+    'core/str',
+    'core/modal_save_cancel',
+    'core/modal_events',
+    'core/notification',
+    'core/fragment',
+    'core/ajax',
+    'core_form/changechecker',
+], function(
+    $,
+    Str,
+    ModalSaveCancel,
+    ModalEvents,
+    Notification,
+    Fragment,
+    Ajax,
+    FormChangeChecker
+) {
 
         "use strict";
 
@@ -53,34 +67,19 @@ define(['jquery', 'core/str', 'core/modal_factory', 'core/modal_events', 'core/n
         AcceptOnBehalf.prototype.contextid = -1;
 
         /**
-         * @var {Array} strings
+         * @var {object} currentTrigger The triggered HTML jQuery object
          * @private
          */
-        AcceptOnBehalf.prototype.stringKeys = [
-            {
-                key: 'consentdetails',
-                component: 'tool_policy'
-            },
-            {
-                key: 'iagreetothepolicy',
-                component: 'tool_policy'
-            },
-            {
-                key: 'selectusersforconsent',
-                component: 'tool_policy'
-            },
-            {
-                key: 'ok'
-            },
-            {
-                key: 'revokedetails',
-                component: 'tool_policy'
-            },
-            {
-                key: 'irevokethepolicy',
-                component: 'tool_policy'
-            }
-        ];
+        AcceptOnBehalf.prototype.currentTrigger = null;
+
+        /**
+         * @var {object} triggers The trigger selectors
+         * @private
+         */
+        AcceptOnBehalf.prototype.triggers = {
+            SINGLE: 'a[data-action=acceptmodal]',
+            BULK: 'input[data-action=acceptmodal]'
+        };
 
         /**
          * Initialise the class.
@@ -89,25 +88,31 @@ define(['jquery', 'core/str', 'core/modal_factory', 'core/modal_events', 'core/n
          */
         AcceptOnBehalf.prototype.init = function() {
             // Initialise for links accepting policies for individual users.
-            var triggers = $('a[data-action=acceptmodal]');
-            triggers.on('click', function(e) {
+            $(this.triggers.SINGLE).on('click', function(e) {
                 e.preventDefault();
+                this.currentTrigger = $(e.currentTarget);
                 var href = $(e.currentTarget).attr('href'),
                     formData = href.slice(href.indexOf('?') + 1);
                 this.showFormModal(formData);
             }.bind(this));
 
             // Initialise for multiple users acceptance form.
-            triggers = $('form[data-action=acceptmodal]');
-            triggers.on('submit', function(e) {
+            $(this.triggers.BULK).on('click', function(e) {
                 e.preventDefault();
-                if ($(e.currentTarget).find('input[type=checkbox][name="userids[]"]:checked').length) {
-                    var formData = $(e.currentTarget).serialize();
-                    this.showFormModal(formData, triggers);
+                this.currentTrigger = $(e.currentTarget);
+                var form = $(e.currentTarget).closest('form');
+                if (form.find('input[type=checkbox][name="userids[]"]:checked').length) {
+                    var formData = form.serialize();
+                    this.showFormModal(formData);
                 } else {
-                    Str.get_strings(this.stringKeys).done(function(strings) {
-                        Notification.alert('', strings[2], strings[3]);
-                    });
+                    Str.get_strings([
+                        {key: 'notice'},
+                        {key: 'selectusersforconsent', component: 'tool_policy'},
+                        {key: 'ok'}
+                    ]).then(function(strings) {
+                        Notification.alert(strings[0], strings[1], strings[2]);
+                        return;
+                    }).fail(Notification.exception);
                 }
             }.bind(this));
         };
@@ -116,9 +121,8 @@ define(['jquery', 'core/str', 'core/modal_factory', 'core/modal_events', 'core/n
          * Show modal with a form
          *
          * @param {String} formData
-         * @param {object} triggerElement The trigger HTML jQuery object
          */
-        AcceptOnBehalf.prototype.showFormModal = function(formData, triggerElement) {
+        AcceptOnBehalf.prototype.showFormModal = function(formData) {
             var action;
             var params = formData.split('&');
             for (var i = 0; i < params.length; i++) {
@@ -128,27 +132,36 @@ define(['jquery', 'core/str', 'core/modal_factory', 'core/modal_events', 'core/n
                 }
             }
             // Fetch the title string.
-            Str.get_strings(this.stringKeys).done(function(strings) {
+            Str.get_strings([
+                {key: 'statusformtitleaccept', component: 'tool_policy'},
+                {key: 'iagreetothepolicy', component: 'tool_policy'},
+                {key: 'statusformtitlerevoke', component: 'tool_policy'},
+                {key: 'irevokethepolicy', component: 'tool_policy'},
+                {key: 'statusformtitledecline', component: 'tool_policy'},
+                {key: 'declinethepolicy', component: 'tool_policy'}
+            ]).then(function(strings) {
                 var title;
                 var saveText;
-                if (action == 'revoke') {
-                    title = strings[4];
-                    saveText = strings[5];
-                } else {
+                if (action == 'accept') {
                     title = strings[0];
                     saveText = strings[1];
+                } else if (action == 'revoke') {
+                    title = strings[2];
+                    saveText = strings[3];
+                } else if (action == 'decline') {
+                    title = strings[4];
+                    saveText = strings[5];
                 }
                 // Create the modal.
-                ModalFactory.create({
-                    type: ModalFactory.types.SAVE_CANCEL,
+                return ModalSaveCancel.create({
                     title: title,
                     body: ''
-                }, triggerElement).done(function(modal) {
+                }).then(function(modal) {
                     this.modal = modal;
                     this.setupFormModal(formData, saveText);
                 }.bind(this));
             }.bind(this))
-                .fail(Notification.exception);
+                .catch(Notification.exception);
         };
 
         /**
@@ -246,10 +259,9 @@ define(['jquery', 'core/str', 'core/modal_factory', 'core/modal_events', 'core/n
          * Destroy the modal
          */
         AcceptOnBehalf.prototype.destroy = function() {
-            Y.use('moodle-core-formchangechecker', function() {
-                M.core_formchangechecker.reset_form_dirty_state();
-            });
+            FormChangeChecker.resetAllFormDirtyStates();
             this.modal.destroy();
+            this.currentTrigger.focus();
         };
 
         return /** @alias module:tool_policy/acceptmodal */ {

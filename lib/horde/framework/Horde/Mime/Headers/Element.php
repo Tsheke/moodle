@@ -2,7 +2,7 @@
 /**
  * Copyright 2014-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -142,6 +142,9 @@ implements IteratorAggregate
         }
 
         /* Ensure no null characters exist in header data. */
+		if ($data === null) {
+			return '';
+		}
         return str_replace("\0", '', $data);
     }
 
@@ -173,6 +176,7 @@ implements IteratorAggregate
 
     /**
      */
+	#[ReturnTypeWillChange]
     public function getIterator()
     {
         return new ArrayIterator($this->_values);

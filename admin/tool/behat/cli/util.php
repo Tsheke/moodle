@@ -19,6 +19,9 @@
  *
  * All CLI utilities uses $CFG->behat_dataroot and $CFG->prefix_dataroot as
  * $CFG->dataroot and $CFG->prefix
+ * Same applies for $CFG->behat_dbname, $CFG->behat_dbuser, $CFG->behat_dbpass
+ * and $CFG->behat_dbhost. But if any of those is not defined $CFG->dbname,
+ * $CFG->dbuser, $CFG->dbpass and/or $CFG->dbhost will be used.
  *
  * @package    tool_behat
  * @copyright  2012 David Monllaó
@@ -54,6 +57,7 @@ list($options, $unrecognized) = cli_get_params(
         'torun'       => 0,
         'optimize-runs' => '',
         'add-core-features-to-theme' => false,
+        'axe'         => true,
     ),
     array(
         'h' => 'help',
@@ -69,7 +73,7 @@ $help = "
 Behat utilities to manage the test environment
 
 Usage:
-  php util.php [--install|--drop|--enable|--disable|--diag|--updatesteps|--help] [--parallel=value [--maxruns=value]]
+  php util.php [--install|--drop|--enable|--disable|--diag|--updatesteps|--no-axe|--help] [--parallel=value [--maxruns=value]]
 
 Options:
 --install      Installs the test environment for acceptance tests
@@ -78,6 +82,7 @@ Options:
 --disable      Disables test environment
 --diag         Get behat test environment status code
 --updatesteps  Update feature step file.
+--no-axe       Disable axe accessibility tests.
 
 -j, --parallel Number of parallel behat run operation
 -m, --maxruns Max parallel processes to be executed at one time.
@@ -89,7 +94,7 @@ Options:
 Example from Moodle root directory:
 \$ php admin/tool/behat/cli/util.php --enable --parallel=4
 
-More info in http://docs.moodle.org/dev/Acceptance_testing#Running_tests
+More info in https://moodledev.io/general/development/tools/behat/running
 ";
 
 if (!empty($options['help'])) {
@@ -108,6 +113,17 @@ require_once(__DIR__ . '/../../../../config.php');
 require_once(__DIR__ . '/../../../../lib/behat/lib.php');
 require_once(__DIR__ . '/../../../../lib/behat/classes/behat_command.php');
 require_once(__DIR__ . '/../../../../lib/behat/classes/behat_config_manager.php');
+
+// Remove error handling overrides done in config.php. This is consistent with admin/tool/behat/cli/util_single_run.php.
+$CFG->debug = (E_ALL | E_STRICT);
+$CFG->debugdisplay = 1;
+error_reporting($CFG->debug);
+ini_set('display_errors', '1');
+ini_set('log_errors', '1');
+
+// Import the necessary libraries.
+require_once($CFG->libdir . '/setuplib.php');
+require_once($CFG->libdir . '/behat/classes/util.php');
 
 // For drop option check if parallel site.
 if ((empty($options['parallel'])) && ($options['drop']) || $options['updatesteps']) {
@@ -304,12 +320,7 @@ function commands_to_execute($options) {
     }
 
     foreach ($extraoptions as $option => $value) {
-        if ($options[$option]) {
-            $extra .= " --$option";
-            if ($value) {
-                $extra .= "=\"$value\"";
-            }
-        }
+        $extra .= behat_get_command_flags($option, $value);
     }
 
     if (empty($options['parallel'])) {
@@ -344,7 +355,7 @@ function print_combined_drop_output($processes) {
                 $op = $process->getIncrementalOutput();
                 if (trim($op)) {
                     $update = preg_filter('#^\s*([FS\.\-]+)(?:\s+\d+)?\s*$#', '$1', $op);
-                    $strlentoprint = strlen($update);
+                    $strlentoprint = $update ? strlen($update) : 0;
 
                     // If not enough dots printed on line then just print.
                     if ($strlentoprint < $remainingprintlen) {

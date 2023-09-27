@@ -79,7 +79,7 @@ class event_exporter_base extends exporter {
             $event->get_id()
         );
         $data->descriptionformat = $event->get_description()->get_format();
-        $data->location = external_format_text($event->get_location(), FORMAT_PLAIN, $related['context']->id)[0];
+        $data->location = \core_external\util::format_text($event->get_location(), FORMAT_PLAIN, $related['context']->id)[0];
         $data->groupid = $groupid;
         $data->userid = $userid;
         $data->categoryid = $categoryid;
@@ -87,8 +87,11 @@ class event_exporter_base extends exporter {
         $data->timestart = $starttimestamp;
         $data->timeduration = $endtimestamp - $starttimestamp;
         $data->timesort = $event->get_times()->get_sort_time()->getTimestamp();
+        $data->timeusermidnight = $event->get_times()->get_usermidnight_time()->getTimestamp();
         $data->visible = $event->is_visible() ? 1 : 0;
         $data->timemodified = $event->get_times()->get_modified_time()->getTimestamp();
+        $data->component = $event->get_component();
+        $data->overdue = $data->timesort < time();
 
         if ($repeats = $event->get_repeats()) {
             $data->repeatid = $repeats->get_id();
@@ -98,6 +101,19 @@ class event_exporter_base extends exporter {
         if ($cm = $event->get_course_module()) {
             $data->modulename = $cm->get('modname');
             $data->instance = $cm->get('id');
+            $data->activityname = $cm->get('name');
+
+            $component = 'mod_' . $data->modulename;
+            if (!component_callback_exists($component, 'core_calendar_get_event_action_string')) {
+                $modulename = get_string('modulename', $data->modulename);
+                $data->activitystr = get_string('requiresaction', 'calendar', $modulename);
+            } else {
+                $data->activitystr = component_callback(
+                    $component,
+                    'core_calendar_get_event_action_string',
+                    [$event->get_type()]
+                );
+            }
         }
 
         parent::__construct($data, $related);
@@ -125,7 +141,7 @@ class event_exporter_base extends exporter {
                 'null' => NULL_ALLOWED
             ],
             'location' => [
-                'type' => PARAM_RAW_TRIMMED,
+                'type' => PARAM_RAW,
                 'optional' => true,
                 'default' => null,
                 'null' => NULL_ALLOWED
@@ -160,7 +176,25 @@ class event_exporter_base extends exporter {
                 'default' => null,
                 'null' => NULL_ALLOWED
             ],
+            'component' => [
+                'type' => PARAM_COMPONENT,
+                'optional' => true,
+                'default' => null,
+                'null' => NULL_ALLOWED
+            ],
             'modulename' => [
+                'type' => PARAM_TEXT,
+                'optional' => true,
+                'default' => null,
+                'null' => NULL_ALLOWED
+            ],
+            'activityname' => [
+                'type' => PARAM_TEXT,
+                'optional' => true,
+                'default' => null,
+                'null' => NULL_ALLOWED
+            ],
+            'activitystr' => [
                 'type' => PARAM_TEXT,
                 'optional' => true,
                 'default' => null,
@@ -176,8 +210,15 @@ class event_exporter_base extends exporter {
             'timestart' => ['type' => PARAM_INT],
             'timeduration' => ['type' => PARAM_INT],
             'timesort' => ['type' => PARAM_INT],
+            'timeusermidnight' => ['type' => PARAM_INT],
             'visible' => ['type' => PARAM_INT],
             'timemodified' => ['type' => PARAM_INT],
+            'overdue' => [
+                'type' => PARAM_BOOL,
+                'optional' => true,
+                'default' => false,
+                'null' => NULL_ALLOWED
+            ],
         ];
     }
 
@@ -221,6 +262,9 @@ class event_exporter_base extends exporter {
             'formattedtime' => [
                 'type' => PARAM_RAW,
             ],
+            'formattedlocation' => [
+                'type' => PARAM_RAW,
+            ],
             'isactionevent' => [
                 'type' => PARAM_BOOL
             ],
@@ -235,6 +279,19 @@ class event_exporter_base extends exporter {
                 'optional' => true,
                 'default' => null,
                 'null' => NULL_ALLOWED
+            ],
+            'normalisedeventtype' => [
+                'type' => PARAM_TEXT
+            ],
+            'normalisedeventtypetext' => [
+                'type' => PARAM_TEXT
+            ],
+            'action' => [
+                'type' => event_action_exporter::read_properties_definition(),
+                'optional' => true,
+            ],
+            'purpose' => [
+                'type' => PARAM_TEXT
             ],
         ];
     }
@@ -254,8 +311,14 @@ class event_exporter_base extends exporter {
         $values['isactionevent'] = false;
         $values['iscourseevent'] = false;
         $values['iscategoryevent'] = false;
+        $values['normalisedeventtype'] = $event->get_type();
         if ($moduleproxy = $event->get_course_module()) {
+            // We need a separate property to flag if an event is action event.
+            // That's required because canedit return true but action action events cannot be edited on the calendar UI.
+            // But they are considered editable because you can drag and drop the event on the month view.
             $values['isactionevent'] = true;
+            // Activity events are normalised to "look" like course events.
+            $values['normalisedeventtype'] = 'course';
         } else if ($event->get_type() == 'course') {
             $values['iscourseevent'] = true;
         } else if ($event->get_type() == 'category') {
@@ -263,6 +326,19 @@ class event_exporter_base extends exporter {
         }
         $timesort = $event->get_times()->get_sort_time()->getTimestamp();
         $iconexporter = new event_icon_exporter($event, ['context' => $context]);
+        $identifier = 'type' . $values['normalisedeventtype'];
+        $stringexists = get_string_manager()->string_exists($identifier, 'calendar');
+        if (!$stringexists) {
+            // Property normalisedeventtype is used to build the name of the CSS class for the events.
+            $values['normalisedeventtype'] = 'other';
+        }
+        $values['normalisedeventtypetext'] = $stringexists ? get_string($identifier, 'calendar') : '';
+
+        $purpose = 'none';
+        if ($moduleproxy) {
+            $purpose = plugin_supports('mod', $moduleproxy->get('modname'), FEATURE_MOD_PURPOSE, 'none');
+        }
+        $values['purpose'] = $purpose;
 
         $values['icon'] = $iconexporter->export($output);
 
@@ -276,7 +352,7 @@ class event_exporter_base extends exporter {
             $values['category'] = $categorysummaryexporter->export($output);
         }
 
-        if ($course) {
+        if ($course && $course->id != SITEID) {
             $coursesummaryexporter = new course_summary_exporter($course, ['context' => $context]);
             $values['course'] = $coursesummaryexporter->export($output);
         }
@@ -298,10 +374,21 @@ class event_exporter_base extends exporter {
         $values['viewurl'] = $viewurl->out(false);
         $values['formattedtime'] = calendar_format_event_time($legacyevent, time(), null, false,
                 $timesort);
+        $values['formattedlocation'] = calendar_format_event_location($legacyevent);
 
         if ($group = $event->get_group()) {
             $values['groupname'] = format_string($group->get('name'), true,
                 ['context' => \context_course::instance($event->get_course()->get('id'))]);
+        }
+
+        if ($event instanceof action_event_interface) {
+            // Export event action if applicable.
+            $actionrelated = [
+                'context' => $this->related['context'],
+                'event' => $event
+            ];
+            $actionexporter = new event_action_exporter($event->get_action(), $actionrelated);
+            $values['action'] = $actionexporter->export($output);
         }
 
         return $values;

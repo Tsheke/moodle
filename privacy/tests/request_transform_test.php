@@ -34,6 +34,7 @@ use \core_privacy\local\request\transform;
  *
  * @copyright   2018 Andrew Nicols <andrew@nicols.co.uk>
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @coversDefaultClass \core_privacy\local\request\transform
  */
 class request_transform_test extends advanced_testcase {
     /**
@@ -41,6 +42,8 @@ class request_transform_test extends advanced_testcase {
      *
      * We have not determined if we will do this or not, but we provide the functionality and encourgae people to use
      * it so that it can be retrospectively fitted if required.
+     *
+     * @covers ::user
      */
     public function test_user() {
         // Note: This test currently sucks, but there's no point creating users just to test this.
@@ -51,6 +54,8 @@ class request_transform_test extends advanced_testcase {
 
     /**
      * Test that the datetime is translated into a string.
+     *
+     * @covers ::datetime
      */
     public function test_datetime() {
         $time = 1;
@@ -58,7 +63,7 @@ class request_transform_test extends advanced_testcase {
         $datestr = transform::datetime($time);
 
         // Assert it is a string.
-        $this->assertInternalType('string', $datestr);
+        $this->assertIsString($datestr);
 
         // To prevent failures on MAC where we are returned with a lower-case 'am' we want to convert this to 'AM'.
         $datestr = str_replace('am', 'AM', $datestr);
@@ -71,6 +76,8 @@ class request_transform_test extends advanced_testcase {
 
     /**
      * Test that the date is translated into a string.
+     *
+     * @covers ::date
      */
     public function test_date() {
         $time = 1;
@@ -78,7 +85,7 @@ class request_transform_test extends advanced_testcase {
         $datestr = transform::date($time);
 
         // Assert it is a string.
-        $this->assertInternalType('string', $datestr);
+        $this->assertIsString($datestr);
 
         // Assert the formatted date is correct.
         $dateobj = new DateTime();
@@ -92,6 +99,7 @@ class request_transform_test extends advanced_testcase {
      * @dataProvider yesno_provider
      * @param   mixed   $input The input to test
      * @param   string  $expected The expected value
+     * @covers ::yesno
      */
     public function test_yesno($input, $expected) {
         $this->assertEquals($expected, transform::yesno($input));

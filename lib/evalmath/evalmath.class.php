@@ -114,8 +114,8 @@ class EvalMath {
         'average'=>array(-1), 'max'=>array(-1),  'min'=>array(-1),
         'mod'=>array(2),      'pi'=>array(0),    'power'=>array(2),
         'round'=>array(1, 2), 'sum'=>array(-1), 'rand_int'=>array(2),
-        'rand_float'=>array(0), 'ifthenelse'=>array(3));
-    var $fcsynonyms = array('if' => 'ifthenelse');
+        'rand_float'=>array(0), 'ifthenelse'=>array(3), 'cond_and'=>array(-1), 'cond_or'=>array(-1));
+    var $fcsynonyms = array('if' => 'ifthenelse', 'and' => 'cond_and', 'or' => 'cond_or');
 
     var $allowimplicitmultiplication;
 
@@ -210,14 +210,14 @@ class EvalMath {
         $output = array(); // postfix form of expression, to be passed to pfx()
         $expr = trim(strtolower($expr));
         // MDL-14274: new operators for comparison added.
-        $ops   = array('+', '-', '*', '/', '^', '_', '>', '<', '<=', '>=', '==');
-        $ops_r = array('+'=>0,'-'=>0,'*'=>0,'/'=>0,'^'=>1); // right-associative operator?
-        $ops_p = array('+'=>0,'-'=>0,'*'=>1,'/'=>1,'_'=>1,'^'=>2, '>'=>3, '<'=>3, '<='=>3, '>='=>3, '=='=>3); // operator precedence
+        $ops   = array('+', '-', '*', '/', '^', '_', '>', '<', '<=', '>=', '==', '%');
+        $ops_r = array('+'=>0,'-'=>0,'*'=>0,'/'=>0,'^'=>1, '%' => 0); // right-associative operator?
+        $ops_p = array('+'=>0,'-'=>0,'*'=>1,'/'=>1,'_'=>1,'^'=>2, '>'=>3, '<'=>3, '<='=>3, '>='=>3, '=='=>3, '%'=>1); // operator precedence
 
         $expecting_op = false; // we use this in syntax-checking the expression
                                // and determining when a - is a negation
 
-        if (preg_match("/[^\w\s+*^\/()\.,-<>=]/", $expr, $matches)) { // make sure the characters are all good
+        if (preg_match("/[^\%\w\s+*^\/()\.,-<>=]/", $expr, $matches)) { // make sure the characters are all good
             return $this->trigger(get_string('illegalcharactergeneral', 'mathslib', $matches[0]));
         }
 
@@ -260,7 +260,7 @@ class EvalMath {
                     if (is_null($o2)) return $this->trigger(get_string('unexpectedclosingbracket', 'mathslib'));
                     else $output[] = $o2;
                 }
-                if (preg_match('/^('.self::$namepat.')\($/', $stack->last(2), $matches)) { // did we just close a function?
+                if (preg_match('/^('.self::$namepat.')\($/', $stack->last(2) ?? '', $matches)) { // did we just close a function?
                     $fnn = $matches[1]; // get the function name
                     $arg_count = $stack->pop(); // see how many arguments there were (cleverly stored on the stack, thank you)
                     $fn = $stack->pop();
@@ -433,7 +433,7 @@ class EvalMath {
                     $stack->push($this->pfx($this->f[$fnn]['func'], $args)); // yay... recursion!!!!
                 }
             // if the token is a binary operator, pop two values off the stack, do the operation, and push the result back on
-            } elseif (in_array($token, array('+', '-', '*', '/', '^', '>', '<', '==', '<=', '>='), true)) {
+            } elseif (in_array($token, array('+', '-', '*', '/', '^', '>', '<', '==', '<=', '>=', '%'), true)) {
                 if (is_null($op2 = $stack->pop())) return $this->trigger(get_string('internalerror', 'mathslib'));
                 if (is_null($op1 = $stack->pop())) return $this->trigger(get_string('internalerror', 'mathslib'));
                 switch ($token) {
@@ -458,6 +458,8 @@ class EvalMath {
                         $stack->push((int)($op1 <= $op2)); break;
                     case '>=':
                         $stack->push((int)($op1 >= $op2)); break;
+                    case '%':
+                        $stack->push($op1%$op2); break;
                 }
             // if the token is a unary operator, pop one value off the stack, do the operation, and push it back on
             } elseif ($token == "_") {
@@ -534,9 +536,30 @@ class EvalMathFuncs {
             return $else;
         }
     }
+
+    static function cond_and() {
+        $args = func_get_args();
+        foreach($args as $a) {
+            if ($a == false) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+
+    static function cond_or() {
+        $args = func_get_args();
+        foreach($args as $a) {
+            if($a == true) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+
     static function average() {
         $args = func_get_args();
-        return (call_user_func_array(array('self', 'sum'), $args) / count($args));
+        return (call_user_func_array(array(self::class, 'sum'), $args) / count($args));
     }
 
     static function max() {

@@ -34,6 +34,12 @@ class backup_plan extends base_plan implements loggable {
     protected $excludingdactivities;
 
     /**
+     * The role ids to keep in a copy operation.
+     * @var array
+     */
+    protected $keptroles = array();
+
+    /**
      * Constructor - instantiates one object of this class
      */
     public function __construct($controller) {
@@ -104,6 +110,26 @@ class backup_plan extends base_plan implements loggable {
         $this->excludingdactivities = true;
     }
 
+    /**
+     * Sets the user roles that should be kept in the destination course
+     * for a course copy operation.
+     *
+     * @param array $roleids
+     */
+    public function set_kept_roles(array $roleids): void {
+        $this->keptroles = $roleids;
+    }
+
+    /**
+     * Get the user roles that should be kept in the destination course
+     * for a course copy operation.
+     *
+     * @return array
+     */
+    public function get_kept_roles(): array {
+        return $this->keptroles;
+    }
+
     public function log($message, $level, $a = null, $depth = null, $display = false) {
         backup_helper::log($message, $level, $a, $depth, $display, $this->get_logger());
     }
@@ -125,6 +151,7 @@ class backup_plan extends base_plan implements loggable {
                                 'mode' => $this->controller->get_mode(),
                                 'interactive' => $this->controller->get_interactive(),
                                 'type' => $this->controller->get_type(),
+                                'backupid' => $this->controller->get_backupid()
             );
             $event = \core\event\course_backup_created::create(array(
                 'objectid' => $this->get_courseid(),

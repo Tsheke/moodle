@@ -14,6 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace core_webservice;
+
+use core_external\external_api;
+use externallib_advanced_testcase;
+
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
@@ -28,9 +33,9 @@ require_once($CFG->dirroot . '/webservice/tests/helpers.php');
  * @copyright  2012 Paul Charsley
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class core_webservice_externallib_testcase extends externallib_advanced_testcase {
+class externallib_test extends externallib_advanced_testcase {
 
-    public function setUp() {
+    public function setUp(): void {
         // Calling parent is good, always
         parent::setUp();
 
@@ -39,7 +44,7 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
     }
 
     public function test_get_site_info() {
-        global $DB, $USER, $CFG;
+        global $DB, $USER, $CFG, $PAGE;
 
         $this->resetAfterTest(true);
 
@@ -49,14 +54,16 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
         set_config('userquota', $userquota);
 
         // Set current user
+        set_config('allowuserthemes', 1);
         $user = array();
         $user['username'] = 'johnd';
         $user['firstname'] = 'John';
         $user['lastname'] = 'Doe';
+        $user['theme'] = 'boost';
         self::setUser(self::getDataGenerator()->create_user($user));
 
         // Add a web service and token.
-        $webservice = new stdClass();
+        $webservice = new \stdClass();
         $webservice->name = 'Test web service';
         $webservice->enabled = true;
         $webservice->restrictedusers = false;
@@ -71,7 +78,7 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
             'functionname' => 'core_course_get_contents'));
 
         $_POST['wstoken'] = 'testtoken';
-        $externaltoken = new stdClass();
+        $externaltoken = new \stdClass();
         $externaltoken->token = 'testtoken';
         $externaltoken->tokentype = 0;
         $externaltoken->userid = $USER->id;
@@ -79,12 +86,13 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
         $externaltoken->contextid = 1;
         $externaltoken->creatorid = $USER->id;
         $externaltoken->timecreated = time();
+        $externaltoken->name = \core_external\util::generate_token_name();
         $DB->insert_record('external_tokens', $externaltoken);
 
-        $siteinfo = core_webservice_external::get_site_info();
+        $siteinfo = \core_webservice_external::get_site_info();
 
         // We need to execute the return values cleaning process to simulate the web service server.
-        $siteinfo = external_api::clean_returnvalue(core_webservice_external::get_site_info_returns(), $siteinfo);
+        $siteinfo = external_api::clean_returnvalue(\core_webservice_external::get_site_info_returns(), $siteinfo);
 
         $this->assertEquals('johnd', $siteinfo['username']);
         $this->assertEquals('John', $siteinfo['firstname']);
@@ -120,6 +128,8 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
         // covered below for admin user. This test is for user not allowed to ignore limits.
         $this->assertEquals(get_max_upload_file_size($maxbytes), $siteinfo['usermaxuploadfilesize']);
         $this->assertEquals(true, $siteinfo['usercanmanageownfiles']);
+        $userkey = get_user_key('core_files', $USER->id);
+        $this->assertEquals($userkey, $siteinfo['userprivateaccesskey']);
 
         $this->assertEquals(HOMEPAGE_MY, $siteinfo['userhomepage']);
         $this->assertEquals($CFG->calendartype, $siteinfo['sitecalendartype']);
@@ -128,13 +138,16 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
         } else {
             $this->assertEquals($CFG->calendartype, $siteinfo['usercalendartype']);
         }
+        $this->assertFalse($siteinfo['userissiteadmin']);
+        $this->assertEquals($CFG->calendartype, $siteinfo['sitecalendartype']);
+        $this->assertEquals($user['theme'], $siteinfo['theme']);
 
         // Now as admin.
         $this->setAdminUser();
 
         // Set a fake token for the user admin.
         $_POST['wstoken'] = 'testtoken';
-        $externaltoken = new stdClass();
+        $externaltoken = new \stdClass();
         $externaltoken->token = 'testtoken';
         $externaltoken->tokentype = 0;
         $externaltoken->userid = $USER->id;
@@ -142,23 +155,42 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
         $externaltoken->contextid = 1;
         $externaltoken->creatorid = $USER->id;
         $externaltoken->timecreated = time();
+        $externaltoken->name = \core_external\util::generate_token_name();
         $DB->insert_record('external_tokens', $externaltoken);
 
         // Set a home page by user preferences.
         $CFG->defaulthomepage = HOMEPAGE_USER;
         set_user_preference('user_home_page_preference', HOMEPAGE_SITE);
 
-        $siteinfo = core_webservice_external::get_site_info();
+        $siteinfo = \core_webservice_external::get_site_info();
 
         // We need to execute the return values cleaning process to simulate the web service server.
-        $siteinfo = external_api::clean_returnvalue(core_webservice_external::get_site_info_returns(), $siteinfo);
+        $siteinfo = external_api::clean_returnvalue(\core_webservice_external::get_site_info_returns(), $siteinfo);
 
         $this->assertEquals(0, $siteinfo['userquota']);
         $this->assertEquals(USER_CAN_IGNORE_FILE_SIZE_LIMITS, $siteinfo['usermaxuploadfilesize']);
         $this->assertEquals(true, $siteinfo['usercanmanageownfiles']);
+        $this->assertTrue($siteinfo['userissiteadmin']);
+        $this->assertEmpty($USER->theme);
+        $this->assertEquals($PAGE->theme->name, $siteinfo['theme']);
+        $this->assertEquals($CFG->limitconcurrentlogins, $siteinfo['limitconcurrentlogins']);
+        $this->assertFalse(isset($siteinfo['usersessionscount']));
 
-        $this->assertEquals(HOMEPAGE_SITE, $siteinfo['userhomepage']);
+        $CFG->limitconcurrentlogins = 1;
+        $record = new \stdClass();
+        $record->state        = 0;
+        $record->sessdata     = null;
+        $record->userid       = $USER->id;
+        $record->timemodified = time();
+        $record->firstip      = $record->lastip = '10.0.0.1';
+        $record->sid = md5('hokus1');
+        $record->timecreated = time();
+        $DB->insert_record('sessions', $record);
 
+        $siteinfo = \core_webservice_external::get_site_info();
+        $siteinfo = external_api::clean_returnvalue(\core_webservice_external::get_site_info_returns(), $siteinfo);
+        $this->assertEquals($CFG->limitconcurrentlogins, $siteinfo['limitconcurrentlogins']);
+        $this->assertEquals(1, $siteinfo['usersessionscount']);
     }
 
     /**
@@ -173,9 +205,72 @@ class core_webservice_externallib_testcase extends externallib_advanced_testcase
         $userquota = PHP_INT_MAX . '000';
         set_config('userquota', $userquota);
 
-        $result = core_webservice_external::get_site_info();
-        $result = external_api::clean_returnvalue(core_webservice_external::get_site_info_returns(), $result);
+        $result = \core_webservice_external::get_site_info();
+        $result = external_api::clean_returnvalue(\core_webservice_external::get_site_info_returns(), $result);
         $this->assertEquals(PHP_INT_MAX, $result['userquota']);
+    }
+
+    /**
+     * Test get_site_info with missing components.
+     */
+    public function test_get_site_missing_components() {
+        global $USER, $DB;
+
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // Add a web service and token.
+        $webservice = new \stdClass();
+        $webservice->name = 'Test web service';
+        $webservice->enabled = true;
+        $webservice->restrictedusers = false;
+        $webservice->component = 'moodle';
+        $webservice->timecreated = time();
+        $webservice->downloadfiles = true;
+        $webservice->uploadfiles = true;
+        $externalserviceid = $DB->insert_record('external_services', $webservice);
+
+        // Add a function to the service (missing plugin).
+        $DB->insert_record('external_functions',
+            [
+                'component' => 'mod_random',
+                'name' => 'mod_random_get_info'
+            ]
+        );
+
+        // Insert one from missing component.
+        $DB->insert_record('external_services_functions',
+            [
+                'externalserviceid' => $externalserviceid,
+                'functionname' => 'mod_random_get_info'
+            ]
+        );
+        // Insert a core one.
+        $DB->insert_record('external_services_functions',
+            [
+                'externalserviceid' => $externalserviceid,
+                'functionname' => 'core_user_get_users'
+            ]
+        );
+
+        $_POST['wstoken'] = 'testtoken';
+        $externaltoken = new \stdClass();
+        $externaltoken->token = 'testtoken';
+        $externaltoken->tokentype = 0;
+        $externaltoken->userid = $USER->id;
+        $externaltoken->externalserviceid = $externalserviceid;
+        $externaltoken->contextid = 1;
+        $externaltoken->creatorid = $USER->id;
+        $externaltoken->timecreated = time();
+        $externaltoken->name = \core_external\util::generate_token_name();
+        $DB->insert_record('external_tokens', $externaltoken);
+
+        // Execution should complete.
+        $result = \core_webservice_external::get_site_info();
+        $result = external_api::clean_returnvalue(\core_webservice_external::get_site_info_returns(), $result);
+        // Check we ignore the missing component function.
+        $this->assertCount(1, $result['functions']);
+        $this->assertEquals('core_user_get_users', $result['functions'][0]['name']);
     }
 
 }

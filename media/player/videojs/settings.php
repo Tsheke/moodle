@@ -29,20 +29,14 @@ if ($ADMIN->fulltree) {
     $settings->add(new admin_setting_filetypes('media_videojs/videoextensions',
         new lang_string('videoextensions', 'media_videojs'),
         new lang_string('configvideoextensions', 'media_videojs'),
-        'html_video,.f4v,.flv'));
+        'html_video,media_source,.f4v,.flv',
+        array('onlytypes' => array('video', 'web_video', 'html_video', 'media_source'))));
 
     $settings->add(new admin_setting_filetypes('media_videojs/audioextensions',
         new lang_string('audioextensions', 'media_videojs'),
         new lang_string('configaudioextensions', 'media_videojs'),
-        'html_audio'));
-
-    $settings->add(new admin_setting_configcheckbox('media_videojs/rtmp',
-        new lang_string('rtmp', 'media_videojs'),
-        new lang_string('configrtmp', 'media_videojs'), 0));
-
-    $settings->add(new admin_setting_configcheckbox('media_videojs/useflash',
-        new lang_string('useflash', 'media_videojs'),
-        new lang_string('configuseflash', 'media_videojs'), 0));
+        'html_audio',
+        array('onlytypes' => array('audio', 'web_audio', 'html_audio'))));
 
     $settings->add(new admin_setting_configcheckbox('media_videojs/youtube',
         new lang_string('youtube', 'media_videojs'),

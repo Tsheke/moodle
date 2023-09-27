@@ -180,23 +180,12 @@ class page_requirements_manager {
         $this->yui3loader = new stdClass();
         $this->YUI_config = new YUI_config();
 
-        if (is_https() && !empty($CFG->useexternalyui)) {
-            // On HTTPS sites all JS must be loaded from https sites,
-            // YUI CDN does not support https yet, sorry.
-            $CFG->useexternalyui = 0;
-        }
-
         // Set up some loader options.
         $this->yui3loader->local_base = $CFG->wwwroot . '/lib/yuilib/'. $CFG->yui3version . '/';
         $this->yui3loader->local_comboBase = $CFG->wwwroot . '/theme/yui_combo.php'.$sep;
 
-        if (!empty($CFG->useexternalyui)) {
-            $this->yui3loader->base = 'http://yui.yahooapis.com/' . $CFG->yui3version . '/';
-            $this->yui3loader->comboBase = 'http://yui.yahooapis.com/combo?';
-        } else {
-            $this->yui3loader->base = $this->yui3loader->local_base;
-            $this->yui3loader->comboBase = $this->yui3loader->local_comboBase;
-        }
+        $this->yui3loader->base = $this->yui3loader->local_base;
+        $this->yui3loader->comboBase = $this->yui3loader->local_comboBase;
 
         // Enable combo loader? This significantly helps with caching and performance!
         $this->yui3loader->combine = !empty($CFG->yuicomboloading);
@@ -219,7 +208,7 @@ class page_requirements_manager {
 
         $configname = $this->YUI_config->set_config_source('lib/yui/config/yui2.js');
         $this->YUI_config->add_group('yui2', array(
-            // Loader configuration for our 2in3, for now ignores $CFG->useexternalyui.
+            // Loader configuration for our 2in3.
             'base' => $CFG->wwwroot . '/lib/yuilib/2in3/' . $CFG->yui2version . '/build/',
             'comboBase' => $CFG->wwwroot . '/theme/yui_combo.php'.$sep,
             'combine' => $this->yui3loader->combine,
@@ -314,22 +303,34 @@ class page_requirements_manager {
 
             // It is possible that the $page->context is null, so we can't use $page->context->id.
             $contextid = null;
+            $contextinstanceid = null;
             if (!is_null($page->context)) {
                 $contextid = $page->context->id;
+                $contextinstanceid = $page->context->instanceid;
+                $courseid = $page->course->id;
+                $coursecontext = context_course::instance($courseid);
             }
 
             $this->M_cfg = array(
-                'wwwroot'             => $CFG->wwwroot,
-                'sesskey'             => sesskey(),
-                'themerev'            => theme_get_revision(),
-                'slasharguments'      => (int)(!empty($CFG->slasharguments)),
-                'theme'               => $page->theme->name,
-                'iconsystemmodule'    => $iconsystem->get_amd_name(),
-                'jsrev'               => $this->get_jsrev(),
-                'admin'               => $CFG->admin,
-                'svgicons'            => $page->theme->use_svg_icons(),
-                'usertimezone'        => usertimezone(),
-                'contextid'           => $contextid,
+                'wwwroot'               => $CFG->wwwroot,
+                'homeurl'               => $page->navigation->action,
+                'sesskey'               => sesskey(),
+                'sessiontimeout'        => $CFG->sessiontimeout,
+                'sessiontimeoutwarning' => $CFG->sessiontimeoutwarning,
+                'themerev'              => theme_get_revision(),
+                'slasharguments'        => (int)(!empty($CFG->slasharguments)),
+                'theme'                 => $page->theme->name,
+                'iconsystemmodule'      => $iconsystem->get_amd_name(),
+                'jsrev'                 => $this->get_jsrev(),
+                'admin'                 => $CFG->admin,
+                'svgicons'              => $page->theme->use_svg_icons(),
+                'usertimezone'          => usertimezone(),
+                'courseId'              => isset($courseid) ? (int) $courseid : 0,
+                'courseContextId'       => isset($coursecontext) ? $coursecontext->id : 0,
+                'contextid'             => $contextid,
+                'contextInstanceId'     => (int) $contextinstanceid,
+                'langrev'               => get_string_manager()->get_revision(),
+                'templaterev'           => $this->get_templaterev()
             );
             if ($CFG->debugdeveloper) {
                 $this->M_cfg['developerdebug'] = true;
@@ -370,12 +371,8 @@ class page_requirements_manager {
         // Include block drag/drop if editing is on
         if ($page->user_is_editing()) {
             $params = array(
-                'courseid' => $page->course->id,
-                'pagetype' => $page->pagetype,
-                'pagelayout' => $page->pagelayout,
-                'subpage' => $page->subpage,
                 'regions' => $page->blocks->get_regions(),
-                'contextid' => $page->context->id,
+                'pagehash' => $page->get_edited_page_hash(),
             );
             if (!empty($page->cm->id)) {
                 $params['cmid'] = $page->cm->id;
@@ -386,6 +383,7 @@ class page_requirements_manager {
                                         'emptydragdropregion'),
                                   'moodle');
             $page->requires->yui_module('moodle-core-blocks', 'M.core_blocks.init_dragdrop', array($params), null, true);
+            $page->requires->js_call_amd('core_block/edit', 'init', ['pagehash' => $page->get_edited_page_hash()]);
         }
 
         // Include the YUI CSS Modules.
@@ -397,7 +395,7 @@ class page_requirements_manager {
      *
      * @return int the jsrev to use.
      */
-    protected function get_jsrev() {
+    public function get_jsrev() {
         global $CFG;
 
         if (empty($CFG->cachejs)) {
@@ -409,6 +407,25 @@ class page_requirements_manager {
         }
 
         return $jsrev;
+    }
+
+    /**
+     * Determine the correct Template revision to use for this load.
+     *
+     * @return int the templaterev to use.
+     */
+    protected function get_templaterev() {
+        global $CFG;
+
+        if (empty($CFG->cachetemplates)) {
+            $templaterev = -1;
+        } else if (empty($CFG->templaterev)) {
+            $templaterev = 1;
+        } else {
+            $templaterev = $CFG->templaterev;
+        }
+
+        return $templaterev;
     }
 
     /**
@@ -427,6 +444,10 @@ class page_requirements_manager {
      * @param bool $inhead initialise in head
      */
     public function js($url, $inhead = false) {
+        if ($url == '/question/qengine.js') {
+            debugging('The question/qengine.js has been deprecated. ' .
+                'Please use core_question/question_engine', DEBUG_DEVELOPER);
+        }
         $url = $this->js_fix_url($url);
         $where = $inhead ? 'head' : 'footer';
         $this->jsincludes[$where][$url->out()] = $url;
@@ -679,17 +700,30 @@ class page_requirements_manager {
     }
 
     /**
-     * Returns the actual url through which a script is served.
+     * Returns the actual url through which a JavaScript file is served.
      *
-     * @param moodle_url|string $url full moodle url, or shortened path to script
+     * @param moodle_url|string $url full moodle url, or shortened path to script.
+     * @throws coding_exception if the given $url isn't a shortened url starting with / or a moodle_url instance.
      * @return moodle_url
      */
     protected function js_fix_url($url) {
         global $CFG;
 
         if ($url instanceof moodle_url) {
+            // If the URL is external to Moodle, it won't be handled by Moodle (!).
+            if ($url->is_local_url()) {
+                $localurl = $url->out_as_local_url();
+                // Check if the URL points to a Moodle PHP resource.
+                if (strpos($localurl, '.php') !== false) {
+                    // It's a Moodle PHP resource e.g. a resource already served by the proper Moodle Handler.
+                    return $url;
+                }
+                // It's a local resource: we need to further examine it.
+                return $this->js_fix_url($url->out_as_local_url(false));
+            }
+            // The URL is not a Moodle resource.
             return $url;
-        } else if (strpos($url, '/') === 0) {
+        } else if (null !== $url && strpos($url, '/') === 0) {
             // Fix the admin links if needed.
             if ($CFG->admin !== 'admin') {
                 if (strpos($url, "/admin/") === 0) {
@@ -705,7 +739,7 @@ class page_requirements_manager {
             if (substr($url, -3) === '.js') {
                 $jsrev = $this->get_jsrev();
                 if (empty($CFG->slasharguments)) {
-                    return new moodle_url('/lib/javascript.php', array('rev'=>$jsrev, 'jsfile'=>$url));
+                    return new moodle_url('/lib/javascript.php', ['rev' => $jsrev, 'jsfile' => $url]);
                 } else {
                     $returnurl = new moodle_url('/lib/javascript.php');
                     $returnurl->set_slashargument('/'.$jsrev.$url);
@@ -764,8 +798,6 @@ class page_requirements_manager {
                                     'requires' => array('node', 'cookie'));
                     break;
                 case 'core_completion':
-                    $module = array('name'     => 'core_completion',
-                                    'fullpath' => '/course/completion.js');
                     break;
                 case 'core_message':
                     $module = array('name'     => 'core_message',
@@ -795,7 +827,7 @@ class page_requirements_manager {
                                                         array('dndenabled_inbox', 'moodle'), array('fileexists', 'moodle'), array('maxbytesfile', 'error'),
                                                         array('sizegb', 'moodle'), array('sizemb', 'moodle'), array('sizekb', 'moodle'), array('sizeb', 'moodle'),
                                                         array('maxareabytesreached', 'moodle'), array('serverconnection', 'error'),
-                                                        array('changesmadereallygoaway', 'moodle')
+                                                        array('changesmadereallygoaway', 'moodle'), array('complete', 'moodle')
                                                     ));
                     break;
             }
@@ -999,35 +1031,52 @@ class page_requirements_manager {
     }
 
     /**
-     * This function creates a minimal JS script that requires and calls a single function from an AMD module with arguments.
-     * If it is called multiple times, it will be executed multiple times.
+     * Load an AMD module and eventually call its method.
      *
-     * @param string $fullmodule The format for module names is <component name>/<module name>.
-     * @param string $func The function from the module to call
-     * @param array $params The params to pass to the function. They will be json encoded, so no nasty classes/types please.
+     * This function creates a minimal inline JS snippet that requires an AMD module and eventually calls a single
+     * function from the module with given arguments. If it is called multiple times, it will be create multiple
+     * snippets.
+     *
+     * @param string $fullmodule The name of the AMD module to load, formatted as <component name>/<module name>.
+     * @param string $func Optional function from the module to call, defaults to just loading the AMD module.
+     * @param array $params The params to pass to the function (will be serialized into JSON).
      */
-    public function js_call_amd($fullmodule, $func, $params = array()) {
+    public function js_call_amd($fullmodule, $func = null, $params = array()) {
         global $CFG;
 
-        list($component, $module) = explode('/', $fullmodule, 2);
+        $modulepath = explode('/', $fullmodule);
 
-        $component = clean_param($component, PARAM_COMPONENT);
-        $module = clean_param($module, PARAM_ALPHANUMEXT);
-        $func = clean_param($func, PARAM_ALPHANUMEXT);
-
-        $jsonparams = array();
-        foreach ($params as $param) {
-            $jsonparams[] = json_encode($param);
+        $modname = clean_param(array_shift($modulepath), PARAM_COMPONENT);
+        foreach ($modulepath as $module) {
+            $modname .= '/' . clean_param($module, PARAM_ALPHANUMEXT);
         }
-        $strparams = implode(', ', $jsonparams);
-        if ($CFG->debugdeveloper) {
-            $toomanyparamslimit = 1024;
-            if (strlen($strparams) > $toomanyparamslimit) {
-                debugging('Too many params passed to js_call_amd("' . $fullmodule . '", "' . $func . '")', DEBUG_DEVELOPER);
+
+        $functioncode = [];
+        if ($func !== null) {
+            $func = clean_param($func, PARAM_ALPHANUMEXT);
+
+            $jsonparams = array();
+            foreach ($params as $param) {
+                $jsonparams[] = json_encode($param);
             }
+            $strparams = implode(', ', $jsonparams);
+            if ($CFG->debugdeveloper) {
+                $toomanyparamslimit = 1024;
+                if (strlen($strparams) > $toomanyparamslimit) {
+                    debugging('Too much data passed as arguments to js_call_amd("' . $fullmodule . '", "' . $func .
+                        '"). Generally there are better ways to pass lots of data from PHP to JavaScript, for example via Ajax, ' .
+                        'data attributes, ... . This warning is triggered if the argument string becomes longer than ' .
+                        $toomanyparamslimit . ' characters.', DEBUG_DEVELOPER);
+                }
+            }
+
+            $functioncode[] = "amd.{$func}({$strparams});";
         }
 
-        $js = 'require(["' . $component . '/' . $module . '"], function(amd) { amd.' . $func . '(' . $strparams . '); });';
+        $functioncode[] = "M.util.js_complete('{$modname}');";
+
+        $initcode = implode(' ', $functioncode);
+        $js = "M.util.js_pending('{$modname}'); require(['{$modname}'], function(amd) {{$initcode}});";
 
         $this->js_amd_inline($js);
     }
@@ -1314,6 +1363,9 @@ class page_requirements_manager {
     protected function get_amd_footercode() {
         global $CFG;
         $output = '';
+
+        // We will cache JS if cachejs is not set, or it is true.
+        $cachejs = !isset($CFG->cachejs) || $CFG->cachejs;
         $jsrev = $this->get_jsrev();
 
         $jsloader = new moodle_url('/lib/javascript.php');
@@ -1329,21 +1381,44 @@ class page_requirements_manager {
             $jsextension = '';
         }
 
+        $minextension = '.min';
+        if (!$cachejs) {
+            $minextension = '';
+        }
+
         $requirejsconfig = str_replace('[BASEURL]', $requirejsloader, $requirejsconfig);
         $requirejsconfig = str_replace('[JSURL]', $jsloader, $requirejsconfig);
+        $requirejsconfig = str_replace('[JSMIN]', $minextension, $requirejsconfig);
         $requirejsconfig = str_replace('[JSEXT]', $jsextension, $requirejsconfig);
 
         $output .= html_writer::script($requirejsconfig);
-        if ($CFG->debugdeveloper) {
-            $output .= html_writer::script('', $this->js_fix_url('/lib/requirejs/require.js'));
-        } else {
+        if ($cachejs) {
             $output .= html_writer::script('', $this->js_fix_url('/lib/requirejs/require.min.js'));
+        } else {
+            $output .= html_writer::script('', $this->js_fix_url('/lib/requirejs/require.js'));
         }
 
         // First include must be to a module with no dependencies, this prevents multiple requests.
-        $prefix = "require(['core/first'], function() {\n";
-        $suffix = "\n});";
-        $output .= html_writer::script($prefix . implode(";\n", $this->amdjscode) . $suffix);
+        $prefix = <<<EOF
+M.util.js_pending("core/first");
+require(['core/first'], function() {
+
+EOF;
+
+        if (during_initial_install()) {
+            // Do not run a prefetch during initial install as the DB is not available to service WS calls.
+            $prefetch = '';
+        } else {
+            $prefetch = "require(['core/prefetch'])\n";
+        }
+
+        $suffix = <<<EOF
+
+    M.util.js_complete("core/first");
+});
+EOF;
+
+        $output .= html_writer::script($prefix . $prefetch . implode(";\n", $this->amdjscode) . $suffix);
         return $output;
     }
 
@@ -1418,14 +1493,14 @@ class page_requirements_manager {
         );
 
         if ($this->yui3loader->combine) {
-            return '<script type="text/javascript" src="' .
+            return '<script src="' .
                     $this->yui3loader->local_comboBase .
                     implode('&amp;', $baserollups) .
                     '"></script>';
         } else {
             $code = '';
             foreach ($baserollups as $rollup) {
-                $code .= '<script type="text/javascript" src="'.$this->yui3loader->local_comboBase.$rollup.'"></script>';
+                $code .= '<script src="'.$this->yui3loader->local_comboBase.$rollup.'"></script>';
             }
             return $code;
         }
@@ -1546,8 +1621,13 @@ class page_requirements_manager {
      * @return string the HTML code to go at the start of the <body> tag.
      */
     public function get_top_of_body_code(renderer_base $renderer) {
+        global $CFG;
+
         // First the skip links.
         $output = $renderer->render_skip_links($this->skiplinks);
+
+        // Include the Polyfills.
+        $output .= html_writer::script('', $this->js_fix_url('/lib/polyfills/polyfill.js'));
 
         // YUI3 JS needs to be loaded early in the body. It should be cached well by the browser.
         $output .= $this->get_yui3lib_headcode();
@@ -1590,6 +1670,9 @@ class page_requirements_manager {
             $logconfig->level = 'trace';
         }
         $this->js_call_amd('core/log', 'setConfig', array($logconfig));
+        // Add any global JS that needs to run on all pages.
+        $this->js_call_amd('core/page_global', 'init');
+        $this->js_call_amd('core/utility');
 
         // Call amd init functions.
         $output .= $this->get_amd_footercode();
@@ -1615,7 +1698,19 @@ class page_requirements_manager {
             'areyousure',
             'closebuttontitle',
             'unknownerror',
+            'error',
+            'file',
+            'url',
+            // TODO MDL-70830 shortforms should preload the collapseall/expandall strings properly.
+            'collapseall',
+            'expandall',
         ), 'moodle');
+        $this->strings_for_js(array(
+            'debuginfo',
+            'line',
+            'stacktrace',
+        ), 'debug');
+        $this->string_for_js('labelsep', 'langconfig');
         if (!empty($this->stringsforjs)) {
             $strings = array();
             foreach ($this->stringsforjs as $component=>$v) {
@@ -1756,6 +1851,12 @@ class YUI_config {
     public $insertBefore = 'firstthemesheet';
     public $groups = array();
     public $modules = array();
+    /** @var array The log sources that should be not be logged. */
+    public $logInclude = [];
+    /** @var array Tog sources that should be logged. */
+    public $logExclude = [];
+    /** @var string The minimum log level for YUI logging statements. */
+    public $logLevel;
 
     /**
      * @var array List of functions used by the YUI Loader group pattern recognition.
@@ -2058,6 +2159,23 @@ class YUI_config {
             }
         }
     }
+}
+
+/**
+ * Invalidate all server and client side template caches.
+ */
+function template_reset_all_caches() {
+    global $CFG;
+
+    $next = time();
+    if (isset($CFG->templaterev) and $next <= $CFG->templaterev and $CFG->templaterev - $next < 60 * 60) {
+        // This resolves problems when reset is requested repeatedly within 1s,
+        // the < 1h condition prevents accidental switching to future dates
+        // because we might not recover from it.
+        $next = $CFG->templaterev + 1;
+    }
+
+    set_config('templaterev', $next);
 }
 
 /**

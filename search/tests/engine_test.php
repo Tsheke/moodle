@@ -14,18 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Search engine base unit tests.
- *
- * @package     core_search
- * @category    phpunit
- * @copyright   2015 David Monllao {@link http://www.davidmonllao.com}
- * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace core_search;
 
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/fixtures/testable_core_search.php');
+require_once(__DIR__ . '/fixtures/mock_search_area.php');
 
 /**
  * Search engine base unit tests.
@@ -35,14 +29,14 @@ require_once(__DIR__ . '/fixtures/testable_core_search.php');
  * @copyright   2015 David Monllao {@link http://www.davidmonllao.com}
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class search_engine_testcase extends advanced_testcase {
+class engine_test extends \advanced_testcase {
 
-    public function setUp() {
+    public function setUp(): void {
         $this->resetAfterTest();
         set_config('enableglobalsearch', true);
 
         // Set \core_search::instance to the mock_search_engine as we don't require the search engine to be working to test this.
-        $search = testable_core_search::instance();
+        $search = \testable_core_search::instance();
     }
 
     /**
@@ -128,5 +122,25 @@ class search_engine_testcase extends advanced_testcase {
         $orders = $engine->get_supported_orders(\context_system::instance());
         $this->assertCount(1, $orders);
         $this->assertArrayHasKey('relevance', $orders);
+    }
+
+    /**
+     * Test that search engine sets an icon before render a document.
+     */
+    public function test_engine_sets_doc_icon() {
+        $generator = self::getDataGenerator()->get_plugin_generator('core_search');
+        $generator->setup();
+
+        $area = new \core_mocksearch\search\mock_search_area();
+        $engine = new \mock_search\engine();
+
+        $record = $generator->create_record();
+        $docdata = $area->get_document($record)->export_for_engine();
+
+        $doc = $engine->to_document($area, $docdata);
+
+        $this->assertNotNull($doc->get_doc_icon());
+
+        $generator->teardown();
     }
 }

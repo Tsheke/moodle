@@ -91,13 +91,18 @@ define('URL_MATCH_EXACT', 2);
  * @return string
  */
 function s($var) {
-
     if ($var === false) {
         return '0';
     }
 
-    return preg_replace('/&amp;#(\d+|x[0-9a-f]+);/i', '&#$1;',
-            htmlspecialchars($var, ENT_QUOTES | ENT_HTML401 | ENT_SUBSTITUTE));
+    if ($var === null || $var === '') {
+        return '';
+    }
+
+    return preg_replace(
+        '/&amp;#(\d+|x[0-9a-f]+);/i', '&#$1;',
+        htmlspecialchars($var, ENT_QUOTES | ENT_HTML401 | ENT_SUBSTITUTE)
+    );
 }
 
 /**
@@ -108,7 +113,6 @@ function s($var) {
  * @see s()
  *
  * @param string $var the string potentially containing HTML characters
- * @return string
  */
 function p($var) {
     echo s($var);
@@ -148,6 +152,9 @@ function addslashes_js($var) {
  * @return string The remaining URL.
  */
 function strip_querystring($url) {
+    if ($url === null || $url === '') {
+        return '';
+    }
 
     if ($commapos = strpos($url, '?')) {
         return substr($url, 0, $commapos);
@@ -336,6 +343,7 @@ class moodle_url {
             $this->anchor = $url->anchor;
 
         } else {
+            $url = $url ?? '';
             // Detect if anchor used.
             $apos = strpos($url, '#');
             if ($apos !== false) {
@@ -526,6 +534,27 @@ class moodle_url {
         } else {
             return implode('&', $arr);
         }
+    }
+
+    /**
+     * Get the url params as an array of key => value pairs.
+     *
+     * This helps in handling cases where url params contain arrays.
+     *
+     * @return array params array for templates.
+     */
+    public function export_params_for_template(): array {
+        $data = [];
+        foreach ($this->params as $key => $val) {
+            if (is_array($val)) {
+                foreach ($val as $index => $value) {
+                    $data[] = ['name' => $key.'['.$index.']', 'value' => $value];
+                }
+            } else {
+                $data[] = ['name' => $key, 'value' => $val];
+            }
+        }
+        return $data;
     }
 
     /**
@@ -773,17 +802,44 @@ class moodle_url {
      * @param string $pathname
      * @param string $filename
      * @param bool $forcedownload
+     * @param mixed $includetoken Whether to use a user token when displaying this group image.
+     *                True indicates to generate a token for current user, and integer value indicates to generate a token for the
+     *                user whose id is the value indicated.
+     *                If the group picture is included in an e-mail or some other location where the audience is a specific
+     *                user who will not be logged in when viewing, then we use a token to authenticate the user.
      * @return moodle_url
      */
     public static function make_pluginfile_url($contextid, $component, $area, $itemid, $pathname, $filename,
-                                               $forcedownload = false) {
-        global $CFG;
-        $urlbase = "$CFG->wwwroot/pluginfile.php";
-        if ($itemid === null) {
-            return self::make_file_url($urlbase, "/$contextid/$component/$area".$pathname.$filename, $forcedownload);
+                                               $forcedownload = false, $includetoken = false) {
+        global $CFG, $USER;
+
+        $path = [];
+
+        if ($includetoken) {
+            $urlbase = "$CFG->wwwroot/tokenpluginfile.php";
+            $userid = $includetoken === true ? $USER->id : $includetoken;
+            $token = get_user_key('core_files', $userid);
+            if ($CFG->slasharguments) {
+                $path[] = $token;
+            }
         } else {
-            return self::make_file_url($urlbase, "/$contextid/$component/$area/$itemid".$pathname.$filename, $forcedownload);
+            $urlbase = "$CFG->wwwroot/pluginfile.php";
         }
+        $path[] = $contextid;
+        $path[] = $component;
+        $path[] = $area;
+
+        if ($itemid !== null) {
+            $path[] = $itemid;
+        }
+
+        $path = "/" . implode('/', $path) . "{$pathname}{$filename}";
+
+        $url = self::make_file_url($urlbase, $path, $forcedownload, $includetoken);
+        if ($includetoken && empty($CFG->slasharguments)) {
+            $url->param('token', $token);
+        }
+        return $url;
     }
 
     /**
@@ -845,7 +901,20 @@ class moodle_url {
     }
 
     /**
-     * Returns URL a relative path from $CFG->wwwroot
+     * Checks if URL is relative to $CFG->wwwroot.
+     *
+     * @return bool True if URL is relative to $CFG->wwwroot; otherwise, false.
+     */
+    public function is_local_url() : bool {
+        global $CFG;
+
+        $url = $this->out();
+        // Does URL start with wwwroot? Otherwise, URL isn't relative to wwwroot.
+        return ( ($url === $CFG->wwwroot) || (strpos($url, $CFG->wwwroot.'/') === 0) );
+    }
+
+    /**
+     * Returns URL as relative path from $CFG->wwwroot
      *
      * Can be used for passing around urls with the wwwroot stripped
      *
@@ -857,10 +926,9 @@ class moodle_url {
     public function out_as_local_url($escaped = true, array $overrideparams = null) {
         global $CFG;
 
-        $url = $this->out($escaped, $overrideparams);
-
-        // Url should be equal to wwwroot. If not then throw exception.
-        if (($url === $CFG->wwwroot) || (strpos($url, $CFG->wwwroot.'/') === 0)) {
+        // URL should be relative to wwwroot. If not then throw exception.
+        if ($this->is_local_url()) {
+            $url = $this->out($escaped, $overrideparams);
             $localurl = substr($url, strlen($CFG->wwwroot));
             return !empty($localurl) ? $localurl : '';
         } else {
@@ -1080,13 +1148,15 @@ function page_get_doc_link_path(moodle_page $page) {
  * @return boolean
  */
 function validate_email($address) {
+    global $CFG;
 
-    return (bool)preg_match('#^[-!\#$%&\'*+\\/0-9=?A-Z^_`a-z{|}~]+'.
-                 '(\.[-!\#$%&\'*+\\/0-9=?A-Z^_`a-z{|}~]+)*'.
-                  '@'.
-                  '[-!\#$%&\'*+\\/0-9=?A-Z^_`a-z{|}~]+\.'.
-                  '[-!\#$%&\'*+\\./0-9=?A-Z^_`a-z{|}~]+$#',
-                  $address);
+    if ($address === null || $address === false || $address === '') {
+        return false;
+    }
+
+    require_once("{$CFG->libdir}/phpmailer/moodle_phpmailer.php");
+
+    return moodle_phpmailer::validateAddress($address ?? '') && !preg_match('/[<>]/', $address);
 }
 
 /**
@@ -1187,7 +1257,7 @@ function format_text_menu() {
  * @param string $text The text to be formatted. This is raw text originally from user input.
  * @param int $format Identifier of the text format to be used
  *            [FORMAT_MOODLE, FORMAT_HTML, FORMAT_PLAIN, FORMAT_MARKDOWN]
- * @param object/array $options text formatting options
+ * @param stdClass|array $options text formatting options
  * @param int $courseiddonotuse deprecated course id, use context option instead
  * @return string
  */
@@ -1203,6 +1273,11 @@ function format_text($text, $format = FORMAT_MOODLE, $options = null, $courseidd
     $options = (array)$options;
 
     if (!isset($options['trusted'])) {
+        $options['trusted'] = false;
+    }
+    if ($format == FORMAT_MARKDOWN) {
+        // Markdown format cannot be trusted in trusttext areas,
+        // because we do not know how to sanitise it before editing.
         $options['trusted'] = false;
     }
     if (!isset($options['noclean'])) {
@@ -1273,9 +1348,15 @@ function format_text($text, $format = FORMAT_MOODLE, $options = null, $courseidd
 
     switch ($format) {
         case FORMAT_HTML:
+            $filteroptions['stage'] = 'pre_format';
+            $text = $filtermanager->filter_text($text, $context, $filteroptions);
+            // Text is already in HTML format, so just continue to the next filtering stage.
+            $filteroptions['stage'] = 'pre_clean';
+            $text = $filtermanager->filter_text($text, $context, $filteroptions);
             if (!$options['noclean']) {
                 $text = clean_text($text, FORMAT_HTML, $options);
             }
+            $filteroptions['stage'] = 'post_clean';
             $text = $filtermanager->filter_text($text, $context, $filteroptions);
             break;
 
@@ -1295,18 +1376,28 @@ function format_text($text, $format = FORMAT_MOODLE, $options = null, $courseidd
             break;
 
         case FORMAT_MARKDOWN:
+            $filteroptions['stage'] = 'pre_format';
+            $text = $filtermanager->filter_text($text, $context, $filteroptions);
             $text = markdown_to_html($text);
+            $filteroptions['stage'] = 'pre_clean';
+            $text = $filtermanager->filter_text($text, $context, $filteroptions);
             if (!$options['noclean']) {
                 $text = clean_text($text, FORMAT_HTML, $options);
             }
+            $filteroptions['stage'] = 'post_clean';
             $text = $filtermanager->filter_text($text, $context, $filteroptions);
             break;
 
         default:  // FORMAT_MOODLE or anything else.
+            $filteroptions['stage'] = 'pre_format';
+            $text = $filtermanager->filter_text($text, $context, $filteroptions);
             $text = text_to_html($text, null, $options['para'], $options['newlines']);
+            $filteroptions['stage'] = 'pre_clean';
+            $text = $filtermanager->filter_text($text, $context, $filteroptions);
             if (!$options['noclean']) {
                 $text = clean_text($text, FORMAT_HTML, $options);
             }
+            $filteroptions['stage'] = 'post_clean';
             $text = $filtermanager->filter_text($text, $context, $filteroptions);
             break;
     }
@@ -1345,9 +1436,9 @@ function format_text($text, $format = FORMAT_MOODLE, $options = null, $courseidd
         }
 
         // This regex is nasty and I don't like it. The correct way to solve this is by loading the HTML like so:
-        // $domdoc->loadHTML($text, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD); however it seems like the libxml
-        // version that travis uses doesn't work properly and ends up leaving <html><body>, so I'm forced to use
-        // this regex to remove those tags.
+        // $domdoc->loadHTML($text, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD); however it seems like some libxml
+        // versions don't work properly and end up leaving <html><body>, so I'm forced to use
+        // this regex to remove those tags as a preventive measure.
         $text = trim(preg_replace('~<(?:!DOCTYPE|/?(?:html|body))[^>]*>\s*~i', '', $domdoc->saveHTML($domdoc->documentElement)));
     }
 
@@ -1405,6 +1496,11 @@ function reset_text_filters_cache($phpunitreset = false) {
  */
 function format_string($string, $striplinks = true, $options = null) {
     global $CFG, $PAGE;
+
+    if ($string === '' || is_null($string)) {
+        // No need to do any filters and cleaning.
+        return '';
+    }
 
     // We'll use a in-memory cache here to speed up repeated strings.
     static $strcache = false;
@@ -1495,7 +1591,7 @@ function format_string($string, $striplinks = true, $options = null) {
  * @return string
  */
 function replace_ampersands_not_followed_by_entity($string) {
-    return preg_replace("/\&(?![a-zA-Z0-9#]{1,8};)/", "&amp;", $string);
+    return preg_replace("/\&(?![a-zA-Z0-9#]{1,8};)/", "&amp;", $string ?? '');
 }
 
 /**
@@ -1621,6 +1717,12 @@ function trusttext_strip($text) {
 function trusttext_pre_edit($object, $field, $context) {
     $trustfield  = $field.'trust';
     $formatfield = $field.'format';
+
+    if ($object->$formatfield == FORMAT_MARKDOWN) {
+        // We do not have a way to sanitise Markdown texts,
+        // luckily editors for this format should not have XSS problems.
+        return $object;
+    }
 
     if (!$object->$trustfield or !trusttext_trusted($context)) {
         $object->$field = clean_text($object->$field, $object->$formatfield);
@@ -1798,7 +1900,7 @@ function purify_html($text, $options = array()) {
         $config = HTMLPurifier_Config::createDefault();
 
         $config->set('HTML.DefinitionID', 'moodlehtml');
-        $config->set('HTML.DefinitionRev', 6);
+        $config->set('HTML.DefinitionRev', 7);
         $config->set('Cache.SerializerPath', $cachedir);
         $config->set('Cache.SerializerPermissions', $CFG->directorypermissions);
         $config->set('Core.NormalizeNewlines', false);
@@ -1832,15 +1934,18 @@ function purify_html($text, $options = array()) {
         }
 
         if ($def = $config->maybeGetRawHTMLDefinition()) {
-            $def->addElement('nolink', 'Block', 'Flow', array());                       // Skip our filters inside.
+            $def->addElement('nolink', 'Inline', 'Flow', array());                      // Skip our filters inside.
             $def->addElement('tex', 'Inline', 'Inline', array());                       // Tex syntax, equivalent to $$xx$$.
             $def->addElement('algebra', 'Inline', 'Inline', array());                   // Algebra syntax, equivalent to @@xx@@.
             $def->addElement('lang', 'Block', 'Flow', array(), array('lang'=>'CDATA')); // Original multilang style - only our hacked lang attribute.
             $def->addAttribute('span', 'xxxlang', 'CDATA');                             // Current very problematic multilang.
+            // Enable the bidirectional isolate element and its span equivalent.
+            $def->addElement('bdi', 'Inline', 'Flow', 'Common');
+            $def->addAttribute('span', 'dir', 'Enum#ltr,rtl,auto');
 
             // Media elements.
             // https://html.spec.whatwg.org/#the-video-element
-            $def->addElement('video', 'Block', 'Optional: #PCDATA | Flow | source | track', 'Common', [
+            $def->addElement('video', 'Inline', 'Optional: #PCDATA | Flow | source | track', 'Common', [
                 'src' => 'URI',
                 'crossorigin' => 'Enum#anonymous,use-credentials',
                 'poster' => 'URI',
@@ -1854,7 +1959,7 @@ function purify_html($text, $options = array()) {
                 'height' => 'Length',
             ]);
             // https://html.spec.whatwg.org/#the-audio-element
-            $def->addElement('audio', 'Block', 'Optional: #PCDATA | Flow | source | track', 'Common', [
+            $def->addElement('audio', 'Inline', 'Optional: #PCDATA | Flow | source | track', 'Common', [
                 'src' => 'URI',
                 'crossorigin' => 'Enum#anonymous,use-credentials',
                 'preload' => 'Enum#auto,metadata,none',
@@ -2030,6 +2135,63 @@ function content_to_text($content, $contentformat) {
 }
 
 /**
+ * Factory method for extracting draft file links from arbitrary text using regular expressions. Only text
+ * is required; other file fields may be passed to filter.
+ *
+ * @param string $text Some html content.
+ * @param bool $forcehttps force https urls.
+ * @param int $contextid This parameter and the next three identify the file area to save to.
+ * @param string $component The component name.
+ * @param string $filearea The filearea.
+ * @param int $itemid The item id for the filearea.
+ * @param string $filename The specific filename of the file.
+ * @return array
+ */
+function extract_draft_file_urls_from_text($text, $forcehttps = false, $contextid = null, $component = null,
+                                           $filearea = null, $itemid = null, $filename = null) {
+    global $CFG;
+
+    $wwwroot = $CFG->wwwroot;
+    if ($forcehttps) {
+        $wwwroot = str_replace('http://', 'https://', $wwwroot);
+    }
+    $urlstring = '/' . preg_quote($wwwroot, '/');
+
+    $urlbase = preg_quote('draftfile.php');
+    $urlstring .= "\/(?<urlbase>{$urlbase})";
+
+    if (is_null($contextid)) {
+        $contextid = '[0-9]+';
+    }
+    $urlstring .= "\/(?<contextid>{$contextid})";
+
+    if (is_null($component)) {
+        $component = '[a-z_]+';
+    }
+    $urlstring .= "\/(?<component>{$component})";
+
+    if (is_null($filearea)) {
+        $filearea = '[a-z_]+';
+    }
+    $urlstring .= "\/(?<filearea>{$filearea})";
+
+    if (is_null($itemid)) {
+        $itemid = '[0-9]+';
+    }
+    $urlstring .= "\/(?<itemid>{$itemid})";
+
+    // Filename matching magic based on file_rewrite_urls_to_pluginfile().
+    if (is_null($filename)) {
+        $filename = '[^\'\",&<>|`\s:\\\\]+';
+    }
+    $urlstring .= "\/(?<filename>{$filename})/";
+
+    // Regular expression which matches URLs and returns their components.
+    preg_match_all($urlstring, $text, $urls, PREG_SET_ORDER);
+    return $urls;
+}
+
+/**
  * This function will highlight search words in a given string
  *
  * It cares about HTML and will not ruin links.  It's best to use
@@ -2126,6 +2288,24 @@ function highlightfast($needle, $haystack) {
 }
 
 /**
+ * Converts a language code to hyphen-separated format in accordance to the
+ * {@link https://datatracker.ietf.org/doc/html/rfc5646#section-2.1 BCP47 syntax}.
+ *
+ * For additional information, check out
+ * {@link https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/lang MDN web docs - lang}.
+ *
+ * @param string $langcode The language code to convert.
+ * @return string
+ */
+function get_html_lang_attribute_value(string $langcode): string {
+    if (empty(trim($langcode))) {
+        // If the language code passed is an empty string, return 'unknown'.
+        return 'unknown';
+    }
+    return str_replace('_', '-', $langcode);
+}
+
+/**
  * Return a string containing 'lang', xml:lang and optionally 'dir' HTML attributes.
  *
  * Internationalisation, for print_header and backup/restorelib.
@@ -2134,6 +2314,16 @@ function highlightfast($needle, $haystack) {
  * @return string Attributes
  */
 function get_html_lang($dir = false) {
+    global $CFG;
+
+    $currentlang = current_language();
+    if (isset($CFG->lang) && $currentlang !== $CFG->lang && !get_string_manager()->translation_exists($currentlang)) {
+        // Use the default site language when the current language is not available.
+        $currentlang = $CFG->lang;
+        // Fix the current language.
+        fix_current_language($currentlang);
+    }
+
     $direction = '';
     if ($dir) {
         if (right_to_left()) {
@@ -2142,8 +2332,9 @@ function get_html_lang($dir = false) {
             $direction = ' dir="ltr"';
         }
     }
+
     // Accessibility: added the 'lang' attribute to $direction, used in theme <html> tag.
-    $language = str_replace('_', '-', current_language());
+    $language = get_html_lang_attribute_value($currentlang);
     @header('Content-Language: '.$language);
     return ($direction.' lang="'.$language.'" xml:lang="'.$language.'"');
 }
@@ -2200,8 +2391,14 @@ function send_headers($contenttype, $cacheable = true) {
     }
     @header('Accept-Ranges: none');
 
-    if (empty($CFG->allowframembedding)) {
+    // The Moodle app must be allowed to embed content always.
+    if (empty($CFG->allowframembedding) && !core_useragent::is_moodle_app()) {
         @header('X-Frame-Options: sameorigin');
+    }
+
+    // If referrer policy is set, add a referrer header.
+    if (!empty($CFG->referrerpolicy) && ($CFG->referrerpolicy !== 'default')) {
+        @header('Referrer-Policy: ' . $CFG->referrerpolicy);
     }
 }
 
@@ -2354,14 +2551,15 @@ function print_collapsible_region($contents, $classes, $id, $caption, $userpref 
  *      (May be blank if you do not wish the state to be persisted.
  * @param boolean $default Initial collapsed state to use if the user_preference it not set.
  * @param boolean $return if true, return the HTML as a string, rather than printing it.
+ * @param string $extracontent the extra content will show next to caption, eg.Help icon.
  * @return string|void if $return is false, returns nothing, otherwise returns a string of HTML.
  */
-function print_collapsible_region_start($classes, $id, $caption, $userpref = '', $default = false, $return = false) {
+function print_collapsible_region_start($classes, $id, $caption, $userpref = '', $default = false, $return = false,
+        $extracontent = null) {
     global $PAGE;
 
     // Work out the initial state.
     if (!empty($userpref) and is_string($userpref)) {
-        user_preference_allow_ajax_update($userpref, PARAM_BOOL);
         $collapsed = get_user_preferences($userpref, $default);
     } else {
         $collapsed = $default;
@@ -2376,8 +2574,11 @@ function print_collapsible_region_start($classes, $id, $caption, $userpref = '',
     $output .= '<div id="' . $id . '" class="collapsibleregion ' . $classes . '">';
     $output .= '<div id="' . $id . '_sizer">';
     $output .= '<div id="' . $id . '_caption" class="collapsibleregioncaption">';
-    $output .= $caption . ' ';
-    $output .= '</div><div id="' . $id . '_inner" class="collapsibleregioninner">';
+    $output .= $caption . ' </div>';
+    if ($extracontent) {
+        $output .= html_writer::div($extracontent, 'collapsibleregionextracontent');
+    }
+    $output .= '<div id="' . $id . '_inner" class="collapsibleregioninner">';
     $PAGE->requires->js_init_call('M.util.init_collapsible_region', array($id, $userpref, get_string('clicktohideshow')));
 
     if ($return) {
@@ -2411,15 +2612,20 @@ function print_collapsible_region_end($return = false) {
  * @param boolean $large Default small picture, or large.
  * @param boolean $return If false print picture, otherwise return the output as string
  * @param boolean $link Enclose image in a link to view specified course?
+ * @param boolean $includetoken Whether to use a user token when displaying this group image.
+ *                True indicates to generate a token for current user, and integer value indicates to generate a token for the
+ *                user whose id is the value indicated.
+ *                If the group picture is included in an e-mail or some other location where the audience is a specific
+ *                user who will not be logged in when viewing, then we use a token to authenticate the user.
  * @return string|void Depending on the setting of $return
  */
-function print_group_picture($group, $courseid, $large=false, $return=false, $link=true) {
+function print_group_picture($group, $courseid, $large = false, $return = false, $link = true, $includetoken = false) {
     global $CFG;
 
     if (is_array($group)) {
         $output = '';
         foreach ($group as $g) {
-            $output .= print_group_picture($g, $courseid, $large, true, $link);
+            $output .= print_group_picture($g, $courseid, $large, true, $link, $includetoken);
         }
         if ($return) {
             return $output;
@@ -2429,7 +2635,7 @@ function print_group_picture($group, $courseid, $large=false, $return=false, $li
         }
     }
 
-    $pictureurl = get_group_picture_url($group, $courseid, $large);
+    $pictureurl = get_group_picture_url($group, $courseid, $large, $includetoken);
 
     // If there is no picture, do nothing.
     if (!isset($pictureurl)) {
@@ -2462,9 +2668,14 @@ function print_group_picture($group, $courseid, $large=false, $return=false, $li
  * @param  stdClass $group A group object.
  * @param  int $courseid The course ID for the group.
  * @param  bool $large A large or small group picture? Default is small.
+ * @param  boolean $includetoken Whether to use a user token when displaying this group image.
+ *                 True indicates to generate a token for current user, and integer value indicates to generate a token for the
+ *                 user whose id is the value indicated.
+ *                 If the group picture is included in an e-mail or some other location where the audience is a specific
+ *                 user who will not be logged in when viewing, then we use a token to authenticate the user.
  * @return moodle_url Returns the url for the group picture.
  */
-function get_group_picture_url($group, $courseid, $large = false) {
+function get_group_picture_url($group, $courseid, $large = false, $includetoken = false) {
     global $CFG;
 
     $context = context_course::instance($courseid);
@@ -2474,18 +2685,14 @@ function get_group_picture_url($group, $courseid, $large = false) {
         return;
     }
 
-    // If picture is hidden, only show to those with course:managegroups.
-    if ($group->hidepicture and !has_capability('moodle/course:managegroups', $context)) {
-        return;
-    }
-
     if ($large) {
         $file = 'f1';
     } else {
         $file = 'f2';
     }
 
-    $grouppictureurl = moodle_url::make_pluginfile_url($context->id, 'group', 'icon', $group->id, '/', $file);
+    $grouppictureurl = moodle_url::make_pluginfile_url(
+            $context->id, 'group', 'icon', $group->id, '/', $file, false, $includetoken);
     $grouppictureurl->param('rev', $group->picture);
     return $grouppictureurl;
 }
@@ -2536,7 +2743,7 @@ function print_recent_activity_note($time, $user, $text, $link, $return=false, $
  * outputs a simple list structure in XHTML.
  * The data is taken from the serialised array stored in the course record.
  *
- * @param course $course A {@link $COURSE} object.
+ * @param stdClass $course A course object.
  * @param array $sections
  * @param course_modinfo $modinfo
  * @param string $strsection
@@ -2613,7 +2820,7 @@ function navmenulist($course, $sections, $modinfo, $strsection, $strjumpto, $wid
         $class = 'activity '.$mod->modname;
         $class .= ($cmid == $mod->id) ? ' selected' : '';
         $menu[] = '<li class="'.$class.'">'.
-                  $OUTPUT->image_icon('icon', '', $mod->modname).
+                  $OUTPUT->image_icon('monologo', '', $mod->modname).
                   '<a href="'.$CFG->wwwroot.'/mod/'.$url.'">'.$mod->name.'</a></li>';
     }
 
@@ -2856,6 +3063,17 @@ function redirect($url, $message='', $delay=null, $messagetype = \core\output\no
     \core\session\manager::write_close();
 
     if ($delay == 0 && !$debugdisableredirect && !headers_sent()) {
+
+        // This helps when debugging redirect issues like loops and it is not clear
+        // which layer in the stack sent the redirect header. If debugging is on
+        // then the file and line is also shown.
+        $redirectby = 'Moodle';
+        if (debugging('', DEBUG_DEVELOPER)) {
+            $origin = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1)[0];
+            $redirectby .= ' /' . str_replace($CFG->dirroot . '/', '', $origin['file']) . ':' . $origin['line'];
+        }
+        @header("X-Redirect-By: $redirectby");
+
         // 302 might not work for POST requests, 303 is ignored by obsolete clients.
         @header($_SERVER['SERVER_PROTOCOL'] . ' 303 See Other');
         @header('Location: '.$url);
@@ -2885,10 +3103,10 @@ function obfuscate_email($email) {
     $length = strlen($email);
     $obfuscated = '';
     while ($i < $length) {
-        if (rand(0, 2) && $email{$i}!='@') { // MDL-20619 some browsers have problems unobfuscating @.
-            $obfuscated.='%'.dechex(ord($email{$i}));
+        if (rand(0, 2) && $email[$i]!='@') { // MDL-20619 some browsers have problems unobfuscating @.
+            $obfuscated.='%'.dechex(ord($email[$i]));
         } else {
-            $obfuscated.=$email{$i};
+            $obfuscated.=$email[$i];
         }
         $i++;
     }
@@ -2992,7 +3210,6 @@ function print_maintenance_message() {
 
     $PAGE->set_pagetype('maintenance-message');
     $PAGE->set_pagelayout('maintenance');
-    $PAGE->set_title(strip_tags($SITE->fullname));
     $PAGE->set_heading($SITE->fullname);
     echo $OUTPUT->header();
     echo $OUTPUT->heading(get_string('sitemaintenance', 'admin'));
@@ -3301,7 +3518,7 @@ class html_progress_trace extends progress_trace {
      * @return void Output is echo'd
      */
     public function output($message, $depth = 0) {
-        echo '<p>', str_repeat('&#160;&#160;', $depth), htmlspecialchars($message), "</p>\n";
+        echo '<p>', str_repeat('&#160;&#160;', $depth), htmlspecialchars($message, ENT_COMPAT), "</p>\n";
         flush();
     }
 }
@@ -3342,7 +3559,7 @@ class html_list_progress_trace extends progress_trace {
         if ($samedepth) {
             echo "</li>\n<li>";
         }
-        echo htmlspecialchars($message);
+        echo htmlspecialchars($message, ENT_COMPAT);
         flush();
     }
 
@@ -3396,7 +3613,7 @@ class error_log_progress_trace extends progress_trace {
  * @package core
  */
 class progress_trace_buffer extends progress_trace {
-    /** @var progres_trace */
+    /** @var progress_trace */
     protected $trace;
     /** @var bool do we pass output out */
     protected $passthrough;
@@ -3522,7 +3739,9 @@ function print_password_policy() {
     $message = '';
     if (!empty($CFG->passwordpolicy)) {
         $messages = array();
-        $messages[] = get_string('informminpasswordlength', 'auth', $CFG->minpasswordlength);
+        if (!empty($CFG->minpasswordlength)) {
+            $messages[] = get_string('informminpasswordlength', 'auth', $CFG->minpasswordlength);
+        }
         if (!empty($CFG->minpassworddigits)) {
             $messages[] = get_string('informminpassworddigits', 'auth', $CFG->minpassworddigits);
         }
@@ -3536,8 +3755,20 @@ function print_password_policy() {
             $messages[] = get_string('informminpasswordnonalphanum', 'auth', $CFG->minpasswordnonalphanum);
         }
 
+        // Fire any additional password policy functions from plugins.
+        // Callbacks must return an array of message strings.
+        $pluginsfunction = get_plugins_with_function('print_password_policy');
+        foreach ($pluginsfunction as $plugintype => $plugins) {
+            foreach ($plugins as $pluginfunction) {
+                $messages = array_merge($messages, $pluginfunction());
+            }
+        }
+
         $messages = join(', ', $messages); // This is ugly but we do not have anything better yet...
-        $message = get_string('informpasswordpolicy', 'auth', $messages);
+        // Check if messages is empty before outputting any text.
+        if ($messages != '') {
+            $message = get_string('informpasswordpolicy', 'auth', $messages);
+        }
     }
     return $message;
 }
@@ -3552,7 +3783,7 @@ function print_password_policy() {
  *                which format to output the doclink in.
  * @param string|object|array $a An object, string or number that can be used
  *      within translation strings
- * @return Object An object containing:
+ * @return stdClass An object containing:
  * - heading: Any heading that there may be for this help string.
  * - text: The wiki-formatted help string.
  * - doclink: An object containing a link, the linktext, and any additional

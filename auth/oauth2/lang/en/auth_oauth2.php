@@ -40,7 +40,10 @@ then cut and paste the address into the address
 line at the top of your web browser window.
 
 If you need help, please contact the site administrator,
-{$a->admin}';
+{$a->admin}
+
+If you did not do this, someone else could be trying to compromise your account.
+Please contact the site administrator immediately.';
 $string['confirmaccountemailsubject'] = '{$a}: account confirmation';
 $string['confirmationinvalid'] = 'The confirmation link is either invalid, or has expired. Please start the login process again to generate a new confirmation email.';
 $string['confirmationpending'] = 'This account is pending email confirmation.';
@@ -60,7 +63,10 @@ then cut and paste the address into the address
 line at the top of your web browser window.
 
 If you need help, please contact the site administrator,
-{$a->admin}';
+{$a->admin}
+
+If you did not do this, someone else could be trying to compromise your account.
+Please contact the site administrator immediately.';
 $string['confirmlinkedloginemailsubject'] = '{$a}: linked login confirmation';
 $string['createaccountswarning'] = 'This authentication plugin allows users to create accounts on your site. You may want to enable the setting "authpreventaccountcreation" if you use this plugin.';
 $string['createnewlinkedlogin'] = 'Link a new account ({$a})';
@@ -70,17 +76,29 @@ $string['emailconfirmlinksent'] = '<p>An existing account was found with this em
    <p>An email should have been sent to your address at <b>{$a}</b>.</p>
    <p>It contains easy instructions to link your accounts.</p>
    <p>If you have any difficulty, contact the site administrator.</p>';
+$string['emailpasswordchangeinfo'] = 'Hi {$a->firstname},
+
+Someone (probably you) has requested a new password for your account on \'{$a->sitename}\'.
+
+However your password cannot be reset because you are using your account on another site to log in.
+
+Please log in as before, using the link on the login page.
+{$a->admin}';
+$string['emailpasswordchangeinfosubject'] = '{$a}: Change password information';
 $string['info'] = 'External account';
-$string['issuer'] = 'OAuth 2 Service';
+$string['issuer'] = 'OAuth 2 service';
 $string['issuernologin'] = 'This issuer can not be used to login';
+$string['key'] = 'Key';
 $string['linkedlogins'] = 'Linked logins';
 $string['linkedloginshelp'] = 'Help with linked logins';
+$string['loggedin'] = 'User successfully authenticated with provider.';
 $string['loginerror_userincomplete'] = 'The user information returned did not contain a username and email address. The OAuth 2 service may be configured incorrectly.';
 $string['loginerror_nouserinfo'] = 'No user information was returned. The OAuth 2 service may be configured incorrectly.';
 $string['loginerror_invaliddomain'] = 'The email address is not allowed at this site.';
 $string['loginerror_authenticationfailed'] = 'The authentication process failed.';
 $string['loginerror_cannotcreateaccounts'] = 'An account with your email address could not be found.';
-$string['noissuersavailable'] = 'None of the configured OAuth2 services allow you to link login accounts';
+$string['noconfiguredidps'] = 'There are no configured OAuth2 providers.';
+$string['noissuersavailable'] = 'None of the configured OAuth 2 services allow you to link login accounts.';
 $string['notloggedindebug'] = 'The login attempt failed. Reason: {$a}';
 $string['notwhileloggedinas'] = 'Linked logins cannot be managed while logged in as another user.';
 $string['oauth2:managelinkedlogins'] = 'Manage own linked login accounts';
@@ -100,3 +118,6 @@ $string['privacy:metadata:auth_oauth2:timemodified'] = 'The timestamp when this 
 $string['privacy:metadata:auth_oauth2:userid'] = 'The ID of the user account which the OAuth 2 login is linked to.';
 $string['privacy:metadata:auth_oauth2:usermodified'] = 'The ID of the user who modified this account.';
 $string['privacy:metadata:auth_oauth2:username'] = 'The external username that maps to this account.';
+$string['testidplogin'] = 'Test login with:';
+$string['userinfo'] = 'User data from provider:';
+$string['value'] = 'Value';

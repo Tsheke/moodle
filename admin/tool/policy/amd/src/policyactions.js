@@ -17,7 +17,6 @@
  * Policy actions.
  *
  * @module     tool_policy/policyactions
- * @package    tool_policy
  * @copyright  2018 Sara Arjona (sara@moodle.com)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -25,31 +24,25 @@ define([
     'jquery',
     'core/ajax',
     'core/notification',
-    'core/modal_factory',
-    'core/modal_events'],
-function($, Ajax, Notification, ModalFactory, ModalEvents) {
-
-    /**
-     * List of action selectors.
-     *
-     * @type {{VIEW_POLICY: string}}
-     */
-    var ACTIONS = {
-        VIEW_POLICY: '[data-action="view"]'
-    };
+    'core/modal',
+], function($, Ajax, Notification, Modal) {
 
     /**
      * PolicyActions class.
+     *
+     * @param {jQuery} root
      */
-    var PolicyActions = function() {
-        this.registerEvents();
+    var PolicyActions = function(root) {
+        this.registerEvents(root);
     };
 
     /**
      * Register event listeners.
+     *
+     * @param {jQuery} root
      */
-    PolicyActions.prototype.registerEvents = function() {
-        $(ACTIONS.VIEW_POLICY).click(function(e) {
+    PolicyActions.prototype.registerEvents = function(root) {
+        root.on("click", function(e) {
             e.preventDefault();
 
             var versionid = $(this).data('versionid');
@@ -65,43 +58,42 @@ function($, Ajax, Notification, ModalFactory, ModalEvents) {
                 args: params
             };
 
+            var modalTitle = $.Deferred();
+            var modalBody = $.Deferred();
+
+            var modal = Modal.create({
+                title: modalTitle,
+                body: modalBody,
+                large: true,
+                removeOnClose: true,
+                show: true,
+            })
+            .catch(Notification.exception);
+
+            // Make the request now that the modal is configured.
             var promises = Ajax.call([request]);
-            var modalTitle = '';
-            var modalType = ModalFactory.types.DEFAULT;
             $.when(promises[0]).then(function(data) {
                 if (data.result.policy) {
-                    modalTitle = data.result.policy.name;
-                    return data.result.policy.content;
+                    modalTitle.resolve(data.result.policy.name);
+                    modalBody.resolve(data.result.policy.content);
+
+                    return data;
+                } else {
+                    throw new Error(data.warnings[0].message);
                 }
-                // Fail.
-                Notification.addNotification({
-                    message: data.warnings[0].message,
+            }).catch(function(message) {
+                modal.then(function(modal) {
+                    modal.hide();
+
+                    return modal;
+                })
+                .catch(Notification.exception);
+
+                return Notification.addNotification({
+                    message: message,
                     type: 'error'
                 });
-                return false;
-
-            }).then(function(html) {
-                if (html != false) {
-                    return ModalFactory.create({
-                        title: modalTitle,
-                        body: html,
-                        type: modalType,
-                        large: true
-                    }).then(function(modal) {
-                        // Handle hidden event.
-                        modal.getRoot().on(ModalEvents.hidden, function() {
-                            // Destroy when hidden.
-                            modal.destroy();
-                        });
-
-                        return modal;
-                    });
-                }
-                return false;
-            }).done(function(modal) {
-                // Show the modal.
-                modal.show();
-            }).fail(Notification.exception);
+            });
         });
 
     };
@@ -113,10 +105,12 @@ function($, Ajax, Notification, ModalFactory, ModalEvents) {
          * Initialise the actions helper.
          *
          * @method init
+         * @param {object} root
          * @return {PolicyActions}
          */
-        'init': function() {
-            return new PolicyActions();
+        'init': function(root) {
+            root = $(root);
+            return new PolicyActions(root);
         }
     };
 });

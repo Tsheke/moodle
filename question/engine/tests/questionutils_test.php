@@ -14,29 +14,24 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * This file contains tests for the {@link question_utils} class.
- *
- * @package    moodlecore
- * @subpackage questionengine
- * @copyright  2010 The Open University
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace core_question;
 
+use question_utils;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once(__DIR__ . '/../lib.php');
 
-
 /**
  * Unit tests for the {@link question_utils} class.
  *
+ * @package    core_question
+ * @category   test
  * @copyright  2010 The Open University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class question_utils_test extends advanced_testcase {
+class questionutils_test extends \advanced_testcase {
     public function test_arrays_have_same_keys_and_values() {
         $this->assertTrue(question_utils::arrays_have_same_keys_and_values(
                 array(),
@@ -177,24 +172,47 @@ class question_utils_test extends advanced_testcase {
         $this->assertSame('mmmcmxcix', question_utils::int_to_roman(3999));
     }
 
-    /**
-     * @expectedException moodle_exception
-     */
+    public function test_int_to_letter() {
+        $this->assertEquals('A', question_utils::int_to_letter(1));
+        $this->assertEquals('B', question_utils::int_to_letter(2));
+        $this->assertEquals('C', question_utils::int_to_letter(3));
+        $this->assertEquals('D', question_utils::int_to_letter(4));
+        $this->assertEquals('E', question_utils::int_to_letter(5));
+        $this->assertEquals('F', question_utils::int_to_letter(6));
+        $this->assertEquals('G', question_utils::int_to_letter(7));
+        $this->assertEquals('H', question_utils::int_to_letter(8));
+        $this->assertEquals('I', question_utils::int_to_letter(9));
+        $this->assertEquals('J', question_utils::int_to_letter(10));
+        $this->assertEquals('K', question_utils::int_to_letter(11));
+        $this->assertEquals('L', question_utils::int_to_letter(12));
+        $this->assertEquals('M', question_utils::int_to_letter(13));
+        $this->assertEquals('N', question_utils::int_to_letter(14));
+        $this->assertEquals('O', question_utils::int_to_letter(15));
+        $this->assertEquals('P', question_utils::int_to_letter(16));
+        $this->assertEquals('Q', question_utils::int_to_letter(17));
+        $this->assertEquals('R', question_utils::int_to_letter(18));
+        $this->assertEquals('S', question_utils::int_to_letter(19));
+        $this->assertEquals('T', question_utils::int_to_letter(20));
+        $this->assertEquals('U', question_utils::int_to_letter(21));
+        $this->assertEquals('V', question_utils::int_to_letter(22));
+        $this->assertEquals('W', question_utils::int_to_letter(23));
+        $this->assertEquals('X', question_utils::int_to_letter(24));
+        $this->assertEquals('Y', question_utils::int_to_letter(25));
+        $this->assertEquals('Z', question_utils::int_to_letter(26));
+    }
+
     public function test_int_to_roman_too_small() {
+        $this->expectException(\moodle_exception::class);
         question_utils::int_to_roman(0);
     }
 
-    /**
-     * @expectedException moodle_exception
-     */
     public function test_int_to_roman_too_big() {
+        $this->expectException(\moodle_exception::class);
         question_utils::int_to_roman(4000);
     }
 
-    /**
-     * @expectedException moodle_exception
-     */
     public function test_int_to_roman_not_int() {
+        $this->expectException(\moodle_exception::class);
         question_utils::int_to_roman(1.5);
     }
 

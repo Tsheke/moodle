@@ -1,5 +1,4 @@
 /* eslint-disable no-unused-vars */
-/* global SELECTOR */
 var COMMENTSEARCHNAME = "commentsearch",
     COMMENTSEARCH;
 
@@ -34,7 +33,7 @@ Y.extend(COMMENTSEARCH, M.core.dialogue, {
      * @method initializer
      * @return void
      */
-    initializer: function(config) {
+    initializer: function() {
         var editor,
             container,
             placeholder,
@@ -60,8 +59,6 @@ Y.extend(COMMENTSEARCH, M.core.dialogue, {
 
         // Set the body content.
         this.set('bodyContent', container);
-
-        COMMENTSEARCH.superclass.initializer.call(this, config);
     },
 
     /**

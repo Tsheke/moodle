@@ -2,7 +2,7 @@
 /**
  * Copyright 2011-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -205,18 +205,30 @@ class Horde_Imap_Client_Data_Envelope implements Serializable
      */
     public function serialize()
     {
-        return serialize(array(
-            'd' => $this->_data,
-            'v' => self::VERSION
-        ));
+        return serialize($this->__serialize());
     }
 
     /**
      */
     public function unserialize($data)
     {
-        $data = @unserialize($data);
-        if (empty($data['v']) || ($data['v'] != self::VERSION)) {
+        $this->__unserialize(@unserialize($data));
+    }
+
+    /**
+     * @return array
+     */
+    public function __serialize()
+    {
+        return array(
+            'd' => $this->_data,
+            'v' => self::VERSION,
+        );
+    }
+
+    public function __unserialize(array $data)
+    {
+        if (empty($data['v']) || $data['v'] != self::VERSION) {
             throw new Exception('Cache version change');
         }
 

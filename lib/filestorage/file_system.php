@@ -14,15 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Core file system class definition.
- *
- * @package   core_files
- * @copyright 2017 Andrew Nicols <andrew@nicols.co.uk>
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
-defined('MOODLE_INTERNAL') || die();
+use Psr\Http\Message\StreamInterface;
 
 /**
  * File system class used for low level access to real files in filedir.
@@ -33,20 +25,6 @@ defined('MOODLE_INTERNAL') || die();
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 abstract class file_system {
-
-    /**
-     * Private clone method to prevent cloning of the instance.
-     */
-    final protected function __clone() {
-        return;
-    }
-
-    /**
-     * Private wakeup method to prevent unserialising of the instance.
-     */
-    final protected function __wakeup() {
-        return;
-    }
 
     /**
      * Output the content of the specified stored file.
@@ -63,7 +41,9 @@ abstract class file_system {
         } else {
             $path = $this->get_remote_path_from_storedfile($file);
         }
-        readfile_allow_large($path, $file->get_filesize());
+        if (readfile_allow_large($path, $file->get_filesize()) === false) {
+            throw new file_exception('storedfilecannotreadfile', $file->get_filename());
+        }
     }
 
     /**
@@ -80,7 +60,7 @@ abstract class file_system {
      * @param bool $fetchifnotfound Whether to attempt to fetch from the remote path if not found.
      * @return string full path to pool file with file content
      */
-    protected function get_local_path_from_storedfile(stored_file $file, $fetchifnotfound = false) {
+    public function get_local_path_from_storedfile(stored_file $file, $fetchifnotfound = false) {
         return $this->get_local_path_from_hash($file->get_contenthash(), $fetchifnotfound);
     }
 
@@ -94,7 +74,7 @@ abstract class file_system {
      * @param stored_file $file The file to serve.
      * @return string full path to pool file with file content
      */
-    protected function get_remote_path_from_storedfile(stored_file $file) {
+    public function get_remote_path_from_storedfile(stored_file $file) {
         return $this->get_remote_path_from_hash($file->get_contenthash(), false);
     }
 
@@ -377,9 +357,18 @@ abstract class file_system {
             return false;
         }
 
+        $hash = $file->get_contenthash();
+        $cache = cache::make('core', 'file_imageinfo');
+        $info = $cache->get($hash);
+        if ($info !== false) {
+            return $info;
+        }
+
         // Whilst get_imageinfo_from_path can use remote paths, it must download the entire file first.
         // It is more efficient to use a local file when possible.
-        return $this->get_imageinfo_from_path($this->get_local_path_from_storedfile($file, true));
+        $info = $this->get_imageinfo_from_path($this->get_local_path_from_storedfile($file, true));
+        $cache->set($hash, $info);
+        return $info;
     }
 
     /**
@@ -410,22 +399,81 @@ abstract class file_system {
     /**
      * Returns image information relating to the specified path or URL.
      *
-     * @param string $path The path to pass to getimagesize.
-     * @return array Containing width, height, and mimetype.
+     * @param string $path The full path of the image file.
+     * @return array|bool array that containing width, height, and mimetype or false if cannot get the image info.
      */
     protected function get_imageinfo_from_path($path) {
-        $imageinfo = getimagesize($path);
+        $imagemimetype = file_storage::mimetype_from_file($path);
+        $issvgimage = file_is_svg_image_from_mimetype($imagemimetype);
 
-        $image = array(
-                'width'     => $imageinfo[0],
-                'height'    => $imageinfo[1],
-                'mimetype'  => image_type_to_mime_type($imageinfo[2]),
-            );
+        if (!$issvgimage) {
+            $imageinfo = getimagesize($path);
+            if (!is_array($imageinfo)) {
+                return false; // Nothing to process, the file was not recognised as image by GD.
+            }
+            $image = [
+                    'width' => $imageinfo[0],
+                    'height' => $imageinfo[1],
+                    'mimetype' => image_type_to_mime_type($imageinfo[2]),
+            ];
+        } else {
+            // Since SVG file is actually an XML file, GD cannot handle.
+            $svgcontent = @simplexml_load_file($path);
+            if (!$svgcontent) {
+                // Cannot parse the file.
+                return false;
+            }
+            $svgattrs = $svgcontent->attributes();
+
+            if (!empty($svgattrs->viewBox)) {
+                // We have viewBox.
+                $viewboxval = explode(' ', $svgattrs->viewBox);
+                $width = intval($viewboxval[2]);
+                $height = intval($viewboxval[3]);
+            } else {
+                // Get the width.
+                if (!empty($svgattrs->width) && intval($svgattrs->width) > 0) {
+                    $width = intval($svgattrs->width);
+                } else {
+                    // Default width.
+                    $width = 800;
+                }
+                // Get the height.
+                if (!empty($svgattrs->height) && intval($svgattrs->height) > 0) {
+                    $height = intval($svgattrs->height);
+                } else {
+                    // Default width.
+                    $height = 600;
+                }
+            }
+
+            $image = [
+                    'width' => $width,
+                    'height' => $height,
+                    'mimetype' => $imagemimetype,
+            ];
+        }
+
         if (empty($image['width']) or empty($image['height']) or empty($image['mimetype'])) {
             // GD can not parse it, sorry.
             return false;
         }
         return $image;
+    }
+
+    /**
+     * Serve file content using X-Sendfile header.
+     * Please make sure that all headers are already sent and the all
+     * access control checks passed.
+     *
+     * This alternate method to xsendfile() allows an alternate file system
+     * to use the full file metadata and avoid extra lookups.
+     *
+     * @param stored_file $file The file to send
+     * @return bool success
+     */
+    public function xsendfile_file(stored_file $file): bool {
+        return $this->xsendfile($file->get_contenthash());
     }
 
     /**
@@ -441,6 +489,16 @@ abstract class file_system {
         require_once($CFG->libdir . "/xsendfilelib.php");
 
         return xsendfile($this->get_remote_path_from_hash($contenthash));
+    }
+
+    /**
+     * Returns true if filesystem is configured to support xsendfile.
+     *
+     * @return bool
+     */
+    public function supports_xsendfile() {
+        global $CFG;
+        return !empty($CFG->xsendfile);
     }
 
     /**
@@ -563,6 +621,16 @@ abstract class file_system {
             default:
                 throw new coding_exception('Unexpected file handle type');
         }
+    }
+
+    /**
+     * Get a PSR7 Stream for the specified file which implements the PSR Message StreamInterface.
+     *
+     * @param stored_file $file
+     * @return StreamInterface
+     */
+    public function get_psr_stream(stored_file $file): StreamInterface {
+        return \GuzzleHttp\Psr7\Utils::streamFor($this->get_content_file_handle($file));
     }
 
     /**

@@ -4,10 +4,9 @@ require_once($CFG->libdir.'/adminlib.php');
 require_once($CFG->dirroot.'/message/lib.php');
 require_once('user_message_form.php');
 
-$msg     = optional_param('msg', '', PARAM_CLEANHTML);
+$msg     = optional_param('msg', '', PARAM_RAW);
 $confirm = optional_param('confirm', 0, PARAM_BOOL);
 
-require_login();
 admin_externalpage_setup('userbulk');
 require_capability('moodle/site:manageallmessaging', context_system::instance());
 
@@ -18,8 +17,11 @@ if (empty($SESSION->bulk_users)) {
 }
 
 if (empty($CFG->messaging)) {
-    print_error('messagingdisable', 'error');
+    throw new \moodle_exception('messagingdisable', 'error');
 }
+
+$PAGE->set_primary_active_tab('siteadminnode');
+$PAGE->set_secondary_active_tab('users');
 
 //TODO: add support for large number of users
 
@@ -46,6 +48,7 @@ if ($msgform->is_cancelled()) {
     $options->para     = false;
     $options->newlines = true;
     $options->smiley   = false;
+    $options->trusted = trusttext_trusted(\context_system::instance());
 
     $msg = format_text($formdata->messagebody['text'], $formdata->messagebody['format'], $options);
 

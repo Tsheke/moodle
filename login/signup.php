@@ -30,7 +30,7 @@ require_once($CFG->libdir . '/authlib.php');
 require_once('lib.php');
 
 if (!$authplugin = signup_is_enabled()) {
-    print_error('notlocalisederrormessage', 'error', '', 'Sorry, you may not use this page.');
+    throw new \moodle_exception('notlocalisederrormessage', 'error', '', 'Sorry, you may not use this page.');
 }
 
 $PAGE->set_url('/login/signup.php');
@@ -85,6 +85,9 @@ if ($mform_signup->is_cancelled()) {
 } else if ($user = $mform_signup->get_data()) {
     // Add missing required fields.
     $user = signup_setup_new_user($user);
+
+    // Plugins can perform post sign up actions once data has been validated.
+    core_login_post_signup_requests($user);
 
     $authplugin->user_signup($user, true); // prints notice and link to login/index.php
     exit; //never reached

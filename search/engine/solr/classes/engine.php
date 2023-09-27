@@ -116,10 +116,11 @@ class engine extends \core_search\engine {
     /**
      * Initialises the search engine configuration.
      *
+     * @param bool $alternateconfiguration If true, use alternate configuration settings
      * @return void
      */
-    public function __construct() {
-        parent::__construct();
+    public function __construct(bool $alternateconfiguration = false) {
+        parent::__construct($alternateconfiguration);
 
         $curlversion = curl_version();
         if (isset($curlversion['version']) && stripos($curlversion['version'], '7.35.') === 0) {
@@ -272,7 +273,7 @@ class engine extends \core_search\engine {
 
         $query = new \SolrDisMaxQuery();
 
-        $this->set_query($query, $data->q);
+        $this->set_query($query, self::replace_underlines($data->q));
         $this->add_fields($query);
 
         // Search filters applied, we don't cache these filters as we don't want to pollute the cache with tmp filters
@@ -433,7 +434,10 @@ class engine extends \core_search\engine {
             $query->addField($key);
             if ($dismax && !empty($field['mainquery'])) {
                 // Add fields the main query should be run against.
-                $query->addQueryField($key);
+                // Due to a regression in the PECL solr extension, https://bugs.php.net/bug.php?id=72740,
+                // a boost value is required, even if it is optional; to avoid boosting one among other fields,
+                // the explicit boost value will be the default one, for every field.
+                $query->addQueryField($key, 1);
             }
         }
     }
@@ -751,16 +755,80 @@ class engine extends \core_search\engine {
     }
 
     /**
+     * Adds a batch of documents to the engine at once.
+     *
+     * @param \core_search\document[] $documents Documents to add
+     * @param bool $fileindexing If true, indexes files (these are done one at a time)
+     * @return int[] Array of three elements: successfully processed, failed processed, batch count
+     */
+    public function add_document_batch(array $documents, bool $fileindexing = false): array {
+        $docdatabatch = [];
+        foreach ($documents as $document) {
+            $docdatabatch[] = $document->export_for_engine();
+        }
+
+        $resultcounts = $this->add_solr_documents($docdatabatch);
+
+        // Files are processed one document at a time (if there are files it's slow anyway).
+        if ($fileindexing) {
+            foreach ($documents as $document) {
+                // This will take care of updating all attached files in the index.
+                $this->process_document_files($document);
+            }
+        }
+
+        return $resultcounts;
+    }
+
+    /**
+     * Replaces underlines at edges of words in the content with spaces.
+     *
+     * For example '_frogs_' will become 'frogs', '_frogs and toads_' will become 'frogs and toads',
+     * and 'frogs_and_toads' will be left as 'frogs_and_toads'.
+     *
+     * The reason for this is that for italic content_to_text puts _italic_ underlines at the start
+     * and end of the italicised phrase (not between words). Solr treats underlines as part of the
+     * word, which means that if you search for a word in italic then you can't find it.
+     *
+     * @param string $str String to replace
+     * @return string Replaced string
+     */
+    protected static function replace_underlines(string $str): string {
+        return preg_replace('~\b_|_\b~', '', $str);
+    }
+
+    /**
+     * Creates a Solr document object.
+     *
+     * @param array $doc Array of document fields
+     * @return \SolrInputDocument Created document
+     */
+    protected function create_solr_document(array $doc): \SolrInputDocument {
+        $solrdoc = new \SolrInputDocument();
+
+        // Replace underlines in the content with spaces. The reason for this is that for italic
+        // text, content_to_text puts _italic_ underlines. Solr treats underlines as part of the
+        // word, which means that if you search for a word in italic then you can't find it.
+        if (array_key_exists('content', $doc)) {
+            $doc['content'] = self::replace_underlines($doc['content']);
+        }
+
+        // Set all the fields.
+        foreach ($doc as $field => $value) {
+            $solrdoc->addField($field, $value);
+        }
+
+        return $solrdoc;
+    }
+
+    /**
      * Adds a text document to the search engine.
      *
      * @param array $doc
      * @return bool
      */
     protected function add_solr_document($doc) {
-        $solrdoc = new \SolrInputDocument();
-        foreach ($doc as $field => $value) {
-            $solrdoc->addField($field, $value);
-        }
+        $solrdoc = $this->create_solr_document($doc);
 
         try {
             $result = $this->get_search_client()->addDocument($solrdoc, true, static::AUTOCOMMIT_WITHIN);
@@ -774,6 +842,50 @@ class engine extends \core_search\engine {
         }
 
         return false;
+    }
+
+    /**
+     * Adds multiple text documents to the search engine.
+     *
+     * @param array $docs Array of documents (each an array of fields) to add
+     * @return int[] Array of success, failure, batch count
+     * @throws \core_search\engine_exception
+     */
+    protected function add_solr_documents(array $docs): array {
+        $solrdocs = [];
+        foreach ($docs as $doc) {
+            $solrdocs[] = $this->create_solr_document($doc);
+        }
+
+        try {
+            // Add documents in a batch and report that they all succeeded.
+            $this->get_search_client()->addDocuments($solrdocs, true, static::AUTOCOMMIT_WITHIN);
+            return [count($solrdocs), 0, 1];
+        } catch (\SolrClientException $e) {
+            // If there is an exception, fall through...
+            $donothing = true;
+        } catch (\SolrServerException $e) {
+            // If there is an exception, fall through...
+            $donothing = true;
+        }
+
+        // When there is an error, we fall back to adding them individually so that we can report
+        // which document(s) failed. Since it overwrites, adding the successful ones multiple
+        // times won't hurt.
+        $success = 0;
+        $failure = 0;
+        $batches = 0;
+        foreach ($docs as $doc) {
+            $result = $this->add_solr_document($doc);
+            $batches++;
+            if ($result) {
+                $success++;
+            } else {
+                $failure++;
+            }
+        }
+
+        return [$success, $failure, $batches];
     }
 
     /**
@@ -983,8 +1095,10 @@ class engine extends \core_search\engine {
 
         // A giant block of code that is really just error checking around the curl request.
         try {
-            // Now actually do the request.
-            $result = $curl->post($url->out(false), array('myfile' => $storedfile));
+            // We have to post the file directly in binary data (not using multipart) to avoid
+            // Solr bug SOLR-15039 which can cause incorrect data when you use multipart upload.
+            // Note this loads the whole file into memory; see limit in file_is_indexable().
+            $result = $curl->post($url->out(false), $storedfile->get_content());
 
             $code = $curl->get_errno();
             $info = $curl->get_info();
@@ -1048,6 +1162,18 @@ class engine extends \core_search\engine {
             return false;
         }
 
+        // Because we now load files into memory to index them in Solr, we also have to ensure that
+        // we don't try to index anything bigger than the memory limit (less 100MB for safety).
+        // Memory limit in cron is MEMORY_EXTRA which is usually 256 or 384MB but can be increased
+        // in config, so this will allow files over 100MB to be indexed.
+        $limit = ini_get('memory_limit');
+        if ($limit && $limit != -1) {
+            $limitbytes = get_real_size($limit);
+            if ($file->get_filesize() > $limitbytes) {
+                return false;
+            }
+        }
+
         $mime = $file->get_mimetype();
 
         if ($mime == 'application/vnd.moodle.backup') {
@@ -1090,15 +1216,6 @@ class engine extends \core_search\engine {
      */
     public function file_indexing_enabled() {
         return (bool)$this->config->fileindexing;
-    }
-
-    /**
-     * Defragments the index.
-     *
-     * @return void
-     */
-    public function optimize() {
-        $this->get_search_client()->optimize(1, true, false);
     }
 
     /**
@@ -1154,7 +1271,7 @@ class engine extends \core_search\engine {
 
         // Check that the schema is already set up.
         try {
-            $schema = new \search_solr\schema();
+            $schema = new schema($this);
             $schema->validate_setup();
         } catch (\moodle_exception $e) {
             return $e->getMessage();
@@ -1257,7 +1374,13 @@ class engine extends \core_search\engine {
 
         if ($CFG->proxyhost && !is_proxybypass('http://' . $this->config->server_hostname . '/')) {
             $options['proxy_host'] = $CFG->proxyhost;
-            $options['proxy_port'] = $CFG->proxyport;
+            if (!empty($CFG->proxyport)) {
+                $options['proxy_port'] = $CFG->proxyport;
+            }
+            if (!empty($CFG->proxyuser) && !empty($CFG->proxypassword)) {
+                $options['proxy_login'] = $CFG->proxyuser;
+                $options['proxy_password'] = $CFG->proxypassword;
+            }
         }
 
         if (!class_exists('\SolrClient')) {
@@ -1358,7 +1481,7 @@ class engine extends \core_search\engine {
 
     protected function update_schema($oldversion, $newversion) {
         // Construct schema.
-        $schema = new schema();
+        $schema = new schema($this);
         $cansetup = $schema->can_setup_server();
         if ($cansetup !== true) {
             return $cansetup;
@@ -1410,5 +1533,61 @@ class engine extends \core_search\engine {
      */
     public function supports_users() {
         return true;
+    }
+
+    /**
+     * Solr supports adding documents in a batch.
+     *
+     * @return bool True
+     */
+    public function supports_add_document_batch(): bool {
+        return true;
+    }
+
+    /**
+     * Solr supports deleting the index for a context.
+     *
+     * @param int $oldcontextid Context that has been deleted
+     * @return bool True to indicate that any data was actually deleted
+     * @throws \core_search\engine_exception
+     */
+    public function delete_index_for_context(int $oldcontextid) {
+        $client = $this->get_search_client();
+        try {
+            $client->deleteByQuery('contextid:' . $oldcontextid);
+            $client->commit(true);
+            return true;
+        } catch (\Exception $e) {
+            throw new \core_search\engine_exception('error_solr', 'search_solr', '', $e->getMessage());
+        }
+    }
+
+    /**
+     * Solr supports deleting the index for a course.
+     *
+     * @param int $oldcourseid
+     * @return bool True to indicate that any data was actually deleted
+     * @throws \core_search\engine_exception
+     */
+    public function delete_index_for_course(int $oldcourseid) {
+        $client = $this->get_search_client();
+        try {
+            $client->deleteByQuery('courseid:' . $oldcourseid);
+            $client->commit(true);
+            return true;
+        } catch (\Exception $e) {
+            throw new \core_search\engine_exception('error_solr', 'search_solr', '', $e->getMessage());
+        }
+    }
+
+    /**
+     * Checks if an alternate configuration has been defined.
+     *
+     * @return bool True if alternate configuration is available
+     */
+    public function has_alternate_configuration(): bool {
+        return !empty($this->config->alternateserver_hostname) &&
+                !empty($this->config->alternateindexname) &&
+                !empty($this->config->alternateserver_port);
     }
 }

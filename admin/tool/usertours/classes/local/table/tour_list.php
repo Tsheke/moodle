@@ -38,6 +38,10 @@ require_once($CFG->libdir . '/tablelib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class tour_list extends \flexible_table {
+
+    /** @var int The count of all tours. */
+    protected int $tourcount = 0;
+
     /**
      * Construct the tour table.
      */
@@ -138,6 +142,7 @@ class tour_list extends \flexible_table {
 
         $actions[] = helper::format_icon_link($tour->get_view_link(), 't/viewdetails', get_string('view'));
         $actions[] = helper::format_icon_link($tour->get_edit_link(), 't/edit', get_string('edit'));
+        $actions[] = helper::format_icon_link($tour->get_duplicate_link(), 't/copy', get_string('duplicate'));
         $actions[] = helper::format_icon_link($tour->get_export_link(), 't/export',
                 get_string('exporttour', 'tool_usertours'), 'tool_usertours');
         $actions[] = helper::format_icon_link($tour->get_delete_link(), 't/delete', get_string('delete'), null, [

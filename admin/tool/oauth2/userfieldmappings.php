@@ -33,9 +33,7 @@ $strheading = get_string('pluginname', 'tool_oauth2');
 $PAGE->set_title($strheading);
 $PAGE->set_heading($strheading);
 
-require_login();
-
-require_capability('moodle/site:config', context_system::instance());
+require_admin();
 
 $renderer = $PAGE->get_renderer('tool_oauth2');
 
@@ -47,7 +45,7 @@ $mform = null;
 
 $issuer = \core\oauth2\api::get_issuer($issuerid);
 if (!$issuer) {
-    print_error('invaliddata');
+    throw new \moodle_exception('invaliddata');
 }
 $PAGE->navbar->override_active_url(new moodle_url('/admin/tool/oauth2/issuers.php'), true);
 

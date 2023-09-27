@@ -15,7 +15,7 @@
     along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 }}
 {{!
-    @template calendar/header
+    @template core_calendar/header
 
     Calendar header.
 
@@ -31,7 +31,10 @@
     {
     }
 }}
-<div class="header">
+<div class="header d-flex flex-wrap p-1">
+    {{#showviewselector}}
+        {{> core_calendar/view_selector}}
+    {{/showviewselector}}
     {{#filter_selector}}
         {{{filter_selector}}}
     {{/filter_selector}}

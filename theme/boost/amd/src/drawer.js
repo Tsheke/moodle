@@ -16,12 +16,12 @@
 /**
  * Contain the logic for a drawer.
  *
- * @package    theme_boost
+ * @module theme_boost/drawer
  * @copyright  2016 Damyon Wiese
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-define(['jquery', 'core/custom_interaction_events', 'core/log'],
-     function($, CustomEvents, Log) {
+define(['jquery', 'core/custom_interaction_events', 'core/log', 'core/pubsub', 'core/aria', 'core_user/repository'],
+     function($, CustomEvents, Log, PubSub, Aria, UserRepository) {
 
     var SELECTORS = {
         TOGGLE_REGION: '[data-region="drawer-toggle"]',
@@ -29,15 +29,14 @@ define(['jquery', 'core/custom_interaction_events', 'core/log'],
         TOGGLE_TARGET: 'aria-controls',
         TOGGLE_SIDE: 'left',
         BODY: 'body',
-        SECTION: '.list-group-item[href*="#section-"]'
+        SECTION: '.list-group-item[href*="#section-"]',
+        DRAWER: '#nav-drawer'
     };
 
     var small = $(document).width() < 768;
 
     /**
      * Constructor for the Drawer.
-     *
-     * @param {object} root The root jQuery element for the modal
      */
     var Drawer = function() {
 
@@ -56,7 +55,7 @@ define(['jquery', 'core/custom_interaction_events', 'core/log'],
             var body = $(SELECTORS.BODY);
             var preference = trigger.attr('data-preference');
             if (small) {
-                M.util.set_user_preference(preference, 'false');
+                UserRepository.setUserPreference(preference, false);
             }
 
             drawer.on('mousewheel DOMMouseScroll', this.preventPageScroll);
@@ -86,10 +85,10 @@ define(['jquery', 'core/custom_interaction_events', 'core/log'],
 
             trigger.attr('aria-expanded', 'false');
             body.removeClass('drawer-open-' + side);
-            drawer.attr('aria-hidden', 'true');
+            Aria.hide(drawer.get());
             drawer.addClass('closed');
             if (!small) {
-                M.util.set_user_preference(preference, 'false');
+                UserRepository.setUserPreference(preference, false);
             }
         });
     };
@@ -108,7 +107,7 @@ define(['jquery', 'core/custom_interaction_events', 'core/log'],
         var side = trigger.attr('data-side');
         var preference = trigger.attr('data-preference');
         if (small) {
-            M.util.set_user_preference(preference, 'false');
+            UserRepository.setUserPreference(preference, false);
         }
 
         body.addClass('drawer-ease');
@@ -116,23 +115,33 @@ define(['jquery', 'core/custom_interaction_events', 'core/log'],
         if (!open) {
             // Open.
             trigger.attr('aria-expanded', 'true');
-            drawer.attr('aria-hidden', 'false');
+            Aria.unhide(drawer.get());
             drawer.focus();
             body.addClass('drawer-open-' + side);
             drawer.removeClass('closed');
             if (!small) {
-                M.util.set_user_preference(preference, 'true');
+                UserRepository.setUserPreference(preference, true);
             }
         } else {
             // Close.
             body.removeClass('drawer-open-' + side);
             trigger.attr('aria-expanded', 'false');
-            drawer.attr('aria-hidden', 'true');
-            drawer.addClass('closed');
+            drawer.addClass('closed').delay(500).queue(function() {
+                // Ensure that during the delay, the drawer wasn't re-opened.
+                if ($(this).hasClass('closed')) {
+                    Aria.hide(this);
+                }
+                $(this).dequeue();
+            });
             if (!small) {
-                M.util.set_user_preference(preference, 'false');
+                UserRepository.setUserPreference(preference, false);
             }
         }
+
+        // Publish an event to tell everything that the drawer has been toggled.
+        // The drawer transitions closed so another event will fire once teh transition
+        // has completed.
+        PubSub.publish('nav-drawer-toggle-start', open);
     };
 
     /**
@@ -171,6 +180,15 @@ define(['jquery', 'core/custom_interaction_events', 'core/log'],
                 this.closeAll();
             }
         }.bind(this));
+
+        // Publish an event to tell everything that the drawer completed the transition
+        // to either an open or closed state.
+        $(SELECTORS.DRAWER).on('webkitTransitionEnd msTransitionEnd transitionend', function(e) {
+            var drawer = $(e.target).closest(SELECTORS.DRAWER);
+            // Note: aria-hidden is either present, or absent. It should not be set to false.
+            var open = !!drawer.attr('aria-hidden');
+            PubSub.publish('nav-drawer-toggle-end', open);
+        });
     };
 
     return {

@@ -22,6 +22,14 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+$string['activitydate:assessmentsclose'] = 'Assessments close:';
+$string['activitydate:assessmentsclosed'] = 'Assessments closed:';
+$string['activitydate:assessmentsopen'] = 'Assessments open:';
+$string['activitydate:assessmentsopened'] = 'Assessments opened:';
+$string['activitydate:submissionsclose'] = 'Submissions close:';
+$string['activitydate:submissionsclosed'] = 'Submissions closed:';
+$string['activitydate:submissionsopen'] = 'Submissions open:';
+$string['activitydate:submissionsopened'] = 'Submissions opened:';
 $string['aggregategrades'] = 'Re-calculate grades';
 $string['aggregation'] = 'Grades aggregation';
 $string['allocate'] = 'Allocate submissions';
@@ -93,7 +101,8 @@ $string['configgradedecimals'] = 'Default number of digits that should be shown 
 $string['configgradinggrade'] = 'Default maximum grade for assessment in workshops';
 $string['configmaxbytes'] = 'Default maximum submission file size for all workshops on the site (subject to course limits and other local settings)';
 $string['configstrategy'] = 'Default grading strategy for workshops';
-$string['createsubmission'] = 'Start preparing your submission';
+$string['createsubmission'] = 'Add submission';
+$string['crontask'] = 'Background processing for workshop module';
 $string['daysago'] = '{$a} days ago';
 $string['daysleft'] = '{$a} days left';
 $string['daystoday'] = 'today';
@@ -124,6 +133,7 @@ $string['eventsubmissionreassessed'] = 'Submission re-assessed';
 $string['eventsubmissionupdated'] = 'Submission updated';
 $string['eventsubmissiondeleted'] = 'Submission deleted';
 $string['eventsubmissionviewed'] = 'Submission viewed';
+$string['eventphaseautomaticallyswitched'] = 'Phase automatically switched';
 $string['eventphaseswitched'] = 'Phase switched';
 $string['example'] = 'Example submission';
 $string['exampleadd'] = 'Add example submission';
@@ -156,6 +166,8 @@ $string['formatpeergradeover'] = '<span class="grade">{$a->grade}</span> <span c
 $string['formatpeergradeoverweighted'] = '<span class="grade">{$a->grade}</span> <span class="gradinggrade">(<del>{$a->gradinggrade}</del> / <ins>{$a->gradinggradeover}</ins>)</span> @ <span class="weight">{$a->weight}</span>';
 $string['formatpeergradeweighted'] = '<span class="grade">{$a->grade}</span> <span class="gradinggrade">({$a->gradinggrade})</span> @ <span class="weight">{$a->weight}</span>';
 $string['givengrades'] = 'Grades given';
+$string['grade_submission_name'] = 'Submission';
+$string['grade_grading_name'] = 'Assessment';
 $string['gradecalculated'] = 'Calculated grade for submission';
 $string['gradedecimals'] = 'Decimal places in grades';
 $string['gradegivento'] = '&gt;';
@@ -178,8 +190,14 @@ $string['chooseuser'] = 'Choose user...';
 $string['iamsure'] = 'Yes, I am sure';
 $string['indicator:cognitivedepth'] = 'Workshop cognitive';
 $string['indicator:cognitivedepth_help'] = 'This indicator is based on the cognitive depth reached by the student in a Workshop activity.';
+$string['indicator:cognitivedepthdef'] = 'Workshop cognitive';
+$string['indicator:cognitivedepthdef_help'] = 'The participant has reached this percentage of the cognitive engagement offered by the Workshop activities during this analysis interval (Levels = No view, View, Submit, View feedback, Comment on feedback, Resubmit after viewing feedback)';
+$string['indicator:cognitivedepthdef_link'] = 'Learning_analytics_indicators#Cognitive_depth';
 $string['indicator:socialbreadth'] = 'Workshop social';
 $string['indicator:socialbreadth_help'] = 'This indicator is based on the social breadth reached by the student in a Workshop activity.';
+$string['indicator:socialbreadthdef'] = 'Workshop social';
+$string['indicator:socialbreadthdef_help'] = 'The participant has reached this percentage of the social engagement offered by the Workshop activities during this analysis interval (Levels = No participation, Participant alone, Participant with others)';
+$string['indicator:socialbreadthdef_link'] = 'Learning_analytics_indicators#Social_breadth';
 $string['info'] = 'Info';
 $string['instructauthors'] = 'Instructions for submission';
 $string['instructreviewers'] = 'Instructions for assessment';
@@ -204,6 +222,7 @@ $string['mysubmission'] = 'My submission';
 $string['nattachments'] = 'Maximum number of submission attachments';
 $string['noexamples'] = 'No examples yet in this workshop';
 $string['noexamplesformready'] = 'You must define the assessment form before providing example submissions';
+$string['nosubmissiontype'] = 'At least one submission type must be available';
 $string['nogradeyet'] = 'No grade yet';
 $string['nosubmissionfound'] = 'No submission found for this user';
 $string['nosubmissions'] = 'No submissions yet in this workshop';
@@ -252,6 +271,22 @@ $string['privacy:metadata:feedbackreviewerformat'] = 'Text format of the feedbac
 $string['privacy:metadata:late'] = 'Whether the submission been submitted after the deadline';
 $string['privacy:metadata:peercomment'] = 'Comment on the given grade by the user providing the assessment';
 $string['privacy:metadata:peercommentformat'] = 'Text format of the comment on the given grade';
+$string['privacy:metadata:preference:viewlet-allexamples-collapsed'] = 'The collapsed/expanded state for the \'Example submissions\' viewlet.';
+$string['privacy:metadata:preference:viewlet-allsubmissions-collapsed'] = 'The collapsed/expanded state for the \'Workshop submissions report\' viewlet.';
+$string['privacy:metadata:preference:viewlet-assessmentform-collapsed'] = 'The collapsed/expanded state for the \'Assessment form\' viewlet.';
+$string['privacy:metadata:preference:viewlet-assignedassessments-collapsed'] = 'The collapsed/expanded state for the \'Assigned submissions to assess\' viewlet.';
+$string['privacy:metadata:preference:viewlet-cleargrades-collapsed'] = 'The collapsed/expanded state for the \'Workshop toolbox\' viewlet.';
+$string['privacy:metadata:preference:viewlet-conclusion-collapsed'] = 'The collapsed/expanded state for the \'Conclusion\' viewlet.';
+$string['privacy:metadata:preference:viewlet-examples-collapsed'] = 'The collapsed/expanded state for the \'Example submissions to assess\' viewlet.';
+$string['privacy:metadata:preference:viewlet-examplesfail-collapsed'] = 'The collapsed/expanded state for the \'Example submissions to assess\' viewlet.';
+$string['privacy:metadata:preference:viewlet-gradereport-collapsed'] = 'The collapsed/expanded state for the \'Workshop grades report\' viewlet.';
+$string['privacy:metadata:preference:viewlet-instructauthors-collapsed'] = 'The collapsed/expanded state for the \'Instructions for submission\' viewlet.';
+$string['privacy:metadata:preference:viewlet-instructreviewers-collapsed'] = 'The collapsed/expanded state for the \'Instructions for assessment\' viewlet.';
+$string['privacy:metadata:preference:viewlet-intro-collapsed'] = 'The collapsed/expanded state for the \'Intro\' viewlet.';
+$string['privacy:metadata:preference:viewlet-overallfeedback-collapsed'] = 'The collapsed/expanded state for the \'Overall feedback\' viewlet.';
+$string['privacy:metadata:preference:viewlet-ownsubmission-collapsed'] = 'The collapsed/expanded state for the \'Your submission\' viewlet.';
+$string['privacy:metadata:preference:viewlet-publicsubmissions-collapsed'] = 'The collapsed/expanded state for the \'Published submissions\' viewlet.';
+$string['privacy:metadata:preference:viewlet-yourgrades-collapsed'] = 'The collapsed/expanded state for the \'Your grades\' viewlet.';
 $string['privacy:metadata:preference:perpage'] = 'Number of submissions the user prefers to see on one page';
 $string['privacy:metadata:published'] = 'Whether the submission should be published to all participants once the workshop is closed';
 $string['privacy:metadata:reviewerid'] = 'ID of the user providing the assessment';
@@ -275,7 +310,7 @@ $string['privacy:metadata:workshopgrades'] = 'Holds information about how the as
 $string['privacy:metadata:workshopid'] = 'ID of the workshop activity';
 $string['privacy:metadata:workshopsubmissions'] = 'Holds information about workshop module submissions';
 $string['privacy:request:delete:title'] = '[Deleted]';
-$string['privacy:request:delete:content'] = 'The content has been deleted at the request of the user.';
+$string['privacy:request:delete:content'] = 'The content has been deleted (requested by the user or expired)';
 $string['publishedsubmissions'] = 'Published submissions';
 $string['publishsubmission'] = 'Publish submission';
 $string['publishsubmission_help'] = 'Published submissions are available to the others when the workshop is closed.';
@@ -300,6 +335,7 @@ $string['showingperpagechange'] = 'Change ...';
 $string['someuserswosubmission'] = 'There is at least one author who has not yet submitted their work';
 $string['sortasc'] = 'Ascending sort';
 $string['sortdesc'] = 'Descending sort';
+$string['submissionsallocation'] = 'Submissions allocation';
 $string['strategy'] = 'Grading strategy';
 $string['strategy_help'] = 'The grading strategy determines the assessment form used and the method of grading submissions. There are 4 options:
 
@@ -333,6 +369,12 @@ $string['submissionstart'] = 'Open for submissions from';
 $string['submissionstartevent'] = '{$a} opens for submissions';
 $string['submissionstartdatetime'] = 'Open for submissions from {$a->daydatetime} ({$a->distanceday})';
 $string['submissiontitle'] = 'Title';
+$string['submissiontypefileavailable'] = 'File attachment<span class="accesshide"> available</span>';
+$string['submissiontypefilerequired'] = '<span class="accesshide">File attachment </span>Required';
+$string['submissiontypetextavailable'] = 'Online text<span class="accesshide"> available</span>';
+$string['submissiontypetextrequired'] = '<span class="accesshide">Online text </span>Required';
+$string['submissiontypedisabled'] = 'This submission type is disabled for this workshop.';
+$string['submissiontypes'] = 'Submission types';
 $string['submissionsreport'] = 'Workshop submissions report';
 $string['submittednotsubmitted'] = 'Submitted ({$a->submitted}) / not submitted ({$a->notsubmitted})';
 $string['subplugintype_workshopallocation'] = 'Submissions allocation method';
@@ -412,7 +454,4 @@ $string['workshop:viewreviewernames'] = 'View reviewer names';
 $string['yourassessmentfor'] = 'Your assessment for {$a}';
 $string['yourgrades'] = 'Your grades';
 $string['yoursubmission'] = 'Your submission';
-
-// Deprecated since Moodle 3.4.
-$string['err_unknownfileextension'] = 'Unknown file extension: {$a}';
-$string['err_wrongfileextension'] = 'Some files ({$a->wrongfiles}) cannot be uploaded. Only file types {$a->whitelist} are allowed.';
+$string['yoursubmissionwithassessments'] = 'Your submission with assessments';

@@ -2,7 +2,7 @@
 /**
  * Copyright 2009-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @category  Horde
@@ -335,8 +335,8 @@ class Horde_Variables implements ArrayAccess, Countable, IteratorAggregate
         }
 
         return is_array($val)
-            ? filter_var_array($val, FILTER_SANITIZE_STRING)
-            : filter_var($val, FILTER_SANITIZE_STRING);
+            ? filter_var_array($val, FILTER_SANITIZE_FULL_SPECIAL_CHARS, FILTER_FLAG_NO_ENCODE_QUOTES)
+            : filter_var($val, FILTER_SANITIZE_FULL_SPECIAL_CHARS, FILTER_FLAG_NO_ENCODE_QUOTES);
     }
 
     /* Protected methods. */

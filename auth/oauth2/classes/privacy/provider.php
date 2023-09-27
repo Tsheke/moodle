@@ -24,11 +24,13 @@ namespace auth_oauth2\privacy;
 
 defined('MOODLE_INTERNAL') || die();
 
-use \core_privacy\local\metadata\collection;
-use \core_privacy\local\request\contextlist;
-use \core_privacy\local\request\approved_contextlist;
-use \core_privacy\local\request\transform;
-use \core_privacy\local\request\writer;
+use core_privacy\local\metadata\collection;
+use core_privacy\local\request\contextlist;
+use core_privacy\local\request\approved_contextlist;
+use core_privacy\local\request\transform;
+use core_privacy\local\request\writer;
+use core_privacy\local\request\userlist;
+use core_privacy\local\request\approved_userlist;
 
 /**
  * Privacy provider for auth_oauth2
@@ -39,6 +41,7 @@ use \core_privacy\local\request\writer;
  */
 class provider implements
     \core_privacy\local\metadata\provider,
+    \core_privacy\local\request\core_userlist_provider,
     \core_privacy\local\request\plugin\provider {
 
     /**
@@ -61,6 +64,20 @@ class provider implements
         ];
 
         $collection->add_database_table('auth_oauth2_linked_login', $authfields, 'privacy:metadata:auth_oauth2:tableexplanation');
+
+        // Regarding this block, we are unable to export or purge this data, as
+        // it would damage the oauth2 data across the whole site.
+        foreach ([
+            'oauth2_endpoint',
+            'oauth2_user_field_mapping',
+            'oauth2_access_token',
+            'oauth2_system_account',
+        ] as $tablename) {
+            $collection->add_database_table($tablename, [
+                'usermodified' => 'privacy:metadata:auth_oauth2:usermodified',
+            ], 'privacy:metadata:auth_oauth2:tableexplanation');
+        }
+
         $collection->link_subsystem('core_auth', 'privacy:metadata:auth_oauth2:authsubsystem');
 
         return $collection;
@@ -82,6 +99,25 @@ class provider implements
         $contextlist->add_from_sql($sql, $params);
 
         return $contextlist;
+    }
+
+    /**
+     * Get the list of users within a specific context.
+     *
+     * @param userlist $userlist The userlist containing the list of users who have data in this context/plugin combination.
+     */
+    public static function get_users_in_context(userlist $userlist) {
+        $context = $userlist->get_context();
+
+        if (!$context instanceof \context_user) {
+            return;
+        }
+
+        $sql = "SELECT userid
+                  FROM {auth_oauth2_linked_login}
+                 WHERE userid = ?";
+        $params = [$context->instanceid];
+        $userlist->add_from_sql('userid', $sql, $params);
     }
 
     /**
@@ -127,6 +163,19 @@ class provider implements
     }
 
     /**
+     * Delete multiple users within a single context.
+     *
+     * @param approved_userlist $userlist The approved context and user information to delete information for.
+     */
+    public static function delete_data_for_users(approved_userlist $userlist) {
+        $context = $userlist->get_context();
+
+        if ($context instanceof \context_user) {
+            static::delete_user_data($context->instanceid);
+        }
+    }
+
+    /**
      * Delete all user data for this user only.
      *
      * @param  approved_contextlist $contextlist The list of approved contexts for a user.
@@ -135,12 +184,15 @@ class provider implements
         if (empty($contextlist->count())) {
             return;
         }
+        $userid = $contextlist->get_user()->id;
         foreach ($contextlist->get_contexts() as $context) {
             if ($context->contextlevel != CONTEXT_USER) {
-                return;
+                continue;
             }
-            // Because we only use user contexts the instance ID is the user ID.
-            static::delete_user_data($context->instanceid);
+            if ($context->instanceid == $userid) {
+                // Because we only use user contexts the instance ID is the user ID.
+                static::delete_user_data($context->instanceid);
+            }
         }
     }
 

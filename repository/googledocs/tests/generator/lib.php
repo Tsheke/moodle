@@ -47,9 +47,9 @@ class repository_googledocs_generator extends testing_repository_generator {
         $issuerrecord = (object) [
             'name' => 'Google',
             'image' => 'https://accounts.google.com/favicon.ico',
-            'baseurl' => 'http://accounts.google.com/',
+            'baseurl' => 'https://accounts.google.com/',
             'loginparamsoffline' => 'access_type=offline&prompt=consent',
-            'showonloginpage' => true
+            'showonloginpage' => issuer::EVERYWHERE
         ];
 
         $issuer = new issuer(0, $issuerrecord);

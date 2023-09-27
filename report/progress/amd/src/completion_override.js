@@ -17,23 +17,22 @@
  * AMD module to handle overriding activity completion status.
  *
  * @module     report_progress/completion_override
- * @package    report_progress
  * @copyright  2016 onwards Eiz Eddin Al Katrib <eiz@barasoft.co.uk>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @since      3.1
  */
-define(['jquery', 'core/ajax', 'core/str', 'core/modal_factory', 'core/modal_events', 'core/notification',
-        'core/custom_interaction_events', 'core/templates'],
-    function($, Ajax, Str, ModalFactory, ModalEvents, Notification, CustomEvents, Templates) {
+define(['jquery', 'core/ajax', 'core/str', 'core/modal_save_cancel', 'core/modal_events', 'core/notification',
+        'core/custom_interaction_events', 'core/templates', 'core/pending'],
+    function($, Ajax, Str, ModalSaveCancel, ModalEvents, Notification, CustomEvents, Templates, Pending) {
 
         /**
-         * @type {String} the full name of the current user.
+         * @var {String} the full name of the current user.
          * @private
          */
         var userFullName;
 
         /**
-         * @type {JQuery} JQuery object containing the element (completion link) that was most recently activated.
+         * @var {JQuery} JQuery object containing the element (completion link) that was most recently activated.
          * @private
          */
         var triggerElement;
@@ -57,6 +56,7 @@ define(['jquery', 'core/ajax', 'core/str', 'core/modal_factory', 'core/modal_eve
          * @private
          */
         var setOverride = function(override) {
+            const pendingPromise = new Pending('report_progress/compeletion_override/setOverride');
             // Generate a loading spinner while we're working.
             Templates.render('core/loading', {}).then(function(html) {
                 // Append the loading spinner to the trigger element.
@@ -93,6 +93,10 @@ define(['jquery', 'core/ajax', 'core/str', 'core/modal_factory', 'core/modal_eve
                 }).catch(Notification.exception);
 
                 return;
+            })
+            .then(() => {
+                pendingPromise.resolve();
+                return;
             }).catch(Notification.exception);
         };
 
@@ -126,29 +130,22 @@ define(['jquery', 'core/ajax', 'core/str', 'core/modal_factory', 'core/modal_eve
                     {key: 'areyousureoverridecompletion', component: 'completion', param: strings[0]}
                 ]);
             }).then(function(strings) {
-                // Create a yes/no modal.
-                return ModalFactory.create({
-                    type: ModalFactory.types.CONFIRM,
+                // Create a save/cancel modal.
+                return ModalSaveCancel.create({
                     title: strings[0],
                     body: strings[1],
+                    show: true,
+                    removeOnClose: true,
                 });
             }).then(function(modal) {
                 // Now set up the handlers for the confirmation or cancellation of the modal, and show it.
 
                 // Confirmation only.
-                modal.getRoot().on(ModalEvents.yes, function() {
+                modal.getRoot().on(ModalEvents.save, function() {
                     setOverride(override);
                 });
 
-                // Confirming, closing, or cancelling will destroy the modal and return focus to the trigger element.
-                modal.getRoot().on(ModalEvents.hidden, function() {
-                    triggerElement.focus();
-                    modal.destroy();
-                });
-
-                // Display.
-                modal.show();
-                return;
+                return modal;
             }).catch(Notification.exception);
         };
 

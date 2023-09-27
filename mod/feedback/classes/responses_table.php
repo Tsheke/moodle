@@ -78,6 +78,9 @@ class mod_feedback_responses_table extends table_sql {
     /** @var array the data structure containing the table data for the external function */
     protected $dataforexternal = [];
 
+    /** @var bool true if elements per page > 0, otherwise false. */
+    protected $pageable;
+
     /**
      * Constructor
      *
@@ -113,11 +116,17 @@ class mod_feedback_responses_table extends table_sql {
      */
     protected function init($group = 0) {
 
-        $tablecolumns = array('userpic', 'fullname');
-        $tableheaders = array(get_string('userpic'), get_string('fullnameuser'));
+        $tablecolumns = array('userpic', 'fullname', 'groups');
+        $tableheaders = array(
+            get_string('userpic'),
+            get_string('fullnameuser'),
+            get_string('groups')
+        );
 
-        $extrafields = get_extra_user_fields($this->get_context());
-        $ufields = user_picture::fields('u', $extrafields, $this->useridfield);
+        // TODO Does not support custom user profile fields (MDL-70456).
+        $userfieldsapi = \core_user\fields::for_identity($this->get_context(), false)->with_userpic();
+        $ufields = $userfieldsapi->get_sql('u', false, '', $this->useridfield, false)->selects;
+        $extrafields = $userfieldsapi->get_required_fields([\core_user\fields::PURPOSE_IDENTITY]);
         $fields = 'c.id, c.timemodified as completed_timemodified, c.courseid, '.$ufields;
         $from = '{feedback_completed} c '
                 . 'JOIN {user} u ON u.id = c.userid AND u.deleted = :notdeleted';
@@ -137,7 +146,7 @@ class mod_feedback_responses_table extends table_sql {
             foreach ($extrafields as $field) {
                 $fields .= ", u.{$field}";
                 $tablecolumns[] = $field;
-                $tableheaders[] = get_user_field_name($field);
+                $tableheaders[] = \core_user\fields::get_display_name($field);
             }
         }
 
@@ -153,6 +162,7 @@ class mod_feedback_responses_table extends table_sql {
         $this->define_headers($tableheaders);
 
         $this->sortable(true, 'lastname', SORT_ASC);
+        $this->no_sorting('groups');
         $this->collapsible(true);
         $this->set_attribute('id', 'showentrytable');
 
@@ -176,7 +186,7 @@ class mod_feedback_responses_table extends table_sql {
      * Current context
      * @return context_module
      */
-    protected function get_context() {
+    public function get_context(): context {
         return context_module::instance($this->feedbackstructure->get_cm()->id);
     }
 
@@ -189,9 +199,13 @@ class mod_feedback_responses_table extends table_sql {
         if (preg_match('/^val(\d+)$/', $column, $matches)) {
             $items = $this->feedbackstructure->get_items();
             $itemobj = feedback_get_item_class($items[$matches[1]]->typ);
-            return trim($itemobj->get_printval($items[$matches[1]], (object) ['value' => $row->$column] ));
+            $printval = $itemobj->get_printval($items[$matches[1]], (object) ['value' => $row->$column]);
+            if ($this->is_downloading()) {
+                $printval = s($printval);
+            }
+            return trim($printval);
         }
-        return $row->$column;
+        return parent::other_cols($column, $row);
     }
 
     /**
@@ -259,10 +273,27 @@ class mod_feedback_responses_table extends table_sql {
     }
 
     /**
+     * Prepares column groups for display
+     * @param array $row
+     * @return string
+     */
+    public function col_groups($row) {
+        $groups = '';
+        if ($usergrps = groups_get_all_groups($this->feedbackstructure->get_cm()->course, $row->userid, 0, 'name')) {
+            foreach ($usergrps as $group) {
+                $groups .= format_string($group->name). ' ';
+            }
+        }
+        return trim($groups);
+    }
+
+    /**
      * Adds common values to the table that do not change the number or order of entries and
      * are only needed when outputting or downloading data.
      */
     protected function add_all_values_to_output() {
+        global $DB;
+
         $tablecolumns = array_keys($this->columns);
         $tableheaders = $this->headers;
 
@@ -276,12 +307,13 @@ class mod_feedback_responses_table extends table_sql {
         $columnscount = 0;
         $this->hasmorecolumns = max(0, count($items) - self::TABLEJOINLIMIT);
 
+        $headernamepostfix = !$this->is_downloading();
         // Add feedback response values.
         foreach ($items as $nr => $item) {
             if ($columnscount++ < self::TABLEJOINLIMIT) {
                 // Mysql has a limit on the number of tables in the join, so we only add limited number of columns here,
                 // the rest will be added in {@link self::build_table()} and {@link self::build_table_chunk()} functions.
-                $this->sql->fields .= ", v{$nr}.value AS val{$nr}";
+                $this->sql->fields .= ", " . $DB->sql_cast_to_char("v{$nr}.value") . " AS val{$nr}";
                 $this->sql->from .= " LEFT OUTER JOIN {feedback_value} v{$nr} " .
                     "ON v{$nr}.completed = c.id AND v{$nr}.item = :itemid{$nr}";
                 $this->sql->params["itemid{$nr}"] = $item->id;
@@ -289,7 +321,15 @@ class mod_feedback_responses_table extends table_sql {
 
             $tablecolumns[] = "val{$nr}";
             $itemobj = feedback_get_item_class($item->typ);
-            $tableheaders[] = $itemobj->get_display_name($item);
+            $columnheader = $itemobj->get_display_name($item, $headernamepostfix);
+            if (!$this->is_downloading()) {
+                $columnheader = shorten_text($columnheader);
+            }
+            if (strval($item->label) !== '') {
+                $columnheader = get_string('nameandlabelformat', 'mod_feedback',
+                    (object)['label' => format_string($item->label), 'name' => $columnheader]);
+            }
+            $tableheaders[] = $columnheader;
         }
 
         // Add 'Delete entry' column.
@@ -525,7 +565,7 @@ class mod_feedback_responses_table extends table_sql {
             $from = '{feedback_completed} c';
             $params = [];
             foreach ($columnsgroup as $nr => $item) {
-                $fields .= ", v{$nr}.value AS val{$nr}";
+                $fields .= ", " . $DB->sql_cast_to_char("v{$nr}.value") . " AS val{$nr}";
                 $from .= " LEFT OUTER JOIN {feedback_value} v{$nr} " .
                     "ON v{$nr}.completed = c.id AND v{$nr}.item = :itemid{$nr}";
                 $params["itemid{$nr}"] = $item->id;

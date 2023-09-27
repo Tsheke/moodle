@@ -28,7 +28,7 @@ defined('MOODLE_INTERNAL') || die;
 /**
  * List of features supported in URL module
  * @param string $feature FEATURE_xx constant for requested feature
- * @return mixed True if module supports feature, false if not, null if doesn't know
+ * @return mixed True if module supports feature, false if not, null if doesn't know or string for the module purpose.
  */
 function url_supports($feature) {
     switch($feature) {
@@ -41,17 +41,10 @@ function url_supports($feature) {
         case FEATURE_GRADE_OUTCOMES:          return false;
         case FEATURE_BACKUP_MOODLE2:          return true;
         case FEATURE_SHOW_DESCRIPTION:        return true;
+        case FEATURE_MOD_PURPOSE:             return MOD_PURPOSE_CONTENT;
 
         default: return null;
     }
-}
-
-/**
- * Returns all other caps used in module
- * @return array
- */
-function url_get_extra_capabilities() {
-    return array('moodle/site:accessallgroups');
 }
 
 /**
@@ -210,7 +203,7 @@ function url_delete_instance($id) {
  * "extra" information that may be needed when printing
  * this activity in a course listing.
  *
- * See {@link get_array_of_activities()} in course/lib.php
+ * See {@link course_modinfo::get_array_of_activities()}
  *
  * @param object $coursemodule
  * @return cached_cm_info info
@@ -227,14 +220,14 @@ function url_get_coursemodule_info($coursemodule) {
     $info = new cached_cm_info();
     $info->name = $url->name;
 
-    //note: there should be a way to differentiate links from normal resources
-    $info->icon = url_guess_icon($url->externalurl, 24);
+    // Note: there should be a way to differentiate links from normal resources.
+    $info->icon = url_guess_icon($url->externalurl);
 
     $display = url_get_final_display_type($url);
 
     if ($display == RESOURCELIB_DISPLAY_POPUP) {
         $fullurl = "$CFG->wwwroot/mod/url/view.php?id=$coursemodule->id&amp;redirect=1";
-        $options = empty($url->displayoptions) ? array() : unserialize($url->displayoptions);
+        $options = empty($url->displayoptions) ? [] : (array) unserialize_array($url->displayoptions);
         $width  = empty($options['popupwidth'])  ? 620 : $options['popupwidth'];
         $height = empty($options['popupheight']) ? 450 : $options['popupheight'];
         $wh = "width=$width,height=$height,toolbar=no,location=no,menubar=no,copyhistory=no,status=no,directories=no,scrollbars=yes,resizable=yes";
@@ -250,6 +243,10 @@ function url_get_coursemodule_info($coursemodule) {
         // Convert intro to html. Do not filter cached version, filters run at display time.
         $info->content = format_module_intro('url', $url, $coursemodule->id, false);
     }
+
+    $info->customdata['display'] = $display;
+    // The icon will be filtered from now on because the custom icons have been updated.
+    $info->customdata['filtericon'] = true;
 
     return $info;
 }
@@ -282,7 +279,7 @@ function url_export_contents($cm, $baseurl) {
     $fullurl = str_replace('&amp;', '&', url_get_full_url($urlrecord, $cm, $course));
     $isurl = clean_param($fullurl, PARAM_URL);
     if (empty($isurl)) {
-        return null;
+        return [];
     }
 
     $url = array();
@@ -326,6 +323,7 @@ function url_dndupload_handle($uploadinfo) {
     $data->introformat = FORMAT_HTML;
     $data->externalurl = clean_param($uploadinfo->content, PARAM_URL);
     $data->timemodified = time();
+    $data->coursemodule = $uploadinfo->coursemodule;
 
     // Set the display options to the site defaults.
     $config = get_config('url');
@@ -387,15 +385,22 @@ function url_check_updates_since(cm_info $cm, $from, $filter = array()) {
  *
  * @param calendar_event $event
  * @param \core_calendar\action_factory $factory
+ * @param int $userid ID override for calendar events
  * @return \core_calendar\local\event\entities\action_interface|null
  */
 function mod_url_core_calendar_provide_event_action(calendar_event $event,
-                                                       \core_calendar\action_factory $factory) {
-    $cm = get_fast_modinfo($event->courseid)->instances['url'][$event->instance];
+                                                       \core_calendar\action_factory $factory, $userid = 0) {
+
+    global $USER;
+    if (empty($userid)) {
+        $userid = $USER->id;
+    }
+
+    $cm = get_fast_modinfo($event->courseid, $userid)->instances['url'][$event->instance];
 
     $completion = new \completion_info($cm->get_course());
 
-    $completiondata = $completion->get_data($cm, false);
+    $completiondata = $completion->get_data($cm, false, $userid);
 
     if ($completiondata->completionstate != COMPLETION_INCOMPLETE) {
         return null;

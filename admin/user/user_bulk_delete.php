@@ -8,7 +8,6 @@ require_once($CFG->libdir.'/adminlib.php');
 
 $confirm = optional_param('confirm', 0, PARAM_BOOL);
 
-require_login();
 admin_externalpage_setup('userbulk');
 require_capability('moodle/user:delete', context_system::instance());
 
@@ -18,6 +17,9 @@ if (empty($SESSION->bulk_users)) {
     redirect($return);
 }
 
+$PAGE->set_primary_active_tab('siteadminnode');
+$PAGE->set_secondary_active_tab('users');
+
 echo $OUTPUT->header();
 
 //TODO: add support for large number of users
@@ -25,7 +27,7 @@ echo $OUTPUT->header();
 if ($confirm and confirm_sesskey()) {
     $notifications = '';
     list($in, $params) = $DB->get_in_or_equal($SESSION->bulk_users);
-    $rs = $DB->get_recordset_select('user', "id $in", $params);
+    $rs = $DB->get_recordset_select('user', "deleted = 0 and id $in", $params);
     foreach ($rs as $user) {
         if (!is_siteadmin($user) and $USER->id != $user->id and delete_user($user)) {
             unset($SESSION->bulk_users[$user->id]);

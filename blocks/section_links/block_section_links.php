@@ -105,6 +105,9 @@ class block_section_links extends block_base {
             }
         }
 
+        // Whether or not section name should be displayed.
+        $showsectionname = !empty($config->showsectionname) ? true : false;
+
         // Prepare an array of sections to create links for.
         $sections = array();
         $canviewhidden = has_capability('moodle/course:update', $context);
@@ -126,13 +129,17 @@ class block_section_links extends block_base {
                     $sections[$i]->highlight = true;
                     $sectiontojumpto = $section->section;
                 }
+                if ($showsectionname) {
+                    $sections[$i]->name = $courseformat->get_section_name($i);
+                }
             }
         }
 
         if (!empty($sections)) {
             // Render the sections.
             $renderer = $this->page->get_renderer('block_section_links');
-            $this->content->text = $renderer->render_section_links($this->page->course, $sections, $sectiontojumpto);
+            $this->content->text = $renderer->render_section_links($this->page->course, $sections,
+                $sectiontojumpto, $showsectionname);
         }
 
         return $this->content;
@@ -153,6 +160,23 @@ class block_section_links extends block_base {
      */
     public function has_config() {
         return true;
+    }
+
+    /**
+     * Return the plugin config settings for external functions.
+     *
+     * @return stdClass the configs for both the block instance and plugin
+     * @since Moodle 3.8
+     */
+    public function get_config_for_external() {
+        // Return all settings for all users since it is safe (no private keys, etc..).
+        $instanceconfigs = !empty($this->config) ? $this->config : new stdClass();
+        $pluginconfigs = get_config('block_section_links');
+
+        return (object) [
+            'instance' => $instanceconfigs,
+            'plugin' => $pluginconfigs,
+        ];
     }
 }
 

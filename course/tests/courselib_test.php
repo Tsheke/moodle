@@ -14,23 +14,66 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace core_course;
+
+use advanced_testcase;
+use backup_controller;
+use backup;
+use blog_entry;
+use cache;
+use calendar_event;
+use coding_exception;
+use comment;
+use completion_criteria_date;
+use completion_completion;
+use context_course;
+use context_module;
+use context_system;
+use context_coursecat;
+use core_completion_external;
+use core_external;
+use core_tag_index_builder;
+use core_tag_tag;
+use course_capability_assignment;
+use course_request;
+use core_course_category;
+use enrol_imsenterprise\imsenterprise_test;
+use core_external\external_api;
+use grade_item;
+use grading_manager;
+use moodle_exception;
+use moodle_url;
+use phpunit_util;
+use rating_manager;
+use restore_controller;
+use stdClass;
+use testing_data_generator;
+
+defined('MOODLE_INTERNAL') or die();
+
+// Require library globally because it's constants are used within dataProvider methods, executed before setUpBeforeClass.
+global $CFG;
+require_once($CFG->dirroot . '/course/lib.php');
+
 /**
  * Course related unit tests
  *
- * @package    core
- * @category   phpunit
+ * @package    core_course
+ * @category   test
  * @copyright  2012 Petr Skoda {@link http://skodak.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+class courselib_test extends advanced_testcase {
 
-defined('MOODLE_INTERNAL') || die();
+    /**
+     * Load required libraries and fixtures.
+     */
+    public static function setUpBeforeClass(): void {
+        global $CFG;
 
-global $CFG;
-require_once($CFG->dirroot . '/course/lib.php');
-require_once($CFG->dirroot . '/course/tests/fixtures/course_capability_assignment.php');
-require_once($CFG->dirroot . '/enrol/imsenterprise/tests/imsenterprise_test.php');
-
-class core_course_courselib_testcase extends advanced_testcase {
+        require_once($CFG->dirroot . '/course/tests/fixtures/course_capability_assignment.php');
+        require_once($CFG->dirroot . '/enrol/imsenterprise/tests/imsenterprise_test.php');
+    }
 
     /**
      * Set forum specific test values for calling create_module().
@@ -54,6 +97,9 @@ class core_course_courselib_testcase extends advanced_testcase {
         $moduleinfo->blockperiod = 60*60*24;
         $moduleinfo->blockafter = 10;
         $moduleinfo->warnafter = 5;
+
+        // Grading of whole forum settings.
+        $moduleinfo->grade_forum = 0;
     }
 
     /**
@@ -218,6 +264,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $moduleinfo->completion = COMPLETION_TRACKING_AUTOMATIC;
         $moduleinfo->completionview = COMPLETION_VIEW_REQUIRED;
         $moduleinfo->completiongradeitemnumber = 1;
+        $moduleinfo->completionpassgrade = 0;
         $moduleinfo->completionexpected = time() + (7 * 24 * 3600);
 
         // Conditional activity.
@@ -280,6 +327,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($moduleinfo->completion, $dbcm->completion);
         $this->assertEquals($moduleinfo->completionview, $dbcm->completionview);
         $this->assertEquals($moduleinfo->completiongradeitemnumber, $dbcm->completiongradeitemnumber);
+        $this->assertEquals($moduleinfo->completionpassgrade, $dbcm->completionpassgrade);
         $this->assertEquals($moduleinfo->completionexpected, $dbcm->completionexpected);
         $this->assertEquals($moduleinfo->availability, $dbcm->availability);
         $this->assertEquals($moduleinfo->showdescription, $dbcm->showdescription);
@@ -301,6 +349,50 @@ class core_course_courselib_testcase extends advanced_testcase {
         $modulerunasserts = $modulename.'_create_run_asserts';
         $this->$modulerunasserts($moduleinfo, $dbmodinstance);
         return $moduleinfo;
+    }
+
+    /**
+     * Create module associated blog and tags.
+     *
+     * @param object $course Course.
+     * @param object $modulecontext The context of the module.
+     */
+    private function create_module_asscociated_blog($course, $modulecontext) {
+        global $DB, $CFG;
+
+        // Create default group.
+        $group = new stdClass();
+        $group->courseid = $course->id;
+        $group->name = 'Group';
+        $group->id = $DB->insert_record('groups', $group);
+
+        // Create default user.
+        $user = $this->getDataGenerator()->create_user(array(
+            'username' => 'testuser',
+            'firstname' => 'Firsname',
+            'lastname' => 'Lastname'
+        ));
+
+        // Create default post.
+        $post = new stdClass();
+        $post->userid = $user->id;
+        $post->groupid = $group->id;
+        $post->content = 'test post content text';
+        $post->module = 'blog';
+        $post->id = $DB->insert_record('post', $post);
+
+        // Create default tag.
+        $tag = $this->getDataGenerator()->create_tag(array('userid' => $user->id,
+            'rawname' => 'Testtagname', 'isstandard' => 1));
+        // Apply the tag to the blog.
+        $DB->insert_record('tag_instance', array('tagid' => $tag->id, 'itemtype' => 'user',
+            'component' => 'core', 'itemid' => $post->id, 'ordering' => 0));
+
+        require_once($CFG->dirroot . '/blog/locallib.php');
+        $blog = new blog_entry($post->id);
+        $blog->add_association($modulecontext->id);
+
+        return $blog;
     }
 
     /**
@@ -351,6 +443,9 @@ class core_course_courselib_testcase extends advanced_testcase {
         $moduleinfo->blockperiod = 60*60*24;
         $moduleinfo->blockafter = 10;
         $moduleinfo->warnafter = 5;
+
+        // Grading of whole forum settings.
+        $moduleinfo->grade_forum = 0;
     }
 
     /**
@@ -454,6 +549,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $moduleinfo->completion = COMPLETION_TRACKING_AUTOMATIC;
         $moduleinfo->completionview = COMPLETION_VIEW_REQUIRED;
         $moduleinfo->completiongradeitemnumber = 1;
+        $moduleinfo->completionpassgrade = 0;
         $moduleinfo->completionexpected = time() + (7 * 24 * 3600);
         $moduleinfo->completionunlocked = 1;
 
@@ -511,6 +607,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($moduleinfo->completion, $dbcm->completion);
         $this->assertEquals($moduleinfo->completionview, $dbcm->completionview);
         $this->assertEquals($moduleinfo->completiongradeitemnumber, $dbcm->completiongradeitemnumber);
+        $this->assertEquals($moduleinfo->completionpassgrade, $dbcm->completionpassgrade);
         $this->assertEquals($moduleinfo->completionexpected, $dbcm->completionexpected);
         $this->assertEquals($moduleinfo->availability, $dbcm->availability);
         $this->assertEquals($moduleinfo->showdescription, $dbcm->showdescription);
@@ -701,6 +798,63 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertGreaterThan($oldtimemodified, $newtimemodified);
     }
 
+    /**
+     * Relative dates mode settings provider for course creation.
+     */
+    public function create_course_relative_dates_provider() {
+        return [
+            [0, 0, 0],
+            [0, 1, 0],
+            [1, 0, 0],
+            [1, 1, 1],
+        ];
+    }
+
+    /**
+     * Test create_course by attempting to change the relative dates mode.
+     *
+     * @dataProvider create_course_relative_dates_provider
+     * @param int $setting The value for the 'enablecourserelativedates' admin setting.
+     * @param int $mode The value for the course's 'relativedatesmode' field.
+     * @param int $expectedvalue The expected value of the 'relativedatesmode' field after course creation.
+     */
+    public function test_relative_dates_mode_for_course_creation($setting, $mode, $expectedvalue) {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        set_config('enablecourserelativedates', $setting);
+
+        // Generate a course with relative dates mode set to $mode.
+        $course = $this->getDataGenerator()->create_course(['relativedatesmode' => $mode]);
+
+        // Verify that the relative dates match what's expected.
+        $relativedatesmode = $DB->get_field('course', 'relativedatesmode', ['id' => $course->id]);
+        $this->assertEquals($expectedvalue, $relativedatesmode);
+    }
+
+    /**
+     * Test update_course by attempting to change the relative dates mode.
+     */
+    public function test_relative_dates_mode_for_course_update() {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        set_config('enablecourserelativedates', 1);
+
+        // Generate a course with relative dates mode set to 1.
+        $course = $this->getDataGenerator()->create_course(['relativedatesmode' => 1]);
+
+        // Attempt to update the course with a changed relativedatesmode.
+        $course->relativedatesmode = 0;
+        update_course($course);
+
+        // Verify that the relative dates mode has not changed.
+        $relativedatesmode = $DB->get_field('course', 'relativedatesmode', ['id' => $course->id]);
+        $this->assertEquals(1, $relativedatesmode);
+    }
+
     public function test_course_add_cm_to_section() {
         global $DB;
         $this->resetAfterTest(true);
@@ -735,8 +889,9 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($cmids[0] . ',' . $cmids[1], $sequence);
 
         // Check that modinfo cache was reset but not rebuilt (important for performance if calling repeatedly).
-        $this->assertGreaterThan($coursecacherev, $DB->get_field('course', 'cacherev', array('id' => $course->id)));
-        $this->assertEmpty(cache::make('core', 'coursemodinfo')->get($course->id));
+        $newcacherev = $DB->get_field('course', 'cacherev', ['id' => $course->id]);
+        $this->assertGreaterThan($coursecacherev, $newcacherev);
+        $this->assertEmpty(cache::make('core', 'coursemodinfo')->get_versioned($course->id, $newcacherev));
 
         // Add one to section that doesn't exist (this might rebuild modinfo).
         course_add_cm_to_section($course, $cmids[2], 2);
@@ -889,6 +1044,80 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals(3, $course->marker);
     }
 
+    /**
+     * Test move_section_to method with caching
+     *
+     * @covers ::move_section_to
+     * @return void
+     */
+    public function test_move_section_with_section_cache(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $cache = cache::make('core', 'coursemodinfo');
+
+        // Generate the course and pre-requisite module.
+        $course = $this->getDataGenerator()->create_course(['format' => 'topics', 'numsections' => 3], ['createsections' => true]);
+        // Reset course cache.
+        rebuild_course_cache($course->id, true);
+
+        // Build course cache.
+        get_fast_modinfo($course->id);
+        // Get the course modinfo cache.
+        $coursemodinfo = $cache->get_versioned($course->id, $course->cacherev);
+        // Get the section cache.
+        $sectioncaches = $coursemodinfo->sectioncache;
+
+        // Make sure that we will have 4 section caches here.
+        $this->assertCount(4, $sectioncaches);
+        $this->assertArrayHasKey(0, $sectioncaches);
+        $this->assertArrayHasKey(1, $sectioncaches);
+        $this->assertArrayHasKey(2, $sectioncaches);
+        $this->assertArrayHasKey(3, $sectioncaches);
+
+        // Move section.
+        move_section_to($course, 2, 3);
+        // Get the course modinfo cache.
+        $coursemodinfo = $cache->get_versioned($course->id, $course->cacherev);
+        // Get the section cache.
+        $sectioncaches = $coursemodinfo->sectioncache;
+
+        // Make sure that we will have 2 section caches left.
+        $this->assertCount(2, $sectioncaches);
+        $this->assertArrayHasKey(0, $sectioncaches);
+        $this->assertArrayHasKey(1, $sectioncaches);
+        $this->assertArrayNotHasKey(2, $sectioncaches);
+        $this->assertArrayNotHasKey(3, $sectioncaches);
+    }
+
+    /**
+     * Test move_section_to method.
+     * Make sure that we only update the moving sections, not all the sections in the current course.
+     *
+     * @covers ::move_section_to
+     * @return void
+     */
+    public function test_move_section_to(): void {
+        global $DB, $CFG;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        // Generate the course and pre-requisite module.
+        $course = $this->getDataGenerator()->create_course(['format' => 'topics', 'numsections' => 3], ['createsections' => true]);
+
+        ob_start();
+        $DB->set_debug(true);
+        // Move section.
+        move_section_to($course, 2, 3);
+        $DB->set_debug(false);
+        $debuginfo = ob_get_contents();
+        ob_end_clean();
+        $sectionmovequerycount = substr_count($debuginfo, 'UPDATE ' . $CFG->phpunit_prefix . 'course_sections SET');
+        // We are updating the course_section table in steps to avoid breaking database uniqueness constraint.
+        // So the queries will be doubled. See: course/lib.php:1423
+        // Make sure that we only need 4 queries to update the position of section 2 and section 3.
+        $this->assertEquals(4, $sectionmovequerycount);
+    }
+
     public function test_course_can_delete_section() {
         global $DB;
         $this->resetAfterTest(true);
@@ -941,7 +1170,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $modulecontext = context_module::instance($assign1->cmid);
         assign_capability('moodle/course:manageactivities', CAP_PROHIBIT, $roleids['editingteacher'],
             $modulecontext);
-        $modulecontext->mark_dirty();
         $this->assertFalse(course_can_delete_section($courseweeks, 1));
         $this->assertTrue(course_can_delete_section($courseweeks, 2));
 
@@ -989,6 +1217,7 @@ class core_course_courselib_testcase extends advanced_testcase {
 
         // Delete section in the middle (2).
         $this->assertFalse(course_delete_section($course, 2, false));
+        $this->assertEquals(4, course_get_format($course)->get_last_section_number());
         $this->assertTrue(course_delete_section($course, 2, true));
         $this->assertFalse($DB->record_exists('course_modules', array('id' => $assign21->cmid)));
         $this->assertFalse($DB->record_exists('course_modules', array('id' => $assign22->cmid)));
@@ -1411,9 +1640,9 @@ class core_course_courselib_testcase extends advanced_testcase {
         $modinfo = get_fast_modinfo($course);
 
         // Verify that forum and page have been moved to the hidden section and quiz has not.
-        $this->assertContains($forum->cmid, $modinfo->sections[3]);
-        $this->assertContains($page->cmid, $modinfo->sections[3]);
-        $this->assertNotContains($quiz->cmid, $modinfo->sections[3]);
+        $this->assertContainsEquals($forum->cmid, $modinfo->sections[3]);
+        $this->assertContainsEquals($page->cmid, $modinfo->sections[3]);
+        $this->assertNotContainsEquals($quiz->cmid, $modinfo->sections[3]);
 
         // Verify that forum has been made invisible.
         $forumcm = $modinfo->cms[$forum->cmid];
@@ -1521,6 +1750,8 @@ class core_course_courselib_testcase extends advanced_testcase {
         // Get the module context.
         $modcontext = context_module::instance($module->cmid);
 
+        $assocblog = $this->create_module_asscociated_blog($course, $modcontext);
+
         // Verify context exists.
         $this->assertInstanceOf('context_module', $modcontext);
 
@@ -1545,11 +1776,8 @@ class core_course_courselib_testcase extends advanced_testcase {
             case 'quiz':
                 $qgen = $this->getDataGenerator()->get_plugin_generator('core_question');
                 $qcat = $qgen->create_question_category(array('contextid' => $modcontext->id));
-                $questions = array(
-                    $qgen->create_question('shortanswer', null, array('category' => $qcat->id)),
-                    $qgen->create_question('shortanswer', null, array('category' => $qcat->id)),
-                );
-                $this->expectOutputRegex('/'.get_string('unusedcategorydeleted', 'question').'/');
+                $qgen->create_question('shortanswer', null, array('category' => $qcat->id));
+                $qgen->create_question('shortanswer', null, array('category' => $qcat->id));
                 break;
             default:
                 break;
@@ -1564,6 +1792,18 @@ class core_course_courselib_testcase extends advanced_testcase {
         // Verify the course_module record has been deleted.
         $cmcount = $DB->count_records('course_modules', array('id' => $module->cmid));
         $this->assertEmpty($cmcount);
+
+        // Verify the blog_association record has been deleted.
+        $this->assertCount(0, $DB->get_records('blog_association',
+                array('contextid' => $modcontext->id)));
+
+        // Verify the blog post record has been deleted.
+        $this->assertCount(0, $DB->get_records('post',
+                array('id' => $assocblog->id)));
+
+        // Verify the tag instance record has been deleted.
+        $this->assertCount(0, $DB->get_records('tag_instance',
+                array('itemid' => $assocblog->id)));
 
         // Test clean up of module specific messes.
         switch ($type) {
@@ -1585,8 +1825,13 @@ class core_course_courselib_testcase extends advanced_testcase {
                 $this->assertEquals(0, $DB->count_records('question_categories', $criteria));
 
                 // Verify questions deleted.
-                $criteria = array('category' => $qcat->id);
-                $this->assertEquals(0, $DB->count_records('question', $criteria));
+                $criteria = [$qcat->id];
+                $sql = 'SELECT COUNT(q.id)
+                          FROM {question} q
+                          JOIN {question_versions} qv ON qv.questionid = q.id
+                          JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                          WHERE qbe.questioncategoryid = ?';
+                $this->assertEquals(0, $DB->count_records_sql($sql, $criteria));
                 break;
             default:
                 break;
@@ -1622,10 +1867,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($course->id, $event->objectid);
         $this->assertEquals(context_course::instance($course->id), $event->get_context());
         $this->assertEquals($course, $event->get_record_snapshot('course', $course->id));
-        $this->assertEquals('course_created', $event->get_legacy_eventname());
-        $this->assertEventLegacyData($course, $event);
-        $expectedlog = array(SITEID, 'course', 'new', 'view.php?id=' . $course->id, $course->fullname . ' (ID ' . $course->id . ')');
-        $this->assertEventLegacyLogData($expectedlog, $event);
 
         // Now we want to trigger creating a course via the imsenterprise.
         // Delete the course we created earlier, as we want the imsenterprise plugin to create this.
@@ -1637,7 +1878,7 @@ class core_course_courselib_testcase extends advanced_testcase {
 
         // Create the XML file we want to use.
         $course->category = (array)$course->category;
-        $imstestcase = new enrol_imsenterprise_testcase();
+        $imstestcase = new imsenterprise_test();
         $imstestcase->imsplugin = enrol_get_plugin('imsenterprise');
         $imstestcase->set_test_config();
         $imstestcase->set_xml_file(false, array($course));
@@ -1696,10 +1937,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $url = new moodle_url('/course/edit.php', array('id' => $event->objectid));
         $this->assertEquals($url, $event->get_url());
         $this->assertEquals($updatedcourse, $event->get_record_snapshot('course', $event->objectid));
-        $this->assertEquals('course_updated', $event->get_legacy_eventname());
-        $this->assertEventLegacyData($updatedcourse, $event);
-        $expectedlog = array($updatedcourse->id, 'course', 'update', 'edit.php?id=' . $course->id, $course->id);
-        $this->assertEventLegacyLogData($expectedlog, $event);
 
         // Move course and catch course_updated event.
         $sink = $this->redirectEvents();
@@ -1716,10 +1953,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($movedcourse->id, $event->objectid);
         $this->assertEquals(context_course::instance($course->id), $event->get_context());
         $this->assertEquals($movedcourse, $event->get_record_snapshot('course', $movedcourse->id));
-        $this->assertEquals('course_updated', $event->get_legacy_eventname());
-        $this->assertEventLegacyData($movedcourse, $event);
-        $expectedlog = array($movedcourse->id, 'course', 'move', 'edit.php?id=' . $movedcourse->id, $movedcourse->id);
-        $this->assertEventLegacyLogData($expectedlog, $event);
 
         // Move course to hidden category and catch course_updated event.
         $sink = $this->redirectEvents();
@@ -1736,11 +1969,40 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($movedcoursehidden->id, $event->objectid);
         $this->assertEquals(context_course::instance($course->id), $event->get_context());
         $this->assertEquals($movedcoursehidden, $event->get_record_snapshot('course', $movedcoursehidden->id));
-        $this->assertEquals('course_updated', $event->get_legacy_eventname());
-        $this->assertEventLegacyData($movedcoursehidden, $event);
-        $expectedlog = array($movedcoursehidden->id, 'course', 'move', 'edit.php?id=' . $movedcoursehidden->id, $movedcoursehidden->id);
-        $this->assertEventLegacyLogData($expectedlog, $event);
         $this->assertEventContextNotUsed($event);
+    }
+
+    /**
+     * Test that triggering a course_updated event logs changes.
+     */
+    public function test_course_updated_event_with_changes() {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course((object)['visible' => 1]);
+
+        $editedcourse = $DB->get_record('course', ['id' => $course->id]);
+        $editedcourse->visible = 0;
+
+        // Update course and catch course_updated event.
+        $sink = $this->redirectEvents();
+        update_course($editedcourse);
+        $events = $sink->get_events();
+        $sink->close();
+
+        $event = array_shift($events);
+        $this->assertInstanceOf('\core\event\course_updated', $event);
+        $otherdata = [
+            'shortname' => $course->shortname,
+            'fullname' => $course->fullname,
+            'updatedfields' => [
+                'visible' => 0
+            ]
+        ];
+        $this->assertEquals($otherdata, $event->other);
+
     }
 
     /**
@@ -1776,21 +2038,11 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($course->id, $event->objectid);
         $this->assertEquals($coursecontext->id, $event->contextid);
         $this->assertEquals($course, $event->get_record_snapshot('course', $course->id));
-        $this->assertEquals('course_deleted', $event->get_legacy_eventname());
         $eventdata = $event->get_data();
         $this->assertSame($course->idnumber, $eventdata['other']['idnumber']);
         $this->assertSame($course->fullname, $eventdata['other']['fullname']);
         $this->assertSame($course->shortname, $eventdata['other']['shortname']);
 
-        // The legacy data also passed the context in the course object and substitutes timemodified with the current date.
-        $expectedlegacy = clone($course);
-        $expectedlegacy->context = $coursecontext;
-        $expectedlegacy->timemodified = $event->timecreated;
-        $this->assertEventLegacyData($expectedlegacy, $event);
-
-        // Validate legacy log data.
-        $expectedlog = array(SITEID, 'course', 'delete', 'view.php?id=' . $course->id, $course->fullname . '(ID ' . $course->id . ')');
-        $this->assertEventLegacyLogData($expectedlog, $event);
         $this->assertEventContextNotUsed($event);
     }
 
@@ -1828,11 +2080,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($course->id, $event->objectid);
         $this->assertEquals($coursecontext->id, $event->contextid);
         $this->assertEquals($course, $event->get_record_snapshot('course', $course->id));
-        $this->assertEquals('course_content_removed', $event->get_legacy_eventname());
-        // The legacy data also passed the context and options in the course object.
-        $course->context = $coursecontext;
-        $course->options = array();
-        $this->assertEventLegacyData($course, $event);
         $this->assertEventContextNotUsed($event);
     }
 
@@ -1845,7 +2092,8 @@ class core_course_courselib_testcase extends advanced_testcase {
         // Create a category.
         $category = $this->getDataGenerator()->create_category();
 
-        // Save the context before it is deleted.
+        // Save the original record/context before it is deleted.
+        $categoryrecord = $category->get_db_record();
         $categorycontext = context_coursecat::instance($category->id);
 
         // Catch the update event.
@@ -1864,17 +2112,18 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals('course_categories', $event->objecttable);
         $this->assertEquals($category->id, $event->objectid);
         $this->assertEquals($categorycontext->id, $event->contextid);
-        $this->assertEquals('course_category_deleted', $event->get_legacy_eventname());
+        $this->assertEquals([
+            'name' => $category->name,
+        ], $event->other);
+        $this->assertEquals($categoryrecord, $event->get_record_snapshot($event->objecttable, $event->objectid));
         $this->assertEquals(null, $event->get_url());
-        $this->assertEventLegacyData($category, $event);
-        $expectedlog = array(SITEID, 'category', 'delete', 'index.php', $category->name . '(ID ' . $category->id . ')');
-        $this->assertEventLegacyLogData($expectedlog, $event);
 
         // Create two categories.
         $category = $this->getDataGenerator()->create_category();
         $category2 = $this->getDataGenerator()->create_category();
 
-        // Save the context before it is moved and then deleted.
+        // Save the original record/context before it is moved and then deleted.
+        $category2record = $category2->get_db_record();
         $category2context = context_coursecat::instance($category2->id);
 
         // Catch the update event.
@@ -1893,10 +2142,11 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals('course_categories', $event->objecttable);
         $this->assertEquals($category2->id, $event->objectid);
         $this->assertEquals($category2context->id, $event->contextid);
-        $this->assertEquals('course_category_deleted', $event->get_legacy_eventname());
-        $this->assertEventLegacyData($category2, $event);
-        $expectedlog = array(SITEID, 'category', 'delete', 'index.php', $category2->name . '(ID ' . $category2->id . ')');
-        $this->assertEventLegacyLogData($expectedlog, $event);
+        $this->assertEquals([
+            'name' => $category2->name,
+            'contentmovedcategoryid' => $category->id,
+        ], $event->other);
+        $this->assertEquals($category2record, $event->get_record_snapshot($event->objecttable, $event->objectid));
         $this->assertEventContextNotUsed($event);
     }
 
@@ -1997,19 +2247,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals('course', $event->objecttable);
         $this->assertEquals($rc->get_courseid(), $event->objectid);
         $this->assertEquals(context_course::instance($rc->get_courseid())->id, $event->contextid);
-        $this->assertEquals('course_restored', $event->get_legacy_eventname());
-        $legacydata = (object) array(
-            'courseid' => $rc->get_courseid(),
-            'userid' => $rc->get_userid(),
-            'type' => $rc->get_type(),
-            'target' => $rc->get_target(),
-            'mode' => $rc->get_mode(),
-            'operation' => $rc->get_operation(),
-            'samesite' => $rc->is_samesite()
-        );
-        $url = new moodle_url('/course/view.php', array('id' => $event->objectid));
-        $this->assertEquals($url, $event->get_url());
-        $this->assertEventLegacyData($legacydata, $event);
         $this->assertEventContextNotUsed($event);
 
         // Destroy the resource controller since we are done using it.
@@ -2068,8 +2305,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($section, $event->get_record_snapshot('course_sections', $event->objectid));
         $id = $section->id;
         $sectionnum = $section->section;
-        $expectedlegacydata = array($course->id, "course", "editsection", 'editsection.php?id=' . $id, $sectionnum);
-        $this->assertEventLegacyLogData($expectedlegacydata, $event);
         $this->assertEventContextNotUsed($event);
     }
 
@@ -2103,11 +2338,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($expecteddesc, $event->get_description());
         $this->assertEquals($section, $event->get_record_snapshot('course_sections', $event->objectid));
         $this->assertNull($event->get_url());
-
-        // Test legacy data.
-        $sectionnum = $section->section;
-        $expectedlegacydata = array($course->id, "course", "delete section", 'view.php?id=' . $course->id, $sectionnum);
-        $this->assertEventLegacyLogData($expectedlegacydata, $event);
         $this->assertEventContextNotUsed($event);
     }
 
@@ -2235,58 +2465,58 @@ class core_course_courselib_testcase extends advanced_testcase {
      * Tests for event related to course module creation.
      */
     public function test_course_module_created_event() {
-        global $USER, $DB;
+        global $USER;
+
         $this->resetAfterTest();
+        $this->setAdminUser();
 
         // Create an assign module.
         $sink = $this->redirectEvents();
-        $modinfo = $this->create_specific_module_test('assign');
+        $course = $this->getDataGenerator()->create_course();
+        $module = $this->getDataGenerator()->create_module('assign', ['course' => $course]);
         $events = $sink->get_events();
-        $event = array_pop($events);
-
-        $cm = get_coursemodule_from_id('assign', $modinfo->coursemodule, 0, false, MUST_EXIST);
-        $mod = $DB->get_record('assign', array('id' => $modinfo->instance), '*', MUST_EXIST);
+        $eventscount = 0;
 
         // Validate event data.
-        $this->assertInstanceOf('\core\event\course_module_created', $event);
-        $this->assertEquals($cm->id, $event->objectid);
-        $this->assertEquals($USER->id, $event->userid);
-        $this->assertEquals('course_modules', $event->objecttable);
-        $url = new moodle_url('/mod/assign/view.php', array('id' => $cm->id));
-        $this->assertEquals($url, $event->get_url());
+        foreach ($events as $event) {
+            if ($event instanceof \core\event\course_module_created) {
+                $eventscount++;
 
-        // Test legacy data.
-        $this->assertSame('mod_created', $event->get_legacy_eventname());
-        $eventdata = new stdClass();
-        $eventdata->modulename = 'assign';
-        $eventdata->name       = $mod->name;
-        $eventdata->cmid       = $cm->id;
-        $eventdata->courseid   = $cm->course;
-        $eventdata->userid     = $USER->id;
-        $this->assertEventLegacyData($eventdata, $event);
-
-        $arr = array(
-            array($cm->course, "course", "add mod", "../mod/assign/view.php?id=$cm->id", "assign $cm->instance"),
-            array($cm->course, "assign", "add", "view.php?id=$cm->id", $cm->instance, $cm->id)
-        );
-        $this->assertEventLegacyLogData($arr, $event);
-        $this->assertEventContextNotUsed($event);
+                $this->assertEquals($module->cmid, $event->objectid);
+                $this->assertEquals($USER->id, $event->userid);
+                $this->assertEquals('course_modules', $event->objecttable);
+                $url = new moodle_url('/mod/assign/view.php', array('id' => $module->cmid));
+                $this->assertEquals($url, $event->get_url());
+                $this->assertEventContextNotUsed($event);
+            }
+        }
+        // Only one \core\event\course_module_created event should be triggered.
+        $this->assertEquals(1, $eventscount);
 
         // Let us see if duplicating an activity results in a nice course module created event.
         $sink->clear();
-        $course = get_course($mod->course);
+        $course = get_course($module->course);
+        $cm = get_coursemodule_from_id('assign', $module->cmid, 0, false, MUST_EXIST);
         $newcm = duplicate_module($course, $cm);
         $events = $sink->get_events();
-        $event = array_pop($events);
+        $eventscount = 0;
         $sink->close();
 
-        // Validate event data.
-        $this->assertInstanceOf('\core\event\course_module_created', $event);
-        $this->assertEquals($newcm->id, $event->objectid);
-        $this->assertEquals($USER->id, $event->userid);
-        $this->assertEquals($course->id, $event->courseid);
-        $url = new moodle_url('/mod/assign/view.php', array('id' => $newcm->id));
-        $this->assertEquals($url, $event->get_url());
+        foreach ($events as $event) {
+            if ($event instanceof \core\event\course_module_created) {
+                $eventscount++;
+                // Validate event data.
+                $this->assertInstanceOf('\core\event\course_module_created', $event);
+                $this->assertEquals($newcm->id, $event->objectid);
+                $this->assertEquals($USER->id, $event->userid);
+                $this->assertEquals($course->id, $event->courseid);
+                $url = new moodle_url('/mod/assign/view.php', array('id' => $newcm->id));
+                $this->assertEquals($url, $event->get_url());
+            }
+        }
+
+        // Only one \core\event\course_module_created event should be triggered.
+        $this->assertEquals(1, $eventscount);
     }
 
     /**
@@ -2314,7 +2544,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_created to be triggered without
                     other['instanceid']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'instanceid' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'instanceid' value must be set in other.", $e->getMessage());
         }
 
         // Test not setting modulename.
@@ -2331,7 +2561,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_created to be triggered without
                     other['modulename']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'modulename' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'modulename' value must be set in other.", $e->getMessage());
         }
 
         // Test not setting name.
@@ -2349,7 +2579,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_created to be triggered without
                     other['name']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'name' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'name' value must be set in other.", $e->getMessage());
         }
 
     }
@@ -2365,36 +2595,28 @@ class core_course_courselib_testcase extends advanced_testcase {
         $sink = $this->redirectEvents();
         $modinfo = $this->update_specific_module_test('forum');
         $events = $sink->get_events();
-        $event = array_pop($events);
+        $eventscount = 0;
         $sink->close();
 
         $cm = $DB->get_record('course_modules', array('id' => $modinfo->coursemodule), '*', MUST_EXIST);
         $mod = $DB->get_record('forum', array('id' => $cm->instance), '*', MUST_EXIST);
 
         // Validate event data.
-        $this->assertInstanceOf('\core\event\course_module_updated', $event);
-        $this->assertEquals($cm->id, $event->objectid);
-        $this->assertEquals($USER->id, $event->userid);
-        $this->assertEquals('course_modules', $event->objecttable);
-        $url = new moodle_url('/mod/forum/view.php', array('id' => $cm->id));
-        $this->assertEquals($url, $event->get_url());
+        foreach ($events as $event) {
+            if ($event instanceof \core\event\course_module_updated) {
+                $eventscount++;
 
-        // Test legacy data.
-        $this->assertSame('mod_updated', $event->get_legacy_eventname());
-        $eventdata = new stdClass();
-        $eventdata->modulename = 'forum';
-        $eventdata->name       = $mod->name;
-        $eventdata->cmid       = $cm->id;
-        $eventdata->courseid   = $cm->course;
-        $eventdata->userid     = $USER->id;
-        $this->assertEventLegacyData($eventdata, $event);
+                $this->assertEquals($cm->id, $event->objectid);
+                $this->assertEquals($USER->id, $event->userid);
+                $this->assertEquals('course_modules', $event->objecttable);
+                $url = new moodle_url('/mod/forum/view.php', array('id' => $cm->id));
+                $this->assertEquals($url, $event->get_url());
+                $this->assertEventContextNotUsed($event);
+            }
+        }
 
-        $arr = array(
-            array($cm->course, "course", "update mod", "../mod/forum/view.php?id=$cm->id", "forum $cm->instance"),
-            array($cm->course, "forum", "update", "view.php?id=$cm->id", $cm->instance, $cm->id)
-        );
-        $this->assertEventLegacyLogData($arr, $event);
-        $this->assertEventContextNotUsed($event);
+        // Only one \core\event\course_module_updated event should be triggered.
+        $this->assertEquals(1, $eventscount);
     }
 
     /**
@@ -2433,12 +2655,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals($cm->instance, $event2->other['instanceid']);
         $this->assertEquals($cm->name, $event2->other['name']);
         $this->assertEventContextNotUsed($event2);
-        $this->assertSame('mod_updated', $event2->get_legacy_eventname());
-        $arr = array(
-            array($cm->course, "course", "update mod", "../mod/assign/view.php?id=$cm->id", "assign $cm->instance"),
-            array($cm->course, "assign", "update", "view.php?id=$cm->id", $cm->instance, $cm->id)
-        );
-        $this->assertEventLegacyLogData($arr, $event);
     }
 
     /**
@@ -2466,7 +2682,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_updated to be triggered without
                     other['instanceid']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'instanceid' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'instanceid' value must be set in other.", $e->getMessage());
         }
 
         // Test not setting modulename.
@@ -2483,7 +2699,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_updated to be triggered without
                     other['modulename']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'modulename' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'modulename' value must be set in other.", $e->getMessage());
         }
 
         // Test not setting name.
@@ -2501,7 +2717,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_updated to be triggered without
                     other['name']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'name' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'name' value must be set in other.", $e->getMessage());
         }
 
     }
@@ -2529,19 +2745,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals('course_modules', $event->objecttable);
         $this->assertEquals(null, $event->get_url());
         $this->assertEquals($cm, $event->get_record_snapshot('course_modules', $cm->id));
-
-        // Test legacy data.
-        $this->assertSame('mod_deleted', $event->get_legacy_eventname());
-        $eventdata = new stdClass();
-        $eventdata->modulename = 'forum';
-        $eventdata->cmid       = $cm->id;
-        $eventdata->courseid   = $cm->course;
-        $eventdata->userid     = $USER->id;
-        $this->assertEventLegacyData($eventdata, $event);
-
-        $arr = array($cm->course, 'course', "delete mod", "view.php?id=$cm->course", "forum $cm->instance", $cm->id);
-        $this->assertEventLegacyLogData($arr, $event);
-
     }
 
     /**
@@ -2569,7 +2772,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_deleted to be triggered without
                     other['instanceid']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'instanceid' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'instanceid' value must be set in other.", $e->getMessage());
         }
 
         // Test not setting modulename.
@@ -2586,7 +2789,7 @@ class core_course_courselib_testcase extends advanced_testcase {
             $this->fail("Event validation should not allow \\core\\event\\course_module_deleted to be triggered without
                     other['modulename']");
         } catch (coding_exception $e) {
-            $this->assertContains("The 'modulename' value must be set in other.", $e->getMessage());
+            $this->assertStringContainsString("The 'modulename' value must be set in other.", $e->getMessage());
         }
     }
 
@@ -2633,7 +2836,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $caps = course_capability_assignment::allow('moodle/category:manage', $roleid, $context->id);
 
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course1->id, $course2->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2641,7 +2844,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         // Test moving down.
         $this->assertTrue(course_change_sortorder_after_course($course1->id, $course3->id));
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course2->id, $course3->id, $course1->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2649,7 +2852,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         // Test moving up.
         $this->assertTrue(course_change_sortorder_after_course($course1->id, $course2->id));
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course2->id, $course1->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2657,7 +2860,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         // Test moving to the top.
         $this->assertTrue(course_change_sortorder_after_course($course1->id, 0));
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course1->id, $course2->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2704,7 +2907,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $course1 = $generator->create_course(array('category' => $category->id));
 
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course1->id, $course2->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2713,7 +2916,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $course1 = get_course($course1->id);
         $this->assertTrue(course_change_sortorder_by_one($course1, false));
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course2->id, $course1->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2722,7 +2925,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $course1 = get_course($course1->id);
         $this->assertTrue(course_change_sortorder_by_one($course1, true));
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course1->id, $course2->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2732,7 +2935,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertFalse(course_change_sortorder_by_one($course1, true));
         // Check nothing changed.
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course1->id, $course2->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2742,7 +2945,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertFalse(course_change_sortorder_by_one($course3, false));
         // Check nothing changed.
         $courses = $category->get_courses();
-        $this->assertInternalType('array', $courses);
+        $this->assertIsArray($courses);
         $this->assertEquals(array($course1->id, $course2->id, $course3->id), array_keys($courses));
         $dbcourses = $DB->get_records('course', array('category' => $category->id), 'sortorder', 'id');
         $this->assertEquals(array_keys($dbcourses), array_keys($courses));
@@ -2755,7 +2958,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $coursecontext = context_course::instance($course->id);
 
         $event = \core\event\course_resources_list_viewed::create(array('context' => context_course::instance($course->id)));
-        $event->set_legacy_logdata(array('book', 'page', 'resource'));
         $sink = $this->redirectEvents();
         $event->trigger();
         $events = $sink->get_events();
@@ -2768,12 +2970,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertEquals(null, $event->objectid);
         $this->assertEquals($course->id, $event->courseid);
         $this->assertEquals($coursecontext->id, $event->contextid);
-        $expectedlegacydata = array(
-            array($course->id, "book", "view all", 'index.php?id=' . $course->id, ''),
-            array($course->id, "page", "view all", 'index.php?id=' . $course->id, ''),
-            array($course->id, "resource", "view all", 'index.php?id=' . $course->id, ''),
-        );
-        $this->assertEventLegacyLogData($expectedlegacydata, $event);
         $this->assertEventContextNotUsed($event);
     }
 
@@ -2794,6 +2990,10 @@ class core_course_courselib_testcase extends advanced_testcase {
             if ($prop == 'id' || $prop == 'url' || $prop == 'instance' || $prop == 'added') {
                 // Ignore obviously different properties.
                 continue;
+            }
+            if ($prop == 'name') {
+                // We expect ' (copy)' to be added to the original name since MDL-59227.
+                $value = get_string('duplicatedmodule', 'moodle', $value);
             }
             $this->assertEquals($value, $newcm->$prop);
         }
@@ -2892,11 +3092,11 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->setAdminUser();
         $res = course_get_tagged_course_modules(core_tag_tag::get_by_name(0, 'Cat'),
                 /*$exclusivemode = */false, /*$fromctx = */0, /*$ctx = */0, /*$rec = */1, /*$page = */0);
-        $this->assertRegExp('/'.$cm11->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm12->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm13->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm21->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm31->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm11->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm12->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm13->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm21->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm31->name.'/', $res->content);
         // Results from course1 are returned before results from course2.
         $this->assertTrue(strpos($res->content, $cm11->name) < strpos($res->content, $cm21->name));
 
@@ -2918,21 +3118,21 @@ class core_course_courselib_testcase extends advanced_testcase {
         $context = context_course::instance($course1->id);
         $res = course_get_tagged_course_modules(core_tag_tag::get_by_name(0, 'Cat'),
                 /*$exclusivemode = */false, /*$fromctx = */0, /*$ctx = */$context->id, /*$rec = */1, /*$page = */0);
-        $this->assertRegExp('/'.$cm11->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm12->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm13->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm21->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm31->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm11->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm12->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm13->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm21->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm31->name.'/', $res->content);
 
         // Searching FROM the course context returns visible modules in all courses.
         $context = context_course::instance($course2->id);
         $res = course_get_tagged_course_modules(core_tag_tag::get_by_name(0, 'Cat'),
                 /*$exclusivemode = */false, /*$fromctx = */$context->id, /*$ctx = */0, /*$rec = */1, /*$page = */0);
-        $this->assertRegExp('/'.$cm11->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm12->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm13->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm21->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm31->name.'/', $res->content); // No access to course3.
+        $this->assertMatchesRegularExpression('/'.$cm11->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm12->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm13->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm21->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm31->name.'/', $res->content); // No access to course3.
         // Results from course2 are returned before results from course1.
         $this->assertTrue(strpos($res->content, $cm21->name) < strpos($res->content, $cm11->name));
 
@@ -2943,7 +3143,7 @@ class core_course_courselib_testcase extends advanced_testcase {
         $context = context_course::instance($course1->id);
         $res = course_get_tagged_course_modules(core_tag_tag::get_by_name(0, 'Cat'),
                 /*$exclusivemode = */false, /*$fromctx = */$context->id, /*$ctx = */0, /*$rec = */1, /*$page = */0);
-        $this->assertRegExp('/'.$cm12->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm12->name.'/', $res->content);
 
         // Create more modules and try pagination.
         $cm14 = $this->getDataGenerator()->create_module('assign', array('course' => $course1->id,
@@ -2956,27 +3156,27 @@ class core_course_courselib_testcase extends advanced_testcase {
         $context = context_course::instance($course1->id);
         $res = course_get_tagged_course_modules(core_tag_tag::get_by_name(0, 'Cat'),
                 /*$exclusivemode = */false, /*$fromctx = */0, /*$ctx = */$context->id, /*$rec = */1, /*$page = */0);
-        $this->assertRegExp('/'.$cm11->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm12->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm13->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm21->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm14->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm15->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm16->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm31->name.'/', $res->content); // No access to course3.
+        $this->assertMatchesRegularExpression('/'.$cm11->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm12->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm13->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm21->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm14->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm15->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm16->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm31->name.'/', $res->content); // No access to course3.
         $this->assertEmpty($res->prevpageurl);
         $this->assertNotEmpty($res->nextpageurl);
 
         $res = course_get_tagged_course_modules(core_tag_tag::get_by_name(0, 'Cat'),
                 /*$exclusivemode = */false, /*$fromctx = */0, /*$ctx = */$context->id, /*$rec = */1, /*$page = */1);
-        $this->assertNotRegExp('/'.$cm11->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm12->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm13->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm21->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm14->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm15->name.'/', $res->content);
-        $this->assertRegExp('/'.$cm16->name.'/', $res->content);
-        $this->assertNotRegExp('/'.$cm31->name.'/', $res->content); // No access to course3.
+        $this->assertDoesNotMatchRegularExpression('/'.$cm11->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm12->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm13->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm21->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm14->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm15->name.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$cm16->name.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$cm31->name.'/', $res->content); // No access to course3.
         $this->assertNotEmpty($res->prevpageurl);
         $this->assertEmpty($res->nextpageurl);
     }
@@ -2998,7 +3198,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertTrue($navoptions->badges);
         $this->assertTrue($navoptions->tags);
         $this->assertFalse($navoptions->search);
-        $this->assertTrue($navoptions->calendar);
         $this->assertTrue($navoptions->competencies);
 
         // Enable global search now.
@@ -3023,7 +3222,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertTrue($navoptions->badges);
         $this->assertTrue($navoptions->tags);
         $this->assertTrue($navoptions->search);
-        $this->assertTrue($navoptions->calendar);
     }
 
     /**
@@ -3062,20 +3260,26 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertTrue($navoptions->blogs);
         $this->assertFalse($navoptions->notes);
         $this->assertTrue($navoptions->participants);
-        $this->assertTrue($navoptions->badges);
+        $this->assertFalse($navoptions->badges);
 
         // Disable some options.
         $CFG->badges_allowcoursebadges = 0;
         $CFG->enableblogs = 0;
         // Disable view participants capability.
         assign_capability('moodle/course:viewparticipants', CAP_PROHIBIT, $roleid, $context);
-        $context->mark_dirty();
 
         $navoptions = course_get_user_navigation_options($context);
         $this->assertFalse($navoptions->blogs);
         $this->assertFalse($navoptions->notes);
         $this->assertFalse($navoptions->participants);
         $this->assertFalse($navoptions->badges);
+
+        // Re-enable some options to check badges are displayed as expected.
+        $CFG->badges_allowcoursebadges = 1;
+        assign_capability('moodle/badges:createbadge', CAP_ALLOW, $roleid, $context);
+
+        $navoptions = course_get_user_navigation_options($context);
+        $this->assertTrue($navoptions->badges);
     }
 
     /**
@@ -3133,7 +3337,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertFalse($adminoptions->outcomes);
         $this->assertTrue($adminoptions->badges);
         $this->assertTrue($adminoptions->import);
-        $this->assertTrue($adminoptions->publish);
         $this->assertTrue($adminoptions->reset);
         $this->assertTrue($adminoptions->roles);
     }
@@ -3165,7 +3368,6 @@ class core_course_courselib_testcase extends advanced_testcase {
         $this->assertFalse($adminoptions->outcomes);
         $this->assertTrue($adminoptions->badges);
         $this->assertFalse($adminoptions->import);
-        $this->assertFalse($adminoptions->publish);
         $this->assertFalse($adminoptions->reset);
         $this->assertFalse($adminoptions->roles);
 
@@ -3363,6 +3565,75 @@ class core_course_courselib_testcase extends advanced_testcase {
                 $time + YEARSECS
             ]
         ];
+    }
+
+    /**
+     * Test reset_course_userdata()
+     *    - with reset_roles_overrides enabled
+     *    - with selective role unenrolments
+     */
+    public function test_course_roles_reset() {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+
+        // Create test course and user, enrol one in the other.
+        $course = $generator->create_course();
+        $user = $generator->create_user();
+        $roleid = $DB->get_field('role', 'id', array('shortname' => 'student'), MUST_EXIST);
+        $generator->enrol_user($user->id, $course->id, $roleid);
+
+        // Test case with reset_roles_overrides enabled.
+        // Override course so it does NOT allow students 'mod/forum:viewdiscussion'.
+        $coursecontext = context_course::instance($course->id);
+        assign_capability('mod/forum:viewdiscussion', CAP_PREVENT, $roleid, $coursecontext->id);
+
+        // Check expected capabilities so far.
+        $this->assertFalse(has_capability('mod/forum:viewdiscussion', $coursecontext, $user));
+
+        // Oops, preventing student from viewing forums was a mistake, let's reset the course.
+        $resetdata = new stdClass();
+        $resetdata->id = $course->id;
+        $resetdata->reset_roles_overrides = true;
+        reset_course_userdata($resetdata);
+
+        // Check new expected capabilities - override at the course level should be reset.
+        $this->assertTrue(has_capability('mod/forum:viewdiscussion', $coursecontext, $user));
+
+        // Test case with selective role unenrolments.
+        $roles = array();
+        $roles['student'] = $DB->get_field('role', 'id', array('shortname' => 'student'), MUST_EXIST);
+        $roles['teacher'] = $DB->get_field('role', 'id', array('shortname' => 'teacher'), MUST_EXIST);
+
+        // We enrol a user with student and teacher roles.
+        $generator->enrol_user($user->id, $course->id, $roles['student']);
+        $generator->enrol_user($user->id, $course->id, $roles['teacher']);
+
+        // When we reset only student role, we expect to keep teacher role.
+        $resetdata = new stdClass();
+        $resetdata->id = $course->id;
+        $resetdata->unenrol_users = array($roles['student']);
+        reset_course_userdata($resetdata);
+
+        $usersroles = enrol_get_course_users_roles($course->id);
+        $this->assertArrayHasKey($user->id, $usersroles);
+        $this->assertArrayHasKey($roles['teacher'], $usersroles[$user->id]);
+        $this->assertArrayNotHasKey($roles['student'], $usersroles[$user->id]);
+        $this->assertCount(1, $usersroles[$user->id]);
+
+        // We reenrol user as student.
+        $generator->enrol_user($user->id, $course->id, $roles['student']);
+
+        // When we reset student and teacher roles, we expect no roles left.
+        $resetdata = new stdClass();
+        $resetdata->id = $course->id;
+        $resetdata->unenrol_users = array($roles['student'], $roles['teacher']);
+        reset_course_userdata($resetdata);
+
+        $usersroles = enrol_get_course_users_roles($course->id);
+        $this->assertEmpty($usersroles);
     }
 
     public function test_course_check_module_updates_since() {
@@ -3745,6 +4016,8 @@ class core_course_courselib_testcase extends advanced_testcase {
         require_once($CFG->dirroot.'/completion/criteria/completion_criteria_self.php');
 
         set_config('enablecompletion', COMPLETION_ENABLED);
+        set_config('coursegraceperiodbefore', 0);
+        set_config('coursegraceperiodafter', 0);
 
         $this->resetAfterTest(true);
         $this->setAdminUser();
@@ -3783,6 +4056,14 @@ class core_course_courselib_testcase extends advanced_testcase {
         // Aggregate the completions.
         $this->assertEquals(COURSE_TIMELINE_PAST, course_classify_for_timeline($pastcourse));
         $this->assertEquals(COURSE_TIMELINE_FUTURE, course_classify_for_timeline($futurecourse));
+        $this->assertEquals(COURSE_TIMELINE_PAST, course_classify_for_timeline($completedcourse));
+        $this->assertEquals(COURSE_TIMELINE_INPROGRESS, course_classify_for_timeline($inprogresscourse));
+
+        // Test grace period.
+        set_config('coursegraceperiodafter', 1);
+        set_config('coursegraceperiodbefore', 1);
+        $this->assertEquals(COURSE_TIMELINE_INPROGRESS, course_classify_for_timeline($pastcourse));
+        $this->assertEquals(COURSE_TIMELINE_INPROGRESS, course_classify_for_timeline($futurecourse));
         $this->assertEquals(COURSE_TIMELINE_PAST, course_classify_for_timeline($completedcourse));
         $this->assertEquals(COURSE_TIMELINE_INPROGRESS, course_classify_for_timeline($inprogresscourse));
     }
@@ -4123,5 +4404,2966 @@ class core_course_courselib_testcase extends advanced_testcase {
         // A file area that doesn't exist. No permissions, regardless of capabilities.
         assign_capability('moodle/backup:downloadfile', CAP_ALLOW, $teacherrole->id, $context);
         $this->assertFalse(can_download_from_backup_filearea('testing', $context, $user));
+    }
+
+    /**
+     * Test cases for the course_classify_courses_for_timeline test.
+     */
+    public function get_course_classify_courses_for_timeline_test_cases() {
+        $now = time();
+        $day = 86400;
+
+        return [
+            'no courses' => [
+                'coursesdata' => [],
+                'expected' => [
+                    COURSE_TIMELINE_PAST => [],
+                    COURSE_TIMELINE_FUTURE => [],
+                    COURSE_TIMELINE_INPROGRESS => []
+                ]
+            ],
+            'only past' => [
+                'coursesdata' => [
+                    [
+                        'shortname' => 'past1',
+                        'startdate' => $now - ($day * 2),
+                        'enddate' => $now - $day
+                    ],
+                    [
+                        'shortname' => 'past2',
+                        'startdate' => $now - ($day * 2),
+                        'enddate' => $now - $day
+                    ]
+                ],
+                'expected' => [
+                    COURSE_TIMELINE_PAST => ['past1', 'past2'],
+                    COURSE_TIMELINE_FUTURE => [],
+                    COURSE_TIMELINE_INPROGRESS => []
+                ]
+            ],
+            'only in progress' => [
+                'coursesdata' => [
+                    [
+                        'shortname' => 'inprogress1',
+                        'startdate' => $now - $day,
+                        'enddate' => $now + $day
+                    ],
+                    [
+                        'shortname' => 'inprogress2',
+                        'startdate' => $now - $day,
+                        'enddate' => $now + $day
+                    ]
+                ],
+                'expected' => [
+                    COURSE_TIMELINE_PAST => [],
+                    COURSE_TIMELINE_FUTURE => [],
+                    COURSE_TIMELINE_INPROGRESS => ['inprogress1', 'inprogress2']
+                ]
+            ],
+            'only future' => [
+                'coursesdata' => [
+                    [
+                        'shortname' => 'future1',
+                        'startdate' => $now + $day
+                    ],
+                    [
+                        'shortname' => 'future2',
+                        'startdate' => $now + $day
+                    ]
+                ],
+                'expected' => [
+                    COURSE_TIMELINE_PAST => [],
+                    COURSE_TIMELINE_FUTURE => ['future1', 'future2'],
+                    COURSE_TIMELINE_INPROGRESS => []
+                ]
+            ],
+            'combination' => [
+                'coursesdata' => [
+                    [
+                        'shortname' => 'past1',
+                        'startdate' => $now - ($day * 2),
+                        'enddate' => $now - $day
+                    ],
+                    [
+                        'shortname' => 'past2',
+                        'startdate' => $now - ($day * 2),
+                        'enddate' => $now - $day
+                    ],
+                    [
+                        'shortname' => 'inprogress1',
+                        'startdate' => $now - $day,
+                        'enddate' => $now + $day
+                    ],
+                    [
+                        'shortname' => 'inprogress2',
+                        'startdate' => $now - $day,
+                        'enddate' => $now + $day
+                    ],
+                    [
+                        'shortname' => 'future1',
+                        'startdate' => $now + $day
+                    ],
+                    [
+                        'shortname' => 'future2',
+                        'startdate' => $now + $day
+                    ]
+                ],
+                'expected' => [
+                    COURSE_TIMELINE_PAST => ['past1', 'past2'],
+                    COURSE_TIMELINE_FUTURE => ['future1', 'future2'],
+                    COURSE_TIMELINE_INPROGRESS => ['inprogress1', 'inprogress2']
+                ]
+            ],
+        ];
+    }
+
+    /**
+     * Test the course_classify_courses_for_timeline function.
+     *
+     * @dataProvider get_course_classify_courses_for_timeline_test_cases()
+     * @param array $coursesdata Courses to create
+     * @param array $expected Expected test results.
+     */
+    public function test_course_classify_courses_for_timeline($coursesdata, $expected) {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+
+        $courses = array_map(function($coursedata) use ($generator) {
+            return $generator->create_course($coursedata);
+        }, $coursesdata);
+
+        sort($expected[COURSE_TIMELINE_PAST]);
+        sort($expected[COURSE_TIMELINE_FUTURE]);
+        sort($expected[COURSE_TIMELINE_INPROGRESS]);
+
+        $results = course_classify_courses_for_timeline($courses);
+
+        $actualpast = array_map(function($result) {
+            return $result->shortname;
+        }, $results[COURSE_TIMELINE_PAST]);
+
+        $actualfuture = array_map(function($result) {
+            return $result->shortname;
+        }, $results[COURSE_TIMELINE_FUTURE]);
+
+        $actualinprogress = array_map(function($result) {
+            return $result->shortname;
+        }, $results[COURSE_TIMELINE_INPROGRESS]);
+
+        sort($actualpast);
+        sort($actualfuture);
+        sort($actualinprogress);
+
+        $this->assertEquals($expected[COURSE_TIMELINE_PAST], $actualpast);
+        $this->assertEquals($expected[COURSE_TIMELINE_FUTURE], $actualfuture);
+        $this->assertEquals($expected[COURSE_TIMELINE_INPROGRESS], $actualinprogress);
+    }
+
+    /**
+     * Test cases for the course_get_enrolled_courses_for_logged_in_user tests.
+     */
+    public function get_course_get_enrolled_courses_for_logged_in_user_test_cases() {
+        $buildexpectedresult = function($limit, $offset) {
+            $result = [];
+            for ($i = $offset; $i < $offset + $limit; $i++) {
+                $result[] = "testcourse{$i}";
+            }
+            return $result;
+        };
+
+        return [
+            'zero records' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 0,
+                'limit' => 0,
+                'offset' => 0,
+                'expecteddbqueries' => 4,
+                'expectedresult' => $buildexpectedresult(0, 0)
+            ],
+            'less than query limit' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 2,
+                'limit' => 0,
+                'offset' => 0,
+                'expecteddbqueries' => 2,
+                'expectedresult' => $buildexpectedresult(2, 0)
+            ],
+            'more than query limit' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 7,
+                'limit' => 0,
+                'offset' => 0,
+                'expecteddbqueries' => 4,
+                'expectedresult' => $buildexpectedresult(7, 0)
+            ],
+            'limit less than query limit' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 7,
+                'limit' => 2,
+                'offset' => 0,
+                'expecteddbqueries' => 2,
+                'expectedresult' => $buildexpectedresult(2, 0)
+            ],
+            'limit less than query limit with offset' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 7,
+                'limit' => 2,
+                'offset' => 2,
+                'expecteddbqueries' => 2,
+                'expectedresult' => $buildexpectedresult(2, 2)
+            ],
+            'limit less than total' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 9,
+                'limit' => 6,
+                'offset' => 0,
+                'expecteddbqueries' => 3,
+                'expectedresult' => $buildexpectedresult(6, 0)
+            ],
+            'less results than limit' => [
+                'dbquerylimit' => 4,
+                'totalcourses' => 9,
+                'limit' => 20,
+                'offset' => 0,
+                'expecteddbqueries' => 4,
+                'expectedresult' => $buildexpectedresult(9, 0)
+            ],
+            'less results than limit exact divisible' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 9,
+                'limit' => 20,
+                'offset' => 0,
+                'expecteddbqueries' => 5,
+                'expectedresult' => $buildexpectedresult(9, 0)
+            ],
+            'less results than limit with offset' => [
+                'dbquerylimit' => 3,
+                'totalcourses' => 9,
+                'limit' => 10,
+                'offset' => 5,
+                'expecteddbqueries' => 3,
+                'expectedresult' => $buildexpectedresult(4, 5)
+            ],
+        ];
+    }
+
+    /**
+     * Test the course_get_enrolled_courses_for_logged_in_user function.
+     *
+     * @dataProvider get_course_get_enrolled_courses_for_logged_in_user_test_cases()
+     * @param int $dbquerylimit Number of records to load per DB request
+     * @param int $totalcourses Number of courses to create
+     * @param int $limit Maximum number of results to get.
+     * @param int $offset Skip this number of results from the start of the result set.
+     * @param int $expecteddbqueries The number of DB queries expected during the test.
+     * @param array $expectedresult Expected test results.
+     */
+    public function test_course_get_enrolled_courses_for_logged_in_user(
+        $dbquerylimit,
+        $totalcourses,
+        $limit,
+        $offset,
+        $expecteddbqueries,
+        $expectedresult
+    ) {
+        global $DB;
+
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $student = $generator->create_user();
+
+        for ($i = 0; $i < $totalcourses; $i++) {
+            $shortname = "testcourse{$i}";
+            $course = $generator->create_course(['shortname' => $shortname]);
+            $generator->enrol_user($student->id, $course->id, 'student');
+        }
+
+        $this->setUser($student);
+
+        $initialquerycount = $DB->perf_get_queries();
+        $courses = course_get_enrolled_courses_for_logged_in_user($limit, $offset, 'shortname ASC', 'shortname', $dbquerylimit);
+
+        // Loop over the result set to force the lazy loading to kick in so that we can check the
+        // number of DB queries.
+        $actualresult = array_map(function($course) {
+            return $course->shortname;
+        }, iterator_to_array($courses, false));
+
+        sort($expectedresult);
+
+        $this->assertEquals($expectedresult, $actualresult);
+        $this->assertLessThanOrEqual($expecteddbqueries, $DB->perf_get_queries() - $initialquerycount);
+    }
+
+    /**
+     * Test cases for the course_filter_courses_by_timeline_classification tests.
+     */
+    public function get_course_filter_courses_by_timeline_classification_test_cases() {
+        $now = time();
+        $day = 86400;
+
+        $coursedata = [
+            [
+                'shortname' => 'apast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'bpast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'cpast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'dpast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'epast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'ainprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'binprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'cinprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'dinprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'einprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'afuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'bfuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'cfuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'dfuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'efuture',
+                'startdate' => $now + $day
+            ]
+        ];
+
+        // Raw enrolled courses result set should be returned in this order:
+        // afuture, ainprogress, apast, bfuture, binprogress, bpast, cfuture, cinprogress, cpast,
+        // dfuture, dinprogress, dpast, efuture, einprogress, epast
+        //
+        // By classification the offset values for each record should be:
+        // COURSE_TIMELINE_FUTURE
+        // 0 (afuture), 3 (bfuture), 6 (cfuture), 9 (dfuture), 12 (efuture)
+        // COURSE_TIMELINE_INPROGRESS
+        // 1 (ainprogress), 4 (binprogress), 7 (cinprogress), 10 (dinprogress), 13 (einprogress)
+        // COURSE_TIMELINE_PAST
+        // 2 (apast), 5 (bpast), 8 (cpast), 11 (dpast), 14 (epast).
+        return [
+            'empty set' => [
+                'coursedata' => [],
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 2,
+                'offset' => 0,
+                'expectedcourses' => [],
+                'expectedprocessedcount' => 0
+            ],
+            // COURSE_TIMELINE_FUTURE.
+            'future not limit no offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 0,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'bfuture', 'cfuture', 'dfuture', 'efuture'],
+                'expectedprocessedcount' => 15
+            ],
+            'future no offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 2,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'bfuture'],
+                'expectedprocessedcount' => 4
+            ],
+            'future offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 2,
+                'offset' => 2,
+                'expectedcourses' => ['bfuture', 'cfuture'],
+                'expectedprocessedcount' => 5
+            ],
+            'future exact limit' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 5,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'bfuture', 'cfuture', 'dfuture', 'efuture'],
+                'expectedprocessedcount' => 13
+            ],
+            'future limit less results' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'bfuture', 'cfuture', 'dfuture', 'efuture'],
+                'expectedprocessedcount' => 15
+            ],
+            'future limit less results with offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 10,
+                'offset' => 5,
+                'expectedcourses' => ['cfuture', 'dfuture', 'efuture'],
+                'expectedprocessedcount' => 10
+            ],
+        ];
+    }
+
+    /**
+     * Test the course_get_enrolled_courses_for_logged_in_user_from_search function.
+     */
+    public function test_course_get_enrolled_courses_for_logged_in_user_from_search() {
+        global $DB;
+
+        // Set up.
+
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $student = $generator->create_user();
+
+        $cat1 = core_course_category::create(['name' => 'Cat1']);
+        $cat2 = core_course_category::create(['name' => 'Cat2', 'parent' => $cat1->id]);
+        $c1 = $this->getDataGenerator()->create_course(['category' => $cat1->id, 'fullname' => 'Test 3', 'summary' => 'Magic', 'idnumber' => 'ID3']);
+        $c2 = $this->getDataGenerator()->create_course(['category' => $cat1->id, 'fullname' => 'Test 1', 'summary' => 'Magic']);
+        $c3 = $this->getDataGenerator()->create_course(['category' => $cat1->id, 'fullname' => 'Математика', 'summary' => ' Test Magic']);
+        $c4 = $this->getDataGenerator()->create_course(['category' => $cat1->id, 'fullname' => 'Test 4', 'summary' => 'Magic', 'idnumber' => 'ID4']);
+
+        $c5 = $this->getDataGenerator()->create_course(['category' => $cat2->id, 'fullname' => 'Test 5', 'summary' => 'Magic']);
+        $c6 = $this->getDataGenerator()->create_course(['category' => $cat2->id, 'fullname' => 'Дискретная Математика', 'summary' => 'Magic']);
+        $c7 = $this->getDataGenerator()->create_course(['category' => $cat2->id, 'fullname' => 'Test 7', 'summary' => 'Magic']);
+        $c8 = $this->getDataGenerator()->create_course(['category' => $cat2->id, 'fullname' => 'Test 8', 'summary' => 'Magic']);
+
+        for ($i = 1; $i < 9; $i++) {
+            $generator->enrol_user($student->id, ${"c$i"}->id, 'student');
+        }
+
+        $this->setUser($student);
+
+        $returnedcourses = course_get_enrolled_courses_for_logged_in_user_from_search(
+            0,
+            0,
+            'id ASC',
+            null,
+            COURSE_DB_QUERY_LIMIT,
+            ['search' => 'test'],
+            ['idonly' => true]
+        );
+
+        $actualresult = array_map(function($course) {
+            return $course->id;
+        }, iterator_to_array($returnedcourses, false));
+
+        $this->assertEquals([$c1->id, $c2->id, $c3->id, $c4->id, $c5->id, $c7->id, $c8->id], $actualresult);
+
+        // Test no courses matching the search.
+        $returnedcourses = course_get_enrolled_courses_for_logged_in_user_from_search(
+            0,
+            0,
+            'id ASC',
+            null,
+            COURSE_DB_QUERY_LIMIT,
+            ['search' => 'foobar'],
+            ['idonly' => true]
+        );
+
+        $actualresult = array_map(function($course) {
+            return $course->id;
+        }, iterator_to_array($returnedcourses, false));
+
+        $this->assertEquals([], $actualresult);
+
+        // Test returning all courses that have a mutual summary.
+        $returnedcourses = course_get_enrolled_courses_for_logged_in_user_from_search(
+            0,
+            0,
+            'id ASC',
+            null,
+            COURSE_DB_QUERY_LIMIT,
+            ['search' => 'Magic'],
+            ['idonly' => true]
+        );
+
+        $actualresult = array_map(function($course) {
+            return $course->id;
+        }, iterator_to_array($returnedcourses, false));
+
+        $this->assertEquals([$c1->id, $c2->id, $c3->id, $c4->id, $c5->id, $c6->id, $c7->id, $c8->id], $actualresult);
+
+        // Test returning a unique course.
+        $returnedcourses = course_get_enrolled_courses_for_logged_in_user_from_search(
+            0,
+            0,
+            'id ASC',
+            null,
+            COURSE_DB_QUERY_LIMIT,
+            ['search' => 'Дискретная'],
+            ['idonly' => true]
+        );
+
+        $actualresult = array_map(function($course) {
+            return $course->id;
+        }, iterator_to_array($returnedcourses, false));
+
+        $this->assertEquals([$c6->id], $actualresult);
+    }
+
+    /**
+     * Test the course_filter_courses_by_timeline_classification function.
+     *
+     * @dataProvider get_course_filter_courses_by_timeline_classification_test_cases()
+     * @param array $coursedata Course test data to create.
+     * @param string $classification Timeline classification.
+     * @param int $limit Maximum number of results to return.
+     * @param int $offset Results to skip at the start of the result set.
+     * @param string[] $expectedcourses Expected courses in results.
+     * @param int $expectedprocessedcount Expected number of course records to be processed.
+     */
+    public function test_course_filter_courses_by_timeline_classification(
+        $coursedata,
+        $classification,
+        $limit,
+        $offset,
+        $expectedcourses,
+        $expectedprocessedcount
+    ) {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+
+        $courses = array_map(function($coursedata) use ($generator) {
+            return $generator->create_course($coursedata);
+        }, $coursedata);
+
+        $student = $generator->create_user();
+
+        foreach ($courses as $course) {
+            $generator->enrol_user($student->id, $course->id, 'student');
+        }
+
+        $this->setUser($student);
+
+        $coursesgenerator = course_get_enrolled_courses_for_logged_in_user(0, $offset, 'shortname ASC', 'shortname');
+        list($result, $processedcount) = course_filter_courses_by_timeline_classification(
+            $coursesgenerator,
+            $classification,
+            $limit
+        );
+
+        $actual = array_map(function($course) {
+            return $course->shortname;
+        }, $result);
+
+        $this->assertEquals($expectedcourses, $actual);
+        $this->assertEquals($expectedprocessedcount, $processedcount);
+    }
+
+    /**
+     * Test cases for the course_filter_courses_by_timeline_classification tests.
+     */
+    public function get_course_filter_courses_by_customfield_test_cases() {
+        global $CFG;
+        require_once($CFG->dirroot.'/blocks/myoverview/lib.php');
+        $coursedata = [
+            [
+                'shortname' => 'C1',
+                'customfield_checkboxfield' => 1,
+                'customfield_datefield' => strtotime('2001-02-01T12:00:00Z'),
+                'customfield_selectfield' => 1,
+                'customfield_textfield' => 'fish',
+            ],
+            [
+                'shortname' => 'C2',
+                'customfield_checkboxfield' => 0,
+                'customfield_datefield' => strtotime('1980-08-05T13:00:00Z'),
+            ],
+            [
+                'shortname' => 'C3',
+                'customfield_checkboxfield' => 0,
+                'customfield_datefield' => strtotime('2001-02-01T12:00:00Z'),
+                'customfield_selectfield' => 2,
+                'customfield_textfield' => 'dog',
+            ],
+            [
+                'shortname' => 'C4',
+                'customfield_checkboxfield' => 1,
+                'customfield_selectfield' => 3,
+                'customfield_textfield' => 'cat',
+            ],
+            [
+                'shortname' => 'C5',
+                'customfield_datefield' => strtotime('1980-08-06T13:00:00Z'),
+                'customfield_selectfield' => 2,
+                'customfield_textfield' => 'fish',
+            ],
+        ];
+
+        return [
+            'empty set' => [
+                'coursedata' => [],
+                'customfield' => 'checkboxfield',
+                'customfieldvalue' => 1,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => [],
+                'expectedprocessedcount' => 0
+            ],
+            'checkbox yes' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'checkboxfield',
+                'customfieldvalue' => 1,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C1', 'C4'],
+                'expectedprocessedcount' => 5
+            ],
+            'checkbox no' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'checkboxfield',
+                'customfieldvalue' => BLOCK_MYOVERVIEW_CUSTOMFIELD_EMPTY,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C2', 'C3', 'C5'],
+                'expectedprocessedcount' => 5
+            ],
+            'date 1 Feb 2001' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'datefield',
+                'customfieldvalue' => strtotime('2001-02-01T12:00:00Z'),
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C1', 'C3'],
+                'expectedprocessedcount' => 5
+            ],
+            'date 6 Aug 1980' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'datefield',
+                'customfieldvalue' => strtotime('1980-08-06T13:00:00Z'),
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C5'],
+                'expectedprocessedcount' => 5
+            ],
+            'date no date' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'datefield',
+                'customfieldvalue' => BLOCK_MYOVERVIEW_CUSTOMFIELD_EMPTY,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C4'],
+                'expectedprocessedcount' => 5
+            ],
+            'select Option 1' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'selectfield',
+                'customfieldvalue' => 1,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C1'],
+                'expectedprocessedcount' => 5
+            ],
+            'select Option 2' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'selectfield',
+                'customfieldvalue' => 2,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C3', 'C5'],
+                'expectedprocessedcount' => 5
+            ],
+            'select no select' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'selectfield',
+                'customfieldvalue' => BLOCK_MYOVERVIEW_CUSTOMFIELD_EMPTY,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C2'],
+                'expectedprocessedcount' => 5
+            ],
+            'text fish' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'textfield',
+                'customfieldvalue' => 'fish',
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C1', 'C5'],
+                'expectedprocessedcount' => 5
+            ],
+            'text dog' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'textfield',
+                'customfieldvalue' => 'dog',
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C3'],
+                'expectedprocessedcount' => 5
+            ],
+            'text no text' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'textfield',
+                'customfieldvalue' => BLOCK_MYOVERVIEW_CUSTOMFIELD_EMPTY,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['C2'],
+                'expectedprocessedcount' => 5
+            ],
+            'checkbox limit no' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'checkboxfield',
+                'customfieldvalue' => BLOCK_MYOVERVIEW_CUSTOMFIELD_EMPTY,
+                'limit' => 2,
+                'offset' => 0,
+                'expectedcourses' => ['C2', 'C3'],
+                'expectedprocessedcount' => 3
+            ],
+            'checkbox limit offset no' => [
+                'coursedata' => $coursedata,
+                'customfield' => 'checkboxfield',
+                'customfieldvalue' => BLOCK_MYOVERVIEW_CUSTOMFIELD_EMPTY,
+                'limit' => 2,
+                'offset' => 3,
+                'expectedcourses' => ['C5'],
+                'expectedprocessedcount' => 2
+            ],
+        ];
+    }
+
+    /**
+     * Test the course_filter_courses_by_customfield function.
+     *
+     * @dataProvider get_course_filter_courses_by_customfield_test_cases()
+     * @param array $coursedata Course test data to create.
+     * @param string $customfield Shortname of the customfield.
+     * @param string $customfieldvalue the value to filter by.
+     * @param int $limit Maximum number of results to return.
+     * @param int $offset Results to skip at the start of the result set.
+     * @param string[] $expectedcourses Expected courses in results.
+     * @param int $expectedprocessedcount Expected number of course records to be processed.
+     */
+    public function test_course_filter_courses_by_customfield(
+        $coursedata,
+        $customfield,
+        $customfieldvalue,
+        $limit,
+        $offset,
+        $expectedcourses,
+        $expectedprocessedcount
+    ) {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+
+        // Create the custom fields.
+        $generator->create_custom_field_category([
+            'name' => 'Course fields',
+            'component' => 'core_course',
+            'area' => 'course',
+            'itemid' => 0,
+        ]);
+        $generator->create_custom_field([
+            'name' => 'Checkbox field',
+            'category' => 'Course fields',
+            'type' => 'checkbox',
+            'shortname' => 'checkboxfield',
+        ]);
+        $generator->create_custom_field([
+            'name' => 'Date field',
+            'category' => 'Course fields',
+            'type' => 'date',
+            'shortname' => 'datefield',
+            'configdata' => '{"mindate":0, "maxdate":0}',
+        ]);
+        $generator->create_custom_field([
+            'name' => 'Select field',
+            'category' => 'Course fields',
+            'type' => 'select',
+            'shortname' => 'selectfield',
+            'configdata' => '{"options":"Option 1\nOption 2\nOption 3\nOption 4"}',
+        ]);
+        $generator->create_custom_field([
+            'name' => 'Text field',
+            'category' => 'Course fields',
+            'type' => 'text',
+            'shortname' => 'textfield',
+        ]);
+
+        $courses = array_map(function($coursedata) use ($generator) {
+            return $generator->create_course($coursedata);
+        }, $coursedata);
+
+        $student = $generator->create_user();
+
+        foreach ($courses as $course) {
+            $generator->enrol_user($student->id, $course->id, 'student');
+        }
+
+        $this->setUser($student);
+
+        $coursesgenerator = course_get_enrolled_courses_for_logged_in_user(0, $offset, 'shortname ASC', 'shortname');
+        list($result, $processedcount) = course_filter_courses_by_customfield(
+            $coursesgenerator,
+            $customfield,
+            $customfieldvalue,
+            $limit
+        );
+
+        $actual = array_map(function($course) {
+            return $course->shortname;
+        }, $result);
+
+        $this->assertEquals($expectedcourses, $actual);
+        $this->assertEquals($expectedprocessedcount, $processedcount);
+    }
+
+    /**
+     * Test cases for the course_filter_courses_by_timeline_classification w/ hidden courses tests.
+     */
+    public function get_course_filter_courses_by_timeline_classification_hidden_courses_test_cases() {
+        $now = time();
+        $day = 86400;
+
+        $coursedata = [
+            [
+                'shortname' => 'apast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'bpast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'cpast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'dpast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'epast',
+                'startdate' => $now - ($day * 2),
+                'enddate' => $now - $day
+            ],
+            [
+                'shortname' => 'ainprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'binprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'cinprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'dinprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'einprogress',
+                'startdate' => $now - $day,
+                'enddate' => $now + $day
+            ],
+            [
+                'shortname' => 'afuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'bfuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'cfuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'dfuture',
+                'startdate' => $now + $day
+            ],
+            [
+                'shortname' => 'efuture',
+                'startdate' => $now + $day
+            ]
+        ];
+
+        // Raw enrolled courses result set should be returned in this order:
+        // afuture, ainprogress, apast, bfuture, binprogress, bpast, cfuture, cinprogress, cpast,
+        // dfuture, dinprogress, dpast, efuture, einprogress, epast
+        //
+        // By classification the offset values for each record should be:
+        // COURSE_TIMELINE_FUTURE
+        // 0 (afuture), 3 (bfuture), 6 (cfuture), 9 (dfuture), 12 (efuture)
+        // COURSE_TIMELINE_INPROGRESS
+        // 1 (ainprogress), 4 (binprogress), 7 (cinprogress), 10 (dinprogress), 13 (einprogress)
+        // COURSE_TIMELINE_PAST
+        // 2 (apast), 5 (bpast), 8 (cpast), 11 (dpast), 14 (epast).
+        return [
+            'empty set' => [
+                'coursedata' => [],
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 2,
+                'offset' => 0,
+                'expectedcourses' => [],
+                'expectedprocessedcount' => 0,
+                'hiddencourse' => ''
+            ],
+            // COURSE_TIMELINE_FUTURE.
+            'future not limit no offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 0,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'cfuture', 'dfuture', 'efuture'],
+                'expectedprocessedcount' => 15,
+                'hiddencourse' => 'bfuture'
+            ],
+            'future no offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 2,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'cfuture'],
+                'expectedprocessedcount' => 7,
+                'hiddencourse' => 'bfuture'
+            ],
+            'future offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 2,
+                'offset' => 2,
+                'expectedcourses' => ['bfuture', 'dfuture'],
+                'expectedprocessedcount' => 8,
+                'hiddencourse' => 'cfuture'
+            ],
+            'future exact limit' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 5,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'cfuture', 'dfuture', 'efuture'],
+                'expectedprocessedcount' => 15,
+                'hiddencourse' => 'bfuture'
+            ],
+            'future limit less results' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 10,
+                'offset' => 0,
+                'expectedcourses' => ['afuture', 'cfuture', 'dfuture', 'efuture'],
+                'expectedprocessedcount' => 15,
+                'hiddencourse' => 'bfuture'
+            ],
+            'future limit less results with offset' => [
+                'coursedata' => $coursedata,
+                'classification' => COURSE_TIMELINE_FUTURE,
+                'limit' => 10,
+                'offset' => 5,
+                'expectedcourses' => ['cfuture', 'efuture'],
+                'expectedprocessedcount' => 10,
+                'hiddencourse' => 'dfuture'
+            ],
+        ];
+    }
+
+    /**
+     * Test the course_filter_courses_by_timeline_classification function hidden courses.
+     *
+     * @dataProvider get_course_filter_courses_by_timeline_classification_hidden_courses_test_cases()
+     * @param array $coursedata Course test data to create.
+     * @param string $classification Timeline classification.
+     * @param int $limit Maximum number of results to return.
+     * @param int $offset Results to skip at the start of the result set.
+     * @param string[] $expectedcourses Expected courses in results.
+     * @param int $expectedprocessedcount Expected number of course records to be processed.
+     * @param int $hiddencourse The course to hide as part of this process
+     */
+    public function test_course_filter_courses_by_timeline_classification_with_hidden_courses(
+        $coursedata,
+        $classification,
+        $limit,
+        $offset,
+        $expectedcourses,
+        $expectedprocessedcount,
+        $hiddencourse
+    ) {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $student = $generator->create_user();
+        $this->setUser($student);
+
+        $courses = array_map(function($coursedata) use ($generator, $hiddencourse) {
+            $course = $generator->create_course($coursedata);
+            if ($course->shortname == $hiddencourse) {
+                set_user_preference('block_myoverview_hidden_course_' . $course->id, true);
+            }
+            return $course;
+        }, $coursedata);
+
+        foreach ($courses as $course) {
+            $generator->enrol_user($student->id, $course->id, 'student');
+        }
+
+        $coursesgenerator = course_get_enrolled_courses_for_logged_in_user(0, $offset, 'shortname ASC', 'shortname');
+        list($result, $processedcount) = course_filter_courses_by_timeline_classification(
+            $coursesgenerator,
+            $classification,
+            $limit
+        );
+
+        $actual = array_map(function($course) {
+            return $course->shortname;
+        }, $result);
+
+        $this->assertEquals($expectedcourses, $actual);
+        $this->assertEquals($expectedprocessedcount, $processedcount);
+    }
+
+
+    /**
+     * Testing core_course_core_calendar_get_valid_event_timestart_range when the course has no end date.
+     */
+    public function test_core_course_core_calendar_get_valid_event_timestart_range_no_enddate() {
+        global $CFG;
+        require_once($CFG->dirroot . "/calendar/lib.php");
+
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $generator = $this->getDataGenerator();
+        $now = time();
+        $course = $generator->create_course(['startdate' => $now - 86400]);
+
+        // Create a course event.
+        $event = new \calendar_event([
+            'name' => 'Test course event',
+            'eventtype' => 'course',
+            'courseid' => $course->id,
+        ]);
+
+        list ($min, $max) = core_course_core_calendar_get_valid_event_timestart_range($event, $course);
+        $this->assertEquals($course->startdate, $min[0]);
+        $this->assertNull($max);
+    }
+
+    /**
+     * Testing core_course_core_calendar_get_valid_event_timestart_range when the course has end date.
+     */
+    public function test_core_course_core_calendar_get_valid_event_timestart_range_with_enddate() {
+        global $CFG;
+        require_once($CFG->dirroot . "/calendar/lib.php");
+
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $generator = $this->getDataGenerator();
+        $now = time();
+        $course = $generator->create_course(['startdate' => $now - 86400, 'enddate' => $now + 86400]);
+
+        // Create a course event.
+        $event = new \calendar_event([
+            'name' => 'Test course event',
+            'eventtype' => 'course',
+            'courseid' => $course->id,
+        ]);
+
+        list ($min, $max) = core_course_core_calendar_get_valid_event_timestart_range($event, $course);
+        $this->assertEquals($course->startdate, $min[0]);
+        $this->assertNull($max);
+    }
+
+    /**
+     * Test the course_get_recent_courses function.
+     */
+    public function test_course_get_recent_courses() {
+        global $DB;
+
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+
+        $courses = array();
+        for ($i = 1; $i < 4; $i++) {
+            $courses[]  = $generator->create_course();
+        };
+
+        $student = $generator->create_user();
+
+        foreach ($courses as $course) {
+            $generator->enrol_user($student->id, $course->id, 'student');
+        }
+
+        $this->setUser($student);
+
+        $result = course_get_recent_courses($student->id);
+
+        // No course accessed.
+        $this->assertCount(0, $result);
+
+        $time = time();
+        foreach ($courses as $course) {
+            $context = context_course::instance($course->id);
+            course_view($context);
+            $DB->set_field('user_lastaccess', 'timeaccess', $time, [
+                'userid' => $student->id,
+                'courseid' => $course->id,
+                ]);
+            $time++;
+        }
+
+        // Every course accessed.
+        $result = course_get_recent_courses($student->id);
+        $this->assertCount(3, $result);
+
+        // Every course accessed, result limited to 2 courses.
+        $result = course_get_recent_courses($student->id, 2);
+        $this->assertCount(2, $result);
+
+        // Every course accessed, with limit and offset should return the first course.
+        $result = course_get_recent_courses($student->id, 3, 2);
+        $this->assertCount(1, $result);
+        $this->assertArrayHasKey($courses[0]->id, $result);
+
+        // Every course accessed, order by shortname DESC. The last create course ($course[2]) should have the greater shortname.
+        $result = course_get_recent_courses($student->id, 0, 0, 'shortname DESC');
+        $this->assertCount(3, $result);
+        $this->assertEquals($courses[2]->id, array_values($result)[0]->id);
+        $this->assertEquals($courses[1]->id, array_values($result)[1]->id);
+        $this->assertEquals($courses[0]->id, array_values($result)[2]->id);
+
+        // Every course accessed, order by shortname ASC.
+        $result = course_get_recent_courses($student->id, 0, 0, 'shortname ASC');
+        $this->assertCount(3, $result);
+        $this->assertEquals($courses[0]->id, array_values($result)[0]->id);
+        $this->assertEquals($courses[1]->id, array_values($result)[1]->id);
+        $this->assertEquals($courses[2]->id, array_values($result)[2]->id);
+
+        $guestcourse = $generator->create_course(
+            (object)array('shortname' => 'guestcourse',
+                'enrol_guest_status_0' => ENROL_INSTANCE_ENABLED,
+                'enrol_guest_password_0' => ''));
+        $context = context_course::instance($guestcourse->id);
+        course_view($context);
+
+        // Every course accessed, even the not enrolled one.
+        $result = course_get_recent_courses($student->id);
+        $this->assertCount(4, $result);
+
+        // Suspended student.
+        $this->getDataGenerator()->enrol_user($student->id, $courses[0]->id, 'student', 'manual', 0, 0, ENROL_USER_SUSPENDED);
+
+        // The course with suspended enrolment is not returned by the function.
+        $result = course_get_recent_courses($student->id);
+        $this->assertCount(3, $result);
+        $this->assertArrayNotHasKey($courses[0]->id, $result);
+    }
+
+    /**
+     * Test the validation of the sort value in course_get_recent_courses().
+     *
+     * @dataProvider course_get_recent_courses_sort_validation_provider
+     * @param string $sort The sort value
+     * @param string $expectedexceptionmsg The expected exception message
+     */
+    public function test_course_get_recent_courses_sort_validation(string $sort, string $expectedexceptionmsg) {
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user();
+
+        if (!empty($expectedexceptionmsg)) {
+            $this->expectException('invalid_parameter_exception');
+            $this->expectExceptionMessage($expectedexceptionmsg);
+        }
+        course_get_recent_courses($user->id, 0, 0, $sort);
+    }
+
+    /**
+     * Data provider for test_course_get_recent_courses_sort_validation().
+     *
+     * @return array
+     */
+    function course_get_recent_courses_sort_validation_provider() {
+        return [
+            'Invalid sort format (SQL injection attempt)' =>
+                [
+                    'shortname DESC LIMIT 1--',
+                    'Invalid structure of the sort parameter, allowed structure: fieldname [ASC|DESC].',
+                ],
+            'Sort uses \'sort by\' field that does not exist' =>
+                [
+                    'shortname DESC, xyz ASC',
+                    'Invalid field in the sort parameter, allowed fields: id, idnumber, summary, summaryformat, ' .
+                    'startdate, enddate, category, shortname, fullname, timeaccess, component, visible, ' .
+                    'showactivitydates, showcompletionconditions, pdfexportfont.',
+            ],
+            'Sort uses invalid value for the sorting direction' =>
+                [
+                    'shortname xyz, lastaccess',
+                    'Invalid sort direction in the sort parameter, allowed values: asc, desc.',
+                ],
+            'Valid sort format' =>
+                [
+                    'shortname asc, timeaccess',
+                    ''
+                ]
+        ];
+    }
+
+    /**
+     * Test the course_get_recent_courses function.
+     */
+    public function test_course_get_recent_courses_with_guest() {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $student = $this->getDataGenerator()->create_user();
+
+        // Course 1 with guest access and no direct enrolment.
+        $course1 = $this->getDataGenerator()->create_course();
+        $context1 = context_course::instance($course1->id);
+        $record = $DB->get_record('enrol', ['courseid' => $course1->id, 'enrol' => 'guest']);
+        enrol_get_plugin('guest')->update_status($record, ENROL_INSTANCE_ENABLED);
+
+        // Course 2 where student is enrolled with two enrolment methods.
+        $course2 = $this->getDataGenerator()->create_course();
+        $context2 = context_course::instance($course2->id);
+        $record = $DB->get_record('enrol', ['courseid' => $course2->id, 'enrol' => 'self']);
+        enrol_get_plugin('guest')->update_status($record, ENROL_INSTANCE_ENABLED);
+        $this->getDataGenerator()->enrol_user($student->id, $course2->id, 'student', 'manual', 0, 0, ENROL_USER_ACTIVE);
+        $this->getDataGenerator()->enrol_user($student->id, $course2->id, 'student', 'self', 0, 0, ENROL_USER_ACTIVE);
+
+        // Course 3.
+        $course3 = $this->getDataGenerator()->create_course();
+        $context3 = context_course::instance($course3->id);
+
+        // Student visits first two courses, course_get_recent_courses returns two courses.
+        $this->setUser($student);
+        course_view($context1);
+        course_view($context2);
+
+        $result = course_get_recent_courses($student->id);
+        $this->assertEqualsCanonicalizing([$course2->id, $course1->id], array_column($result, 'id'));
+
+        // Admin visits all three courses. Only the one with guest access is returned.
+        $this->setAdminUser();
+        course_view($context1);
+        course_view($context2);
+        course_view($context3);
+        $result = course_get_recent_courses(get_admin()->id);
+        $this->assertEqualsCanonicalizing([$course1->id], array_column($result, 'id'));
+    }
+
+    /**
+     * Test cases for the course_get_course_dates_for_user_ids tests.
+     */
+    public function get_course_get_course_dates_for_user_ids_test_cases() {
+        $now = time();
+        $pastcoursestart = $now - 100;
+        $futurecoursestart = $now + 100;
+
+        return [
+            'future course start fixed no users enrolled' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [[], []],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 1 users enrolled future' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 1 users enrolled past' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled future' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled past' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$futurecoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled mixed' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$futurecoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled 2 methods' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled 2 methods 1 disabled' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled 2 methods 2 disabled' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_DISABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled 2 methods 0 disabled 1 user suspended' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start fixed 2 users enrolled 2 methods 0 disabled 2 user suspended' => [
+                'relativedatemode' => false,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_SUSPENDED]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_SUSPENDED]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start relative no users enrolled' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [[], []],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start relative 1 users enrolled future' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start relative 1 users enrolled past' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled future' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $futurecoursestart + 20,
+                        'startoffset' => 20
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled past' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$futurecoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled mixed' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$futurecoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled 2 methods' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $futurecoursestart + 10,
+                        'startoffset' => 10
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled 2 methods 1 disabled' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart + 20,
+                        'startoffset' => 20
+                    ],
+                    [
+                        'start' => $futurecoursestart + 10,
+                        'startoffset' => 10
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled 2 methods 2 disabled' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_DISABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled 2 methods 0 disabled 1 user suspended' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart + 20,
+                        'startoffset' => 20
+                    ],
+                    [
+                        'start' => $futurecoursestart + 10,
+                        'startoffset' => 10
+                    ]
+                ]
+            ],
+            'future course start relative 2 users enrolled 2 methods 0 disabled 2 user suspended' => [
+                'relativedatemode' => true,
+                'coursestart' => $futurecoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$futurecoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 20, ENROL_USER_SUSPENDED]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$futurecoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$futurecoursestart + 10, ENROL_USER_SUSPENDED]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $futurecoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+
+            // Course start date in the past.
+            'past course start fixed no users enrolled' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [[], []],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 1 users enrolled future' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 1 users enrolled past' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled future' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled past' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$pastcoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled mixed' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$pastcoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled 2 methods' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled 2 methods 1 disabled' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled 2 methods 2 disabled' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_DISABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled 2 methods 0 disabled 1 user suspended' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start fixed 2 users enrolled 2 methods 0 disabled 2 user suspended' => [
+                'relativedatemode' => false,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_SUSPENDED]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_SUSPENDED]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start relative no users enrolled' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [[], []],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start relative 1 users enrolled future' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start relative 1 users enrolled past' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    []
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled future' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $pastcoursestart + 20,
+                        'startoffset' => 20
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled past' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart - 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$pastcoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled mixed' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    ['manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]],
+                    // User 2.
+                    ['manual' => [$pastcoursestart - 20, ENROL_USER_ACTIVE]]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled 2 methods' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart + 10,
+                        'startoffset' => 10
+                    ],
+                    [
+                        'start' => $pastcoursestart + 10,
+                        'startoffset' => 10
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled 2 methods 1 disabled' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart + 20,
+                        'startoffset' => 20
+                    ],
+                    [
+                        'start' => $pastcoursestart + 10,
+                        'startoffset' => 10
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled 2 methods 2 disabled' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_DISABLED],
+                    ['self', ENROL_INSTANCE_DISABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_ACTIVE],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled 2 methods 0 disabled 1 user suspended' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_ACTIVE]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_ACTIVE]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart + 20,
+                        'startoffset' => 20
+                    ],
+                    [
+                        'start' => $pastcoursestart + 10,
+                        'startoffset' => 10
+                    ]
+                ]
+            ],
+            'past course start relative 2 users enrolled 2 methods 0 disabled 2 user suspended' => [
+                'relativedatemode' => true,
+                'coursestart' => $pastcoursestart,
+                'usercount' => 2,
+                'enrolmentmethods' => [
+                    ['manual', ENROL_INSTANCE_ENABLED],
+                    ['self', ENROL_INSTANCE_ENABLED]
+                ],
+                'enrolled' => [
+                    // User 1.
+                    [
+                        'manual' => [$pastcoursestart + 10, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 20, ENROL_USER_SUSPENDED]
+                    ],
+                    // User 2.
+                    [
+                        'manual' => [$pastcoursestart + 20, ENROL_USER_SUSPENDED],
+                        'self' => [$pastcoursestart + 10, ENROL_USER_SUSPENDED]
+                    ]
+                ],
+                'expected' => [
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ],
+                    [
+                        'start' => $pastcoursestart,
+                        'startoffset' => 0
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Test the course_get_course_dates_for_user_ids function.
+     *
+     * @dataProvider get_course_get_course_dates_for_user_ids_test_cases()
+     * @param bool $relativedatemode Set the course to relative dates mode
+     * @param int $coursestart Course start date
+     * @param int $usercount Number of users to create
+     * @param array $enrolmentmethods Enrolment methods to set for the course
+     * @param array $enrolled Enrolment config for to set for the users
+     * @param array $expected Expected output
+     */
+    public function test_course_get_course_dates_for_user_ids(
+        $relativedatemode,
+        $coursestart,
+        $usercount,
+        $enrolmentmethods,
+        $enrolled,
+        $expected
+    ) {
+        global $DB;
+        $this->resetAfterTest();
+
+        $generator = $this->getDataGenerator();
+        $course  = $generator->create_course(['startdate' => $coursestart]);
+        $course->relativedatesmode = $relativedatemode;
+        $users = [];
+
+        for ($i = 0; $i < $usercount; $i++) {
+            $users[] = $generator->create_user();
+        }
+
+        foreach ($enrolmentmethods as [$type, $status]) {
+            $record = $DB->get_record('enrol', ['courseid' => $course->id, 'enrol' => $type]);
+            $plugin = enrol_get_plugin($type);
+            if ($record->status != $status) {
+                $plugin->update_status($record, $status);
+            }
+        }
+
+        foreach ($enrolled as $index => $enrolconfig) {
+            $user = $users[$index];
+            foreach ($enrolconfig as $type => [$starttime, $status]) {
+                $generator->enrol_user($user->id, $course->id, 'student', $type, $starttime, 0, $status);
+            }
+        }
+
+        $userids = array_map(function($user) {
+            return $user->id;
+        }, $users);
+        $actual = course_get_course_dates_for_user_ids($course, $userids);
+
+        foreach ($expected as $index => $exp) {
+            $userid = $userids[$index];
+            $act = $actual[$userid];
+
+            $this->assertEquals($exp['start'], $act['start']);
+            $this->assertEquals($exp['startoffset'], $act['startoffset']);
+        }
+    }
+
+    /**
+     * Test that calling course_get_course_dates_for_user_ids multiple times in the
+     * same request fill fetch the correct data for the user.
+     */
+    public function test_course_get_course_dates_for_user_ids_multiple_calls() {
+        $this->resetAfterTest();
+
+        $generator = $this->getDataGenerator();
+        $now = time();
+        $coursestart = $now - 1000;
+        $course  = $generator->create_course(['startdate' => $coursestart]);
+        $course->relativedatesmode = true;
+        $user1 = $generator->create_user();
+        $user2 = $generator->create_user();
+        $user1start = $coursestart + 100;
+        $user2start = $coursestart + 200;
+
+        $generator->enrol_user($user1->id, $course->id, 'student', 'manual', $user1start);
+        $generator->enrol_user($user2->id, $course->id, 'student', 'manual', $user2start);
+
+        $result = course_get_course_dates_for_user_ids($course, [$user1->id]);
+        $this->assertEquals($user1start, $result[$user1->id]['start']);
+
+        $result = course_get_course_dates_for_user_ids($course, [$user1->id, $user2->id]);
+        $this->assertEquals($user1start, $result[$user1->id]['start']);
+        $this->assertEquals($user2start, $result[$user2->id]['start']);
+
+        $result = course_get_course_dates_for_user_ids($course, [$user2->id]);
+        $this->assertEquals($user2start, $result[$user2->id]['start']);
+    }
+
+    /**
+     * Data provider for test_course_modules_pending_deletion.
+     *
+     * @return array An array of arrays contain test data
+     */
+    public function provider_course_modules_pending_deletion() {
+        return [
+            'Non-gradable activity, check all'              => [['forum'], 0, false, true],
+            'Gradable activity, check all'                  => [['assign'], 0, false, true],
+            'Non-gradable activity, check gradables'        => [['forum'], 0, true, false],
+            'Gradable activity, check gradables'            => [['assign'], 0, true, true],
+            'Non-gradable within multiple, check all'       => [['quiz', 'forum', 'assign'], 1, false, true],
+            'Non-gradable within multiple, check gradables' => [['quiz', 'forum', 'assign'], 1, true, false],
+            'Gradable within multiple, check all'           => [['quiz', 'forum', 'assign'], 2, false, true],
+            'Gradable within multiple, check gradables'     => [['quiz', 'forum', 'assign'], 2, true, true],
+        ];
+    }
+
+    /**
+     * Tests the function course_modules_pending_deletion.
+     *
+     * @param string[] $modules A complete list aff all available modules before deletion
+     * @param int $indextodelete The index of the module in the $modules array that we want to test with
+     * @param bool $gradable The value to pass to the gradable argument of the course_modules_pending_deletion function
+     * @param bool $expected The expected result
+     * @dataProvider provider_course_modules_pending_deletion
+     */
+    public function test_course_modules_pending_deletion(array $modules, int $indextodelete, bool $gradable, bool $expected) {
+        $this->resetAfterTest();
+
+        // Ensure recyclebin is enabled.
+        set_config('coursebinenable', true, 'tool_recyclebin');
+
+        // Create course and modules.
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+
+        $moduleinstances = [];
+        foreach ($modules as $module) {
+            $moduleinstances[] = $generator->create_module($module, array('course' => $course->id));
+        }
+
+        course_delete_module($moduleinstances[$indextodelete]->cmid, true); // Try to delete the instance asynchronously.
+        $this->assertEquals($expected, course_modules_pending_deletion($course->id, $gradable));
+    }
+
+    /**
+     * Tests for the course_request::can_request
+     */
+    public function test_can_request_course() {
+        global $CFG, $DB;
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user();
+        $cat1 = $CFG->defaultrequestcategory;
+        $cat2 = $this->getDataGenerator()->create_category()->id;
+        $cat3 = $this->getDataGenerator()->create_category()->id;
+        $context1 = context_coursecat::instance($cat1);
+        $context2 = context_coursecat::instance($cat2);
+        $context3 = context_coursecat::instance($cat3);
+        $this->setUser($user);
+
+        // By default users don't have capability to request courses.
+        $this->assertFalse(course_request::can_request(context_system::instance()));
+        $this->assertFalse(course_request::can_request($context1));
+        $this->assertFalse(course_request::can_request($context2));
+        $this->assertFalse(course_request::can_request($context3));
+
+        // Allow for the 'user' role the capability to request courses.
+        $userroleid = $DB->get_field('role', 'id', ['shortname' => 'user']);
+        assign_capability('moodle/course:request', CAP_ALLOW, $userroleid,
+            context_system::instance()->id);
+        accesslib_clear_all_caches_for_unit_testing();
+
+        // Lock category selection.
+        $CFG->lockrequestcategory = 1;
+
+        // Now user can only request course in the default category or in system context.
+        $this->assertTrue(course_request::can_request(context_system::instance()));
+        $this->assertTrue(course_request::can_request($context1));
+        $this->assertFalse(course_request::can_request($context2));
+        $this->assertFalse(course_request::can_request($context3));
+
+        // Enable category selection. User can request course anywhere.
+        $CFG->lockrequestcategory = 0;
+        $this->assertTrue(course_request::can_request(context_system::instance()));
+        $this->assertTrue(course_request::can_request($context1));
+        $this->assertTrue(course_request::can_request($context2));
+        $this->assertTrue(course_request::can_request($context3));
+
+        // Remove cap from cat2.
+        $roleid = create_role('Test role', 'testrole', 'Test role description');
+        assign_capability('moodle/course:request', CAP_PROHIBIT, $roleid,
+            $context2->id, true);
+        role_assign($roleid, $user->id, $context2->id);
+        accesslib_clear_all_caches_for_unit_testing();
+
+        $this->assertTrue(course_request::can_request(context_system::instance()));
+        $this->assertTrue(course_request::can_request($context1));
+        $this->assertFalse(course_request::can_request($context2));
+        $this->assertTrue(course_request::can_request($context3));
+
+        // Disable course request functionality.
+        $CFG->enablecourserequests = false;
+        $this->assertFalse(course_request::can_request(context_system::instance()));
+        $this->assertFalse(course_request::can_request($context1));
+        $this->assertFalse(course_request::can_request($context2));
+        $this->assertFalse(course_request::can_request($context3));
+    }
+
+    /**
+     * Tests for the course_request::can_approve
+     */
+    public function test_can_approve_course_request() {
+        global $CFG;
+        $this->resetAfterTest();
+
+        $requestor = $this->getDataGenerator()->create_user();
+        $user = $this->getDataGenerator()->create_user();
+        $cat1 = $CFG->defaultrequestcategory;
+        $cat2 = $this->getDataGenerator()->create_category()->id;
+        $cat3 = $this->getDataGenerator()->create_category()->id;
+
+        // Enable course requests. Default 'user' role has capability to request courses.
+        $CFG->enablecourserequests = true;
+        $CFG->lockrequestcategory = 0;
+        $this->setUser($requestor);
+        $requestdata = ['summary_editor' => ['text' => '', 'format' => 0], 'name' => 'Req', 'reason' => 'test'];
+        $request1 = course_request::create((object)($requestdata));
+        $request2 = course_request::create((object)($requestdata + ['category' => $cat2]));
+        $request3 = course_request::create((object)($requestdata + ['category' => $cat3]));
+
+        $this->setUser($user);
+        // Add capability to approve courses.
+        $roleid = create_role('Test role', 'testrole', 'Test role description');
+        assign_capability('moodle/site:approvecourse', CAP_ALLOW, $roleid,
+            context_system::instance()->id, true);
+        role_assign($roleid, $user->id, context_coursecat::instance($cat2)->id);
+        accesslib_clear_all_caches_for_unit_testing();
+
+        $this->assertFalse($request1->can_approve());
+        $this->assertTrue($request2->can_approve());
+        $this->assertFalse($request3->can_approve());
+
+        // Delete category where course was requested. Now only site-wide manager can approve it.
+        core_course_category::get($cat2, MUST_EXIST, true)->delete_full(false);
+        $this->assertFalse($request2->can_approve());
+
+        $this->setAdminUser();
+        $this->assertTrue($request2->can_approve());
+    }
+
+    /**
+     * Test the course allowed module method.
+     */
+    public function test_course_allowed_module() {
+        $this->resetAfterTest();
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
+        $manager = $this->getDataGenerator()->create_and_enrol($course, 'manager');
+
+        $teacherrole = $DB->get_record('role', array('shortname' => 'editingteacher'));
+        assign_capability('mod/assign:addinstance', CAP_PROHIBIT, $teacherrole->id, \context_course::instance($course->id));
+
+        // Global user (teacher) has no permissions in this course.
+        $this->setUser($teacher);
+        $this->assertFalse(course_allowed_module($course, 'assign'));
+
+        // Manager has permissions.
+        $this->assertTrue(course_allowed_module($course, 'assign', $manager));
+    }
+
+    /**
+     * Test the {@link average_number_of_participants()} function.
+     */
+    public function test_average_number_of_participants() {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $now = time();
+
+        // If there are no courses, expect zero number of participants per course.
+        $this->assertEquals(0, average_number_of_participants());
+
+        $c1 = $generator->create_course();
+        $c2 = $generator->create_course();
+
+        // If there are no users, expect zero number of participants per course.
+        $this->assertEquals(0, average_number_of_participants());
+
+        $t1 = $generator->create_user(['lastlogin' => $now]);
+        $s1 = $generator->create_user(['lastlogin' => $now]);
+        $s2 = $generator->create_user(['lastlogin' => $now - WEEKSECS]);
+        $s3 = $generator->create_user(['lastlogin' => $now - WEEKSECS]);
+        $s4 = $generator->create_user(['lastlogin' => $now - YEARSECS]);
+
+        // We have courses, we have users, but no enrolments yet.
+        $this->assertEquals(0, average_number_of_participants());
+
+        // Front page enrolments are ignored.
+        $generator->enrol_user($t1->id, SITEID, 'teacher');
+        $this->assertEquals(0, average_number_of_participants());
+
+        // The teacher enrolled into one of the two courses.
+        $generator->enrol_user($t1->id, $c1->id, 'editingteacher');
+        $this->assertEquals(0.5, average_number_of_participants());
+
+        // The teacher enrolled into both courses.
+        $generator->enrol_user($t1->id, $c2->id, 'editingteacher');
+        $this->assertEquals(1, average_number_of_participants());
+
+        // Student 1 enrolled in the Course 1 only.
+        $generator->enrol_user($s1->id, $c1->id, 'student');
+        $this->assertEquals(1.5, average_number_of_participants());
+
+        // Student 2 enrolled in both courses, but the enrolment in the Course 2 not active yet (enrolment starts in the future).
+        $generator->enrol_user($s2->id, $c1->id, 'student');
+        $generator->enrol_user($s2->id, $c2->id, 'student', 'manual', $now + WEEKSECS);
+        $this->assertEquals(2.5, average_number_of_participants());
+        $this->assertEquals(2, average_number_of_participants(true));
+
+        // Student 3 enrolled in the Course 1, but the enrolment already expired.
+        $generator->enrol_user($s3->id, $c1->id, 'student', 'manual', 0, $now - YEARSECS);
+        $this->assertEquals(3, average_number_of_participants());
+        $this->assertEquals(2, average_number_of_participants(true));
+
+        // Student 4 enrolled in both courses, but the enrolment has been suspended.
+        $generator->enrol_user($s4->id, $c1->id, 'student', 'manual', 0, 0, ENROL_USER_SUSPENDED);
+        $generator->enrol_user($s4->id, $c2->id, 'student', 'manual', $now - DAYSECS, $now + YEARSECS, ENROL_USER_SUSPENDED);
+        $this->assertEquals(4, average_number_of_participants());
+        $this->assertEquals(2, average_number_of_participants(true));
+
+        // Consider only t1 and s1 who logged in recently.
+        $this->assertEquals(1.5, average_number_of_participants(false, $now - DAYSECS));
+
+        // Consider only t1, s1, s2 and s3 who logged in in recent weeks.
+        $this->assertEquals(3, average_number_of_participants(false, $now - 4 * WEEKSECS));
+
+        // Hidden courses are excluded from stats.
+        $DB->set_field('course', 'visible', 0, ['id' => $c1->id]);
+        $this->assertEquals(3, average_number_of_participants());
+        $this->assertEquals(1, average_number_of_participants(true));
+    }
+
+    /**
+     * Test the set_downloadcontent() function.
+     */
+    public function test_set_downloadcontent() {
+        $this->resetAfterTest();
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $page = $generator->create_module('page', ['course' => $course]);
+
+        // Test the module 'downloadcontent' field is set to enabled.
+        set_downloadcontent($page->cmid, DOWNLOAD_COURSE_CONTENT_ENABLED);
+        $modinfo = get_fast_modinfo($course)->get_cm($page->cmid);
+        $this->assertEquals(DOWNLOAD_COURSE_CONTENT_ENABLED, $modinfo->downloadcontent);
+
+        // Now let's test the 'downloadcontent' value is updated to disabled.
+        set_downloadcontent($page->cmid, DOWNLOAD_COURSE_CONTENT_DISABLED);
+        $modinfo = get_fast_modinfo($course)->get_cm($page->cmid);
+        $this->assertEquals(DOWNLOAD_COURSE_CONTENT_DISABLED, $modinfo->downloadcontent);
+
+        // Nothing to update, the download course content value is the same, it should return false.
+        $this->assertFalse(set_downloadcontent($page->cmid, DOWNLOAD_COURSE_CONTENT_DISABLED));
+
+        // The download course content value has changed, it should return true in this case.
+        $this->assertTrue(set_downloadcontent($page->cmid, DOWNLOAD_COURSE_CONTENT_ENABLED));
+    }
+
+    /**
+     * Test for course_get_courseimage.
+     *
+     * @covers ::course_get_courseimage
+     */
+    public function test_course_get_courseimage(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+
+        $this->assertNull(course_get_courseimage($course));
+
+        $fs = get_file_storage();
+        $file = $fs->create_file_from_pathname((object) [
+            'contextid' => \core\context\course::instance($course->id)->id,
+            'component' => 'course',
+            'filearea' => 'overviewfiles',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'logo.png',
+        ], "{$CFG->dirroot}/lib/tests/fixtures/gd-logo.png");
+
+        $image = course_get_courseimage($course);
+        $this->assertInstanceOf(\stored_file::class, $image);
+        $this->assertEquals(
+            $file->get_id(),
+            $image->get_id(),
+        );
+    }
+
+    /**
+     * Test the course_get_communication_instance_data() function.
+     *
+     * @covers ::course_get_communication_instance_data
+     */
+    public function test_course_get_communication_instance_data(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+
+        // Set admin user as a valid enrolment will be checked in the callback function.
+        $this->setAdminUser();
+
+        // Use the callback function and return the data.
+        list($instance, $context, $heading, $returnurl) = component_callback(
+            'core_course',
+            'get_communication_instance_data',
+            [$course->id]
+        );
+
+        // Check the url is as expected.
+        $expectedreturnurl = new moodle_url('/course/view.php', ['id' => $course->id]);
+        $this->assertEquals($expectedreturnurl, $returnurl);
+
+        // Check the context is as expected.
+        $expectedcontext = context_course::instance($course->id);
+        $this->assertEquals($expectedcontext, $context);
+
+        // Check the instance id is as expected.
+        $this->assertEquals($course->id, $instance->id);
+
+        // Check the heading is as expected.
+        $this->assertEquals($course->fullname, $heading);
+    }
+
+    /**
+     * Test the course_update_communication_instance_data() function.
+     *
+     * @covers ::course_update_communication_instance_data
+     */
+    public function test_course_update_communication_instance_data(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+
+        // Set some data to update with.
+        $data = new stdClass();
+        $data->instanceid = $course->id;
+        $data->fullname = 'newname';
+
+        // These should not be the same yet.
+        $this->assertNotEquals($course->fullname, $data->fullname);
+
+        // Use the callback function to update the course with the data.
+        component_callback(
+            'core_course',
+            'update_communication_instance_data',
+            [$data]
+        );
+
+        // Get the course and check it was updated.
+        $course = get_course($course->id);
+        $this->assertEquals($course->fullname, $data->fullname);
     }
 }

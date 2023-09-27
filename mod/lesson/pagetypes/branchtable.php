@@ -84,7 +84,7 @@ class lesson_page_type_branchtable extends lesson_page {
 
         if (!$firstpage) {
             if (!$apageid = $DB->get_field("lesson_pages", "id", array("lessonid" => $lesson->id, "prevpageid" => 0))) {
-                print_error('cannotfindfirstpage', 'lesson');
+                throw new \moodle_exception('cannotfindfirstpage', 'lesson');
             }
             while (true) {
                 if ($apageid) {
@@ -113,8 +113,10 @@ class lesson_page_type_branchtable extends lesson_page {
         if ($this->lesson->slideshow) {
             $output .= $renderer->slideshow_start($this->lesson);
         }
-        // We are using level 3 header because the page title is a sub-heading of lesson title (MDL-30911).
-        $output .= $renderer->heading(format_string($this->properties->title), 3);
+
+        // The heading level depends on whether the theme's activity header displays a heading (usually the activity name).
+        $headinglevel = $PAGE->activityheader->get_heading_level();
+        $output .= $renderer->heading(format_string($this->properties->title), $headinglevel);
         $output .= $renderer->box($this->get_contents(), 'contents');
 
         $buttons = array();
@@ -315,7 +317,7 @@ class lesson_add_page_form_branchtable extends lesson_add_page_form_base {
     protected $standard = false;
 
     public function custom_definition() {
-        global $PAGE;
+        global $PAGE, $CFG;
 
         $mform = $this->_form;
         $lesson = $this->_customdata['lesson'];
@@ -338,8 +340,12 @@ class lesson_add_page_form_branchtable extends lesson_add_page_form_base {
         $mform->setType('qtype', PARAM_INT);
 
         $mform->addElement('text', 'title', get_string("pagetitle", "lesson"), array('size'=>70));
-        $mform->setType('title', PARAM_TEXT);
         $mform->addRule('title', null, 'required', null, 'server');
+        if (!empty($CFG->formatstringstriptags)) {
+            $mform->setType('title', PARAM_TEXT);
+        } else {
+            $mform->setType('title', PARAM_CLEANHTML);
+        }
 
         $this->editoroptions = array('noclean'=>true, 'maxfiles'=>EDITOR_UNLIMITED_FILES, 'maxbytes'=>$PAGE->course->maxbytes);
         $mform->addElement('editor', 'contents_editor', get_string("pagecontents", "lesson"), null, $this->editoroptions);

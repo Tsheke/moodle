@@ -171,6 +171,12 @@ class workshop {
     /** @var int maximum size of one file attached to the overall feedback */
     public $overallfeedbackmaxbytes;
 
+    /** @var int Should the submission form show the text field? */
+    public $submissiontypetext;
+
+    /** @var int Should the submission form show the file attachment field? */
+    public $submissiontypefile;
+
     /**
      * @var workshop_strategy grading strategy instance
      * Do not use directly, get the instance using {@link workshop::grading_strategy_instance()}
@@ -182,6 +188,11 @@ class workshop {
      * Do not use directly, get the instance using {@link workshop::grading_evaluation_instance()}
      */
     protected $evaluationinstance = null;
+
+    /**
+     * @var array It gets initialised in init_initial_bar, and may have keys 'i_first' and 'i_last' depending on what is selected.
+     */
+    protected $initialbarprefs = [];
 
     /**
      * Initializes the workshop API instance using the data from DB
@@ -442,7 +453,7 @@ class workshop {
         }
 
         if (!is_array($extensions)) {
-            $extensions = preg_split('/[\s,;:"\']+/', $extensions, null, PREG_SPLIT_NO_EMPTY);
+            $extensions = preg_split('/[\s,;:"\']+/', $extensions, -1, PREG_SPLIT_NO_EMPTY);
         }
 
         foreach ($extensions as $i => $extension) {
@@ -493,54 +504,54 @@ class workshop {
     /**
      * Check given file types and return invalid/unknown ones.
      *
-     * Empty whitelist is interpretted as "any extension is valid".
+     * Empty allowlist is interpretted as "any extension is valid".
      *
      * @deprecated since Moodle 3.4 MDL-56486 - please use the {@link core_form\filetypes_util}
      * @param string|array $extensions list of file extensions
-     * @param string|array $whitelist list of valid extensions
-     * @return array list of invalid extensions not found in the whitelist
+     * @param string|array $allowlist list of valid extensions
+     * @return array list of invalid extensions not found in the allowlist
      */
-    public static function invalid_file_extensions($extensions, $whitelist) {
+    public static function invalid_file_extensions($extensions, $allowlist) {
 
         debugging('The method workshop::invalid_file_extensions() is deprecated.
             Please use the methods provided by the \core_form\filetypes_util class.', DEBUG_DEVELOPER);
 
         $extensions = self::normalize_file_extensions($extensions);
-        $whitelist = self::normalize_file_extensions($whitelist);
+        $allowlist = self::normalize_file_extensions($allowlist);
 
-        if (empty($extensions) or empty($whitelist)) {
+        if (empty($extensions) or empty($allowlist)) {
             return array();
         }
 
-        // Return those items from $extensions that are not present in $whitelist.
-        return array_keys(array_diff_key(array_flip($extensions), array_flip($whitelist)));
+        // Return those items from $extensions that are not present in $allowlist.
+        return array_keys(array_diff_key(array_flip($extensions), array_flip($allowlist)));
     }
 
     /**
      * Is the file have allowed to be uploaded to the workshop?
      *
-     * Empty whitelist is interpretted as "any file type is allowed" rather
+     * Empty allowlist is interpretted as "any file type is allowed" rather
      * than "no file can be uploaded".
      *
      * @deprecated since Moodle 3.4 MDL-56486 - please use the {@link core_form\filetypes_util}
      * @param string $filename the file name
-     * @param string|array $whitelist list of allowed file extensions
+     * @param string|array $allowlist list of allowed file extensions
      * @return false
      */
-    public static function is_allowed_file_type($filename, $whitelist) {
+    public static function is_allowed_file_type($filename, $allowlist) {
 
         debugging('The method workshop::is_allowed_file_type() is deprecated.
             Please use the methods provided by the \core_form\filetypes_util class.', DEBUG_DEVELOPER);
 
-        $whitelist = self::normalize_file_extensions($whitelist);
+        $allowlist = self::normalize_file_extensions($allowlist);
 
-        if (empty($whitelist)) {
+        if (empty($allowlist)) {
             return true;
         }
 
         $haystack = strrev(trim(strtolower($filename)));
 
-        foreach ($whitelist as $extension) {
+        foreach ($allowlist as $extension) {
             if (strpos($haystack, strrev($extension)) === 0) {
                 // The file name ends with the extension.
                 return true;
@@ -674,15 +685,24 @@ class workshop {
         global $DB;
 
         list($sql, $params) = $this->get_participants_sql($musthavesubmission, $groupid);
+        list($filteringsql, $filteringparams) = $this->get_users_with_initial_filtering_sql_where();
+        $wheresql = "";
 
+        if ($filteringsql) {
+            $wheresql .= $filteringsql;
+            $params = array_merge($params, $filteringparams);
+        }
         if (empty($sql)) {
             return array();
         }
 
         list($sort, $sortparams) = users_order_by_sql('tmp');
-        $sql = "SELECT *
-                  FROM ($sql) tmp
-              ORDER BY $sort";
+        $sql = "SELECT * FROM ($sql) tmp";
+
+        if ($wheresql) {
+            $sql .= " WHERE $wheresql";
+        }
+        $sql .= " ORDER BY $sort";
 
         return $DB->get_records_sql($sql, array_merge($params, $sortparams), $limitfrom, $limitnum);
     }
@@ -855,8 +875,9 @@ class workshop {
     public function get_submissions($authorid='all', $groupid=0, $limitfrom=0, $limitnum=0) {
         global $DB;
 
-        $authorfields      = user_picture::fields('u', null, 'authoridx', 'author');
-        $gradeoverbyfields = user_picture::fields('t', null, 'gradeoverbyx', 'over');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $authorfields = $userfieldsapi->get_sql('u', false, 'author', 'authoridx', false)->selects;
+        $gradeoverbyfields = $userfieldsapi->get_sql('t', false, 'over', 'gradeoverbyx', false)->selects;
         $params            = array('workshopid' => $this->id);
         $sql = "SELECT s.id, s.workshopid, s.example, s.authorid, s.timecreated, s.timemodified,
                        s.title, s.grade, s.gradeover, s.gradeoverby, s.published,
@@ -960,8 +981,9 @@ class workshop {
 
         // we intentionally check the workshopid here, too, so the workshop can't touch submissions
         // from other instances
-        $authorfields      = user_picture::fields('u', null, 'authoridx', 'author');
-        $gradeoverbyfields = user_picture::fields('g', null, 'gradeoverbyx', 'gradeoverby');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $authorfields = $userfieldsapi->get_sql('u', false, 'author', 'authoridx', false)->selects;
+        $gradeoverbyfields = $userfieldsapi->get_sql('g', false, 'gradeoverby', 'gradeoverbyx', false)->selects;
         $sql = "SELECT s.*, $authorfields, $gradeoverbyfields
                   FROM {workshop_submissions} s
             INNER JOIN {user} u ON (s.authorid = u.id)
@@ -983,8 +1005,9 @@ class workshop {
         if (empty($authorid)) {
             return false;
         }
-        $authorfields      = user_picture::fields('u', null, 'authoridx', 'author');
-        $gradeoverbyfields = user_picture::fields('g', null, 'gradeoverbyx', 'gradeoverby');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $authorfields = $userfieldsapi->get_sql('u', false, 'author', 'authoridx', false)->selects;
+        $gradeoverbyfields = $userfieldsapi->get_sql('g', false, 'gradeoverby', 'gradeoverbyx', false)->selects;
         $sql = "SELECT s.*, $authorfields, $gradeoverbyfields
                   FROM {workshop_submissions} s
             INNER JOIN {user} u ON (s.authorid = u.id)
@@ -1002,7 +1025,8 @@ class workshop {
     public function get_published_submissions($orderby='finalgrade DESC') {
         global $DB;
 
-        $authorfields = user_picture::fields('u', null, 'authoridx', 'author');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $authorfields = $userfieldsapi->get_sql('u', false, 'author', 'authoridx', false)->selects;
         $sql = "SELECT s.id, s.authorid, s.timecreated, s.timemodified,
                        s.title, s.grade, s.gradeover, COALESCE(s.gradeover,s.grade) AS finalgrade,
                        $authorfields
@@ -1295,9 +1319,10 @@ class workshop {
     public function get_all_assessments() {
         global $DB;
 
-        $reviewerfields = user_picture::fields('reviewer', null, 'revieweridx', 'reviewer');
-        $authorfields   = user_picture::fields('author', null, 'authorid', 'author');
-        $overbyfields   = user_picture::fields('overby', null, 'gradinggradeoverbyx', 'overby');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $reviewerfields = $userfieldsapi->get_sql('reviewer', false, '', 'revieweridx', false)->selects;
+        $authorfields = $userfieldsapi->get_sql('author', false, 'author', 'authorid', false)->selects;
+        $overbyfields = $userfieldsapi->get_sql('overby', false, 'overby', 'gradinggradeoverbyx', false)->selects;
         list($sort, $params) = users_order_by_sql('reviewer');
         $sql = "SELECT a.id, a.submissionid, a.reviewerid, a.timecreated, a.timemodified,
                        a.grade, a.gradinggrade, a.gradinggradeover, a.gradinggradeoverby,
@@ -1324,9 +1349,10 @@ class workshop {
     public function get_assessment_by_id($id) {
         global $DB;
 
-        $reviewerfields = user_picture::fields('reviewer', null, 'revieweridx', 'reviewer');
-        $authorfields   = user_picture::fields('author', null, 'authorid', 'author');
-        $overbyfields   = user_picture::fields('overby', null, 'gradinggradeoverbyx', 'overby');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $reviewerfields = $userfieldsapi->get_sql('reviewer', false, 'reviewer', 'revieweridx', false)->selects;
+        $authorfields = $userfieldsapi->get_sql('author', false, 'author', 'authorid', false)->selects;
+        $overbyfields = $userfieldsapi->get_sql('overby', false, 'overby', 'gradinggradeoverbyx', false)->selects;
         $sql = "SELECT a.*, s.title, $reviewerfields, $authorfields, $overbyfields
                   FROM {workshop_assessments} a
             INNER JOIN {user} reviewer ON (a.reviewerid = reviewer.id)
@@ -1349,9 +1375,10 @@ class workshop {
     public function get_assessment_of_submission_by_user($submissionid, $reviewerid) {
         global $DB;
 
-        $reviewerfields = user_picture::fields('reviewer', null, 'revieweridx', 'reviewer');
-        $authorfields   = user_picture::fields('author', null, 'authorid', 'author');
-        $overbyfields   = user_picture::fields('overby', null, 'gradinggradeoverbyx', 'overby');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $reviewerfields = $userfieldsapi->get_sql('reviewer', false, 'reviewer', 'revieweridx', false)->selects;
+        $authorfields = $userfieldsapi->get_sql('author', false, 'author', 'authorid', false)->selects;
+        $overbyfields = $userfieldsapi->get_sql('overby', false, 'overby', 'gradinggradeoverbyx', false)->selects;
         $sql = "SELECT a.*, s.title, $reviewerfields, $authorfields, $overbyfields
                   FROM {workshop_assessments} a
             INNER JOIN {user} reviewer ON (a.reviewerid = reviewer.id)
@@ -1373,8 +1400,9 @@ class workshop {
     public function get_assessments_of_submission($submissionid) {
         global $DB;
 
-        $reviewerfields = user_picture::fields('reviewer', null, 'revieweridx', 'reviewer');
-        $overbyfields   = user_picture::fields('overby', null, 'gradinggradeoverbyx', 'overby');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $reviewerfields = $userfieldsapi->get_sql('reviewer', false, 'reviewer', 'revieweridx', false)->selects;
+        $overbyfields = $userfieldsapi->get_sql('overby', false, 'overby', 'gradinggradeoverbyx', false)->selects;
         list($sort, $params) = users_order_by_sql('reviewer');
         $sql = "SELECT a.*, s.title, $reviewerfields, $overbyfields
                   FROM {workshop_assessments} a
@@ -1398,9 +1426,10 @@ class workshop {
     public function get_assessments_by_reviewer($reviewerid) {
         global $DB;
 
-        $reviewerfields = user_picture::fields('reviewer', null, 'revieweridx', 'reviewer');
-        $authorfields   = user_picture::fields('author', null, 'authorid', 'author');
-        $overbyfields   = user_picture::fields('overby', null, 'gradinggradeoverbyx', 'overby');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $reviewerfields = $userfieldsapi->get_sql('reviewer', false, 'reviewer', 'revieweridx', false)->selects;
+        $authorfields = $userfieldsapi->get_sql('author', false, 'author', 'authorid', false)->selects;
+        $overbyfields = $userfieldsapi->get_sql('overby', false, 'overby', 'gradinggradeoverbyx', false)->selects;
         $sql = "SELECT a.*, $reviewerfields, $authorfields, $overbyfields,
                        s.id AS submissionid, s.title AS submissiontitle, s.timecreated AS submissioncreated,
                        s.timemodified AS submissionmodified
@@ -2028,7 +2057,8 @@ class workshop {
                 $sqlsort[] = $sqlsortfieldname . ' ' . $sqlsortfieldhow;
             }
             $sqlsort = implode(',', $sqlsort);
-            $picturefields = user_picture::fields('u', array(), 'userid');
+            $userfieldsapi = \core_user\fields::for_userpic();
+            $picturefields = $userfieldsapi->get_sql('u', false, '', 'userid', false)->selects;
             $sql = "SELECT $picturefields, s.title AS submissiontitle, s.timemodified AS submissionmodified,
                            s.grade AS submissiongrade, ag.gradinggrade
                       FROM {user} u
@@ -2045,7 +2075,7 @@ class workshop {
         $userinfo = array();
 
         // get the user details for all participants to display
-        $additionalnames = get_all_user_name_fields();
+        $additionalnames = \core_user\fields::get_name_fields();
         foreach ($participants as $participant) {
             if (!isset($userinfo[$participant->userid])) {
                 $userinfo[$participant->userid]            = new stdclass();
@@ -2083,7 +2113,8 @@ class workshop {
         if ($submissions) {
             list($submissionids, $params) = $DB->get_in_or_equal(array_keys($submissions), SQL_PARAMS_NAMED);
             list($sort, $sortparams) = users_order_by_sql('r');
-            $picturefields = user_picture::fields('r', array(), 'reviewerid');
+            $userfieldsapi = \core_user\fields::for_userpic();
+            $picturefields = $userfieldsapi->get_sql('r', false, '', 'reviewerid', false)->selects;
             $sql = "SELECT a.id AS assessmentid, a.submissionid, a.grade, a.gradinggrade, a.gradinggradeover, a.weight,
                            $picturefields, s.id AS submissionid, s.authorid
                       FROM {workshop_assessments} a
@@ -2112,7 +2143,8 @@ class workshop {
             list($participantids, $params) = $DB->get_in_or_equal(array_keys($participants), SQL_PARAMS_NAMED);
             list($sort, $sortparams) = users_order_by_sql('e');
             $params['workshopid'] = $this->id;
-            $picturefields = user_picture::fields('e', array(), 'authorid');
+            $userfieldsapi = \core_user\fields::for_userpic();
+            $picturefields = $userfieldsapi->get_sql('e', false, '', 'authorid', false)->selects;
             $sql = "SELECT a.id AS assessmentid, a.submissionid, a.grade, a.gradinggrade, a.gradinggradeover, a.reviewerid, a.weight,
                            s.id AS submissionid, $picturefields
                       FROM {user} u
@@ -2870,9 +2902,39 @@ class workshop {
                 $errors['title'] = get_string('err_multiplesubmissions', 'mod_workshop');
             }
         }
+        // Get the workshop record by id or cmid, depending on whether we're creating or editing a submission.
+        if (empty($data['workshopid'])) {
+            $workshop = $DB->get_record_select('workshop', 'id = (SELECT instance FROM {course_modules} WHERE id = ?)',
+                    [$data['cmid']]);
+        } else {
+            $workshop = $DB->get_record('workshop', ['id' => $data['workshopid']]);
+        }
 
-        $getfiles = file_get_drafarea_files($data['attachment_filemanager']);
-        if (empty($getfiles->list) and html_is_blank($data['content_editor']['text'])) {
+        if (isset($data['attachment_filemanager'])) {
+            $getfiles = file_get_drafarea_files($data['attachment_filemanager']);
+            $attachments = $getfiles->list;
+        } else {
+            $attachments = array();
+        }
+
+        if ($workshop->submissiontypefile == WORKSHOP_SUBMISSION_TYPE_REQUIRED) {
+            if (empty($attachments)) {
+                $errors['attachment_filemanager'] = get_string('err_required', 'form');
+            }
+        } else if ($workshop->submissiontypefile == WORKSHOP_SUBMISSION_TYPE_DISABLED && !empty($data['attachment_filemanager'])) {
+            $errors['attachment_filemanager'] = get_string('submissiontypedisabled', 'mod_workshop');
+        }
+
+        if ($workshop->submissiontypetext == WORKSHOP_SUBMISSION_TYPE_REQUIRED && html_is_blank($data['content_editor']['text'])) {
+            $errors['content_editor'] = get_string('err_required', 'form');
+        } else if ($workshop->submissiontypetext == WORKSHOP_SUBMISSION_TYPE_DISABLED && !empty($data['content_editor']['text'])) {
+            $errors['content_editor'] = get_string('submissiontypedisabled', 'mod_workshop');
+        }
+
+        // If neither type is explicitly required, one or the other must be submitted.
+        if ($workshop->submissiontypetext != WORKSHOP_SUBMISSION_TYPE_REQUIRED
+                && $workshop->submissiontypefile != WORKSHOP_SUBMISSION_TYPE_REQUIRED
+                && empty($attachments) && html_is_blank($data['content_editor']['text'])) {
             $errors['content_editor'] = get_string('submissionrequiredcontent', 'mod_workshop');
             $errors['attachment_filemanager'] = get_string('submissionrequiredfile', 'mod_workshop');
         }
@@ -2939,8 +3001,10 @@ class workshop {
         $params['objectid'] = $submission->id;
 
         // Save and relink embedded images and save attachments.
-        $submission = file_postupdate_standard_editor($submission, 'content', $this->submission_content_options(),
-            $this->context, 'mod_workshop', 'submission_content', $submission->id);
+        if ($this->submissiontypetext != WORKSHOP_SUBMISSION_TYPE_DISABLED) {
+            $submission = file_postupdate_standard_editor($submission, 'content', $this->submission_content_options(),
+                    $this->context, 'mod_workshop', 'submission_content', $submission->id);
+        }
 
         $submission = file_postupdate_standard_filemanager($submission, 'attachment', $this->submission_attachment_options(),
             $this->context, 'mod_workshop', 'submission_attachment', $submission->id);
@@ -2963,7 +3027,6 @@ class workshop {
         $params['other']['pathnamehashes'] = array_keys($files);
 
         $event = \mod_workshop\event\assessable_uploaded::create($params);
-        $event->set_legacy_logdata($logdata);
         $event->trigger();
 
         return $submission->id;
@@ -2989,12 +3052,13 @@ class workshop {
         $canviewallsubmissions = $canviewallsubmissions && $this->check_group_membership($submission->authorid);
 
         if (!$isreviewer and !$isauthor and !($canviewallassessments and $canviewallsubmissions)) {
-            print_error('nopermissions', 'error', $this->view_url(), 'view this assessment');
+            throw new \moodle_exception('nopermissions', 'error', $this->view_url(), 'view this assessment');
         }
 
         if ($isauthor and !$isreviewer and !$canviewallassessments and $this->phase != self::PHASE_CLOSED) {
             // Authors can see assessments of their work at the end of workshop only.
-            print_error('nopermissions', 'error', $this->view_url(), 'view assessment of own work before workshop is closed');
+            throw new \moodle_exception('nopermissions', 'error', $this->view_url(),
+                'view assessment of own work before workshop is closed');
         }
     }
 
@@ -3165,6 +3229,66 @@ class workshop {
             $record->published = !empty($data->published);
         }
         $DB->update_record('workshop_submissions', $record);
+    }
+
+    /**
+     * Get the initial first name.
+     *
+     * @return string|null initial of first name we are currently filtering by.
+     */
+    public function get_initial_first(): ?string {
+        if (empty($this->initialbarprefs['i_first'])) {
+            return null;
+        }
+
+        return $this->initialbarprefs['i_first'];
+    }
+
+    /**
+     * Get the initial last name.
+     *
+     * @return string|null initial of last name we are currently filtering by.
+     */
+    public function get_initial_last(): ?string {
+        if (empty($this->initialbarprefs['i_last'])) {
+            return null;
+        }
+
+        return $this->initialbarprefs['i_last'];
+    }
+
+    /**
+     * Init method for initial bars.
+     * @return void
+     */
+    public function init_initial_bar(): void {
+        global $SESSION;
+        if ($this->phase === self::PHASE_SETUP) {
+            return;
+        }
+
+        $ifirst = optional_param('ifirst', null, PARAM_NOTAGS);
+        $ilast = optional_param('ilast', null, PARAM_NOTAGS);
+
+        if (empty($SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id])) {
+            $SESSION->mod_workshop = new stdClass();
+            $SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id] = [];
+        }
+        if (!empty($SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id]['i_first'])) {
+            $this->initialbarprefs['i_first'] = $SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id]['i_first'];
+        }
+        if (!empty($SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id]['i_last'])) {
+            $this->initialbarprefs['i_last'] = $SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id]['i_last'];
+        }
+        if (!is_null($ifirst)) {
+            $this->initialbarprefs['i_first'] = $ifirst;
+            $SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id]['i_first'] = $ifirst;
+        }
+
+        if (!is_null($ilast)) {
+            $this->initialbarprefs['i_last'] = $ilast;
+            $SESSION->mod_workshop->initialbarprefs['id-'.$this->context->id]['i_last'] = $ilast;
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -3355,7 +3479,8 @@ class workshop {
 
         list($esql, $params) = get_enrolled_sql($this->context, $capability, $groupid, true);
 
-        $userfields = user_picture::fields('u');
+        $userfieldsapi = \core_user\fields::for_userpic();
+        $userfields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
 
         $sql = "SELECT $userfields
                   FROM {user} u
@@ -3376,6 +3501,28 @@ class workshop {
         }
 
         return array($sql, $params);
+    }
+
+    /**
+     * Returns SQL to fetch all enrolled users with the first name or last name.
+     *
+     * @return array
+     */
+    protected function get_users_with_initial_filtering_sql_where(): array {
+        global $DB;
+        $conditions = [];
+        $params = [];
+        $ifirst = $this->get_initial_first();
+        $ilast = $this->get_initial_last();
+        if ($ifirst) {
+            $conditions[] = $DB->sql_like('LOWER(tmp.firstname)', ':i_first' , false, false);
+            $params['i_first'] = $DB->sql_like_escape($ifirst) . '%';
+        }
+        if ($ilast) {
+            $conditions[] = $DB->sql_like('LOWER(tmp.lastname)', ':i_last' , false, false);
+            $params['i_last'] = $DB->sql_like_escape($ilast) . '%';
+        }
+        return [implode(" AND ", $conditions), $params];
     }
 
     /**
@@ -4004,7 +4151,7 @@ abstract class workshop_submission_base {
      * Usually this is called by the contructor but can be called explicitely, too.
      */
     public function anonymize() {
-        $authorfields = explode(',', user_picture::fields());
+        $authorfields = explode(',', implode(',', \core_user\fields::get_picture_fields()));
         foreach ($authorfields as $field) {
             $prefixedusernamefield = 'author' . $field;
             unset($this->{$prefixedusernamefield});

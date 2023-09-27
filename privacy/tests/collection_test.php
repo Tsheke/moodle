@@ -14,33 +14,30 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Collection unit tests.
- *
- * @package     core_privacy
- * @category    test
- * @copyright   2018 Andrew Nicols <andrew@nicols.co.uk>
- * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace core_privacy;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 
-use \core_privacy\local\metadata\collection;
-use \core_privacy\local\metadata\types;
+use core_privacy\local\metadata\collection;
+use core_privacy\local\metadata\types;
 
 /**
  * Tests for the \core_privacy API's collection functionality.
  *
+ * @package     core_privacy
+ * @category    test
  * @copyright   2018 Andrew Nicols <andrew@nicols.co.uk>
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @coversDefaultClass \core_privacy\local\metadata\collection
  */
-class core_privacy_metadata_collection extends advanced_testcase {
-
+class collection_test extends \advanced_testcase {
 
     /**
      * Test that adding an unknown type causes the type to be added to the collection.
+     *
+     * @covers ::add_type
      */
     public function test_add_type_generic_type() {
         $collection = new collection('core_privacy');
@@ -56,6 +53,8 @@ class core_privacy_metadata_collection extends advanced_testcase {
 
     /**
      * Test that adding a known type works as anticipated.
+     *
+     * @covers ::add_type
      */
     public function test_add_type_known_type() {
         $collection = new collection('core_privacy');
@@ -70,6 +69,8 @@ class core_privacy_metadata_collection extends advanced_testcase {
 
     /**
      * Test that adding multiple types returns them all.
+     *
+     * @covers ::add_type
      */
     public function test_add_type_multiple() {
         $collection = new collection('core_privacy');
@@ -86,6 +87,8 @@ class core_privacy_metadata_collection extends advanced_testcase {
 
     /**
      * Test that the add_database_table function adds a database table.
+     *
+     * @covers ::add_database_table
      */
     public function test_add_database_table() {
         $collection = new collection('core_privacy');
@@ -107,6 +110,8 @@ class core_privacy_metadata_collection extends advanced_testcase {
 
     /**
      * Test that the add_user_preference function adds a single user preference.
+     *
+     * @covers ::add_user_preference
      */
     public function test_add_user_preference() {
         $collection = new collection('core_privacy');
@@ -126,6 +131,8 @@ class core_privacy_metadata_collection extends advanced_testcase {
 
     /**
      * Test that the link_external_location function links an external location.
+     *
+     * @covers ::link_external_location
      */
     public function test_link_external_location() {
         $collection = new collection('core_privacy');
@@ -147,6 +154,8 @@ class core_privacy_metadata_collection extends advanced_testcase {
 
     /**
      * Test that the link_subsystem function links the subsystem.
+     *
+     * @covers ::link_subsystem
      */
     public function test_link_subsystem() {
         $collection = new collection('core_privacy');
@@ -166,6 +175,8 @@ class core_privacy_metadata_collection extends advanced_testcase {
 
     /**
      * Test that the link_plugintype function links the plugin.
+     *
+     * @covers ::link_plugintype
      */
     public function test_link_plugintype() {
         $collection = new collection('core_privacy');
@@ -202,6 +213,7 @@ class core_privacy_metadata_collection extends advanced_testcase {
      *
      * @dataProvider component_list_provider
      * @param   string  $component The component to test
+     * @covers ::get_component
      */
     public function test_get_component($component) {
         $collection = new collection($component);

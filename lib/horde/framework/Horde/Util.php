@@ -4,7 +4,7 @@
  *
  * Copyright 1999-2017 Horde LLC (http://www.horde.org/)
  *
- * See the enclosed file COPYING for license information (LGPL). If you
+ * See the enclosed file LICENSE for license information (LGPL). If you
  * did not receive this file, see http://www.horde.org/licenses/lgpl21.
  *
  * @author   Chuck Hagenbuch <chuck@horde.org>
@@ -114,7 +114,7 @@ class Horde_Util
     public static function dispelMagicQuotes($var)
     {
         if (is_null(self::$_magicquotes)) {
-            self::$_magicquotes = get_magic_quotes_gpc();
+            self::$_magicquotes = function_exists('get_magic_quotes_gpc') && @get_magic_quotes_gpc();
         }
 
         if (self::$_magicquotes) {
@@ -304,7 +304,7 @@ class Horde_Util
         /* Get the first 8 characters of a random string to use as a temporary
            directory name. */
         do {
-            $new_dir = $temp_dir . '/' . substr(base_convert(uniqid(mt_rand()), 10, 36), 0, 8);
+            $new_dir = $temp_dir . '/' . substr(base_convert(uniqid(mt_rand()), 16, 36), 0, 8);
         } while (file_exists($new_dir));
 
         $old_umask = umask(0000);

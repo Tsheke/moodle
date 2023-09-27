@@ -29,7 +29,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot.'/auth/ldap/auth.php');
-require_once($CFG->dirroot.'/auth/cas/CAS/CAS.php');
+require_once($CFG->dirroot.'/auth/cas/CAS/vendor/autoload.php');
+require_once($CFG->dirroot.'/auth/cas/CAS/vendor/apereo/phpcas/source/CAS.php');
 
 /**
  * CAS authentication plugin.
@@ -130,21 +131,10 @@ class auth_plugin_cas extends auth_plugin_ldap {
             }
 
             $authCAS = optional_param('authCAS', '', PARAM_RAW);
-            if ($authCAS == 'NOCAS') {
+            if ($authCAS != 'CAS') {
                 return;
             }
-            // Show authentication form for multi-authentication.
-            // Test pgtIou parameter for proxy mode (https connection in background from CAS server to the php server).
-            if ($authCAS != 'CAS' && !isset($_GET['pgtIou'])) {
-                $PAGE->set_url('/login/index.php');
-                $PAGE->navbar->add($CASform);
-                $PAGE->set_title("$site->fullname: $CASform");
-                $PAGE->set_heading($site->fullname);
-                echo $OUTPUT->header();
-                include($CFG->dirroot.'/auth/cas/cas_form.html');
-                echo $OUTPUT->footer();
-                exit();
-            }
+
         }
 
         // Connection to CAS server
@@ -154,6 +144,7 @@ class auth_plugin_cas extends auth_plugin_ldap {
             $frm = new stdClass();
             $frm->username = phpCAS::getUser();
             $frm->password = 'passwdCas';
+            $frm->logintoken = \core\session\manager::get_login_token();
 
             // Redirect to a course if multi-auth is activated, authCAS is set to CAS and the courseid is specified.
             if ($this->config->multiauth && !empty($courseid)) {
@@ -167,6 +158,7 @@ class auth_plugin_cas extends auth_plugin_ldap {
             $frm = new stdClass();
             $frm->username = 'guest';
             $frm->password = 'guest';
+            $frm->logintoken = \core\session\manager::get_login_token();
             return;
         }
 
@@ -187,11 +179,20 @@ class auth_plugin_cas extends auth_plugin_ldap {
         static $connected = false;
 
         if (!$connected) {
+            // Form the base URL of the server with just the protocol and hostname.
+            $serverurl = new moodle_url("/");
+            $servicebaseurl = $serverurl->get_scheme() ? $serverurl->get_scheme() . "://" : '';
+            $servicebaseurl .= $serverurl->get_host();
+            // Add the port if set.
+            $servicebaseurl .= $serverurl->get_port() ? ':' . $serverurl->get_port() : '';
+
             // Make sure phpCAS doesn't try to start a new PHP session when connecting to the CAS server.
             if ($this->config->proxycas) {
-                phpCAS::proxy($this->config->casversion, $this->config->hostname, (int) $this->config->port, $this->config->baseuri, false);
+                phpCAS::proxy($this->config->casversion, $this->config->hostname, (int) $this->config->port, $this->config->baseuri,
+                    $servicebaseurl, false);
             } else {
-                phpCAS::client($this->config->casversion, $this->config->hostname, (int) $this->config->port, $this->config->baseuri, false);
+                phpCAS::client($this->config->casversion, $this->config->hostname, (int) $this->config->port,
+                    $this->config->baseuri, $servicebaseurl, false);
             }
             // Some CAS installs require SSLv3 that should be explicitly set.
             if (!empty($this->config->curl_ssl_version)) {
@@ -360,5 +361,40 @@ class auth_plugin_cas extends auth_plugin_ldap {
             $this->connectCAS();
             phpCAS::logoutWithRedirectService($backurl);
         }
+    }
+
+    /**
+     * Return a list of identity providers to display on the login page.
+     *
+     * @param string|moodle_url $wantsurl The requested URL.
+     * @return array List of arrays with keys url, iconurl and name.
+     */
+    public function loginpage_idp_list($wantsurl) {
+        if (empty($this->config->hostname)) {
+            // CAS is not configured.
+            return [];
+        }
+
+        if ($this->config->auth_logo) {
+            $iconurl = moodle_url::make_pluginfile_url(
+                context_system::instance()->id,
+                'auth_cas',
+                'logo',
+                null,
+                null,
+                $this->config->auth_logo);
+        } else {
+            $iconurl = null;
+        }
+
+        return [
+            [
+                'url' => new moodle_url(get_login_url(), [
+                        'authCAS' => 'CAS',
+                    ]),
+                'iconurl' => $iconurl,
+                'name' => format_string($this->config->auth_name),
+            ],
+        ];
     }
 }

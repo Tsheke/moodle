@@ -26,7 +26,7 @@ require_once($CFG->libdir . '/adminlib.php');
 
 admin_externalpage_setup('searchareas');
 
-$areaid = optional_param('areaid', null, PARAM_ALPHAEXT);
+$areaid = optional_param('areaid', null, PARAM_ALPHANUMEXT);
 $action = optional_param('action', null, PARAM_ALPHA);
 $indexingenabled = \core_search\manager::is_indexing_enabled(); // This restricts many of the actions on this page.
 
@@ -36,6 +36,8 @@ try {
 } catch (core_search\engine_exception $searchmanagererror) {
     // In action cases, we'll throw this exception below. In non-action cases, we produce a lang string error.
 }
+
+$PAGE->set_primary_active_tab('siteadminnode');
 
 // Handle all the actions.
 if ($action) {
@@ -75,7 +77,7 @@ if ($action) {
                 $cancelurl = new moodle_url('/admin/searchareas.php');
                 echo $OUTPUT->header();
                 echo $OUTPUT->confirm(get_string('confirm_' . $action, 'search', $a),
-                    new single_button($actionurl, get_string('continue'), 'post', true),
+                    new single_button($actionurl, get_string('continue'), 'post', single_button::BUTTON_PRIMARY),
                     new single_button($cancelurl, get_string('cancel'), 'get'));
                 echo $OUTPUT->footer();
                 exit;
@@ -153,6 +155,7 @@ $table = new html_table();
 $table->id = 'core-search-areas';
 $table->head = [
     get_string('searcharea', 'search'),
+    get_string('searchareacategories', 'search'),
     get_string('enable'),
     get_string('newestdocindexed', 'admin'),
     get_string('searchlastrun', 'admin'),
@@ -160,10 +163,19 @@ $table->head = [
 ];
 
 $searchareas = \core_search\manager::get_search_areas_list();
+core_collator::asort_objects_by_method($searchareas, 'get_visible_name');
 $areasconfig = isset($searchmanager) ? $searchmanager->get_areas_config($searchareas) : false;
 foreach ($searchareas as $area) {
     $areaid = $area->get_area_id();
     $columns = array(new html_table_cell($area->get_visible_name()));
+
+    $areacategories = [];
+    foreach (\core_search\manager::get_search_area_categories() as $category) {
+        if (key_exists($areaid, $category->get_areas())) {
+            $areacategories[] = $category->get_visiblename();
+        }
+    }
+    $columns[] = new html_table_cell(implode(', ', $areacategories));
 
     if ($area->is_enabled()) {
         $columns[] = $OUTPUT->action_icon(admin_searcharea_action_url('disable', $areaid),

@@ -14,6 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace core;
+
+use calc_formula;
+
+defined('MOODLE_INTERNAL') || die();
+
+global $CFG;
+require_once($CFG->libdir . '/mathslib.php');
+
 /**
  * Unit tests of mathslib wrapper and underlying EvalMath library.
  *
@@ -22,14 +31,7 @@
  * @copyright  2007 Petr Skoda {@link http://skodak.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
-
-global $CFG;
-require_once($CFG->libdir . '/mathslib.php');
-
-
-class core_mathslib_testcase extends basic_testcase {
+class mathslib_test extends \basic_testcase {
 
     /**
      * Tests the basic formula evaluation.
@@ -82,6 +84,7 @@ class core_mathslib_testcase extends basic_testcase {
     }
 
     public function test_conditional_functions() {
+        // Test ifthenelse.
         $formula = new calc_formula('=ifthenelse(1,2,3)');
         $this->assertSame(2, (int)$formula->evaluate());
 
@@ -91,7 +94,7 @@ class core_mathslib_testcase extends basic_testcase {
         $formula = new calc_formula('=ifthenelse(2<3,2,3)');
         $this->assertSame(2, (int) $formula->evaluate());
 
-        // Test synonim if.
+        // Test synonym if.
         $formula = new calc_formula('=if(1,2,3)');
         $this->assertSame(2, (int)$formula->evaluate());
 
@@ -100,6 +103,46 @@ class core_mathslib_testcase extends basic_testcase {
 
         $formula = new calc_formula('=if(2<3,2,3)');
         $this->assertSame(2, (int) $formula->evaluate());
+
+        // Test cond_and.
+        $formula = new calc_formula('=cond_and(1,1,1)');
+        $this->assertSame(1, (int)$formula->evaluate());
+
+        $formula = new calc_formula('=cond_and(1,1,0)');
+        $this->assertSame(0, (int) $formula->evaluate());
+
+        $formula = new calc_formula('=cond_and(0,0,0)');
+        $this->assertSame(0, (int) $formula->evaluate());
+
+        // Test synonym and.
+        $formula = new calc_formula('=and(1,1,1)');
+        $this->assertSame(1, (int)$formula->evaluate());
+
+        $formula = new calc_formula('=and(1,1,0)');
+        $this->assertSame(0, (int) $formula->evaluate());
+
+        $formula = new calc_formula('=and(0,0,0)');
+        $this->assertSame(0, (int) $formula->evaluate());
+
+        // Test cond_or.
+        $formula = new calc_formula('=cond_or(1,1,1)');
+        $this->assertSame(1, (int)$formula->evaluate());
+
+        $formula = new calc_formula('=cond_or(1,1,0)');
+        $this->assertSame(1, (int) $formula->evaluate());
+
+        $formula = new calc_formula('=cond_or(0,0,0)');
+        $this->assertSame(0, (int) $formula->evaluate());
+
+        // Test synonym or.
+        $formula = new calc_formula('=or(1,1,1)');
+        $this->assertSame(1, (int)$formula->evaluate());
+
+        $formula = new calc_formula('=or(1,1,0)');
+        $this->assertSame(1, (int) $formula->evaluate());
+
+        $formula = new calc_formula('=or(0,0,0)');
+        $this->assertSame(0, (int) $formula->evaluate());
     }
 
     public function test_conditional_operators() {
@@ -254,24 +297,113 @@ class core_mathslib_testcase extends basic_testcase {
 
     public function test_scientific_notation() {
         $formula = new calc_formula('=10e10');
-        $this->assertEquals(1e11, $formula->evaluate(), '', 1e11*1e-15);
+        $this->assertEqualsWithDelta(1e11, $formula->evaluate(), 1e11 * 1e-15);
 
         $formula = new calc_formula('=10e-10');
-        $this->assertEquals(1e-9, $formula->evaluate(), '', 1e11*1e-15);
+        $this->assertEqualsWithDelta(1e-9, $formula->evaluate(), 1e11 * 1e-15);
 
         $formula = new calc_formula('=10e+10');
-        $this->assertEquals(1e11, $formula->evaluate(), '', 1e11*1e-15);
+        $this->assertEqualsWithDelta(1e11, $formula->evaluate(), 1e11 * 1e-15);
 
         $formula = new calc_formula('=10e10*5');
-        $this->assertEquals(5e11, $formula->evaluate(), '', 1e11*1e-15);
+        $this->assertEqualsWithDelta(5e11, $formula->evaluate(), 1e11 * 1e-15);
 
         $formula = new calc_formula('=10e10^2');
-        $this->assertEquals(1e22, $formula->evaluate(), '', 1e22*1e-15);
+        $this->assertEqualsWithDelta(1e22, $formula->evaluate(), 1e22 * 1e-15);
     }
 
     public function test_rand_float() {
         $formula = new calc_formula('=rand_float()');
         $result = $formula->evaluate();
         $this->assertTrue(is_float($result));
+    }
+
+    /**
+     * Tests the modulo operator.
+     *
+     * @covers calc_formula::evaluate
+     * @dataProvider moduloOperatorData
+     *
+     * @param string $formula
+     * @param array $values
+     * @param int|float $expectedResult
+     */
+    public function shouldSupportModuloOperator($formula, $values, $expectedResult)
+    {
+        $formula = new calc_formula($formula);
+        $formula->set_params($values);
+        $this->assertEquals($expectedResult, $formula->evaluate());
+    }
+
+    /**
+     * Data provider for shouldSupportModuloOperator
+     *
+     * @return array
+     */
+    public function moduloOperatorData() {
+        return array(
+            array(
+                '=a%b', // 9%3 => 0
+                array('a' => 9, 'b' => 3),
+                0
+            ),
+            array(
+                '=a%b', // 10%3 => 1
+                array('a' => 10, 'b' => 3),
+                1
+            ),
+            array(
+                '=10-a%(b+c*d)', // 10-10%(7-2*2) => 9
+                array('a' => '10', 'b' => 7, 'c' => -2, 'd' => 2),
+                9
+            )
+        );
+    }
+
+    /**
+     * Tests the double minus as plus.
+     *
+     * @covers calc_formula::evaluate
+     * @dataProvider doubleMinusData
+     *
+     * @param string $formula
+     * @param array $values
+     * @param int|float $expectedResult
+     */
+    public function shouldConsiderDoubleMinusAsPlus($formula, $values, $expectedResult)
+    {
+        $formula = new calc_formula($formula);
+        $formula->set_params($values);
+        $this->assertEquals($expectedResult, $formula->evaluate());
+    }
+
+    /**
+     * Data provider for shouldConsiderDoubleMinusAsPlus
+     *
+     * @return array
+     */
+    public function doubleMinusData() {
+        return array(
+            array(
+                '=a+b*c--d', // 1+2*3--4 => 1+6+4 => 11
+                array(
+                    'a' => 1,
+                    'b' => 2,
+                    'c' => 3,
+                    'd' => 4
+                ),
+                11
+            ),
+            array(
+                '=a+b*c--d', // 1+2*3---4 => 1+6-4 => 3
+                array(
+                    'a' => 1,
+                    'b' => 2,
+                    'c' => 3,
+                    'd' => -4
+                ),
+                3
+            )
+        );
     }
 }

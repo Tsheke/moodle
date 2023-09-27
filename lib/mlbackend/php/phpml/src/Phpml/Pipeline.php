@@ -4,103 +4,84 @@ declare(strict_types=1);
 
 namespace Phpml;
 
-class Pipeline implements Estimator
+use Phpml\Exception\InvalidOperationException;
+
+class Pipeline implements Estimator, Transformer
 {
     /**
-     * @var array|Transformer[]
+     * @var Transformer[]
      */
-    private $transformers;
+    private $transformers = [];
 
     /**
-     * @var Estimator
+     * @var Estimator|null
      */
     private $estimator;
 
     /**
-     * @param array|Transformer[] $transformers
-     * @param Estimator           $estimator
+     * @param Transformer[] $transformers
      */
-    public function __construct(array $transformers, Estimator $estimator)
+    public function __construct(array $transformers, ?Estimator $estimator = null)
     {
-        foreach ($transformers as $transformer) {
-            $this->addTransformer($transformer);
-        }
-
+        $this->transformers = array_map(static function (Transformer $transformer): Transformer {
+            return $transformer;
+        }, $transformers);
         $this->estimator = $estimator;
     }
 
     /**
-     * @param Transformer $transformer
+     * @return Transformer[]
      */
-    public function addTransformer(Transformer $transformer)
-    {
-        $this->transformers[] = $transformer;
-    }
-
-    /**
-     * @param Estimator $estimator
-     */
-    public function setEstimator(Estimator $estimator)
-    {
-        $this->estimator = $estimator;
-    }
-
-    /**
-     * @return array|Transformer[]
-     */
-    public function getTransformers()
+    public function getTransformers(): array
     {
         return $this->transformers;
     }
 
-    /**
-     * @return Estimator
-     */
-    public function getEstimator()
+    public function getEstimator(): ?Estimator
     {
         return $this->estimator;
     }
 
-    /**
-     * @param array $samples
-     * @param array $targets
-     */
-    public function train(array $samples, array $targets)
+    public function train(array $samples, array $targets): void
     {
-        $this->fitTransformers($samples);
-        $this->transformSamples($samples);
+        if ($this->estimator === null) {
+            throw new InvalidOperationException('Pipeline without estimator can\'t use train method');
+        }
+
+        foreach ($this->transformers as $transformer) {
+            $transformer->fit($samples, $targets);
+            $transformer->transform($samples, $targets);
+        }
+
         $this->estimator->train($samples, $targets);
     }
 
     /**
-     * @param array $samples
-     *
      * @return mixed
      */
     public function predict(array $samples)
     {
-        $this->transformSamples($samples);
+        $this->transform($samples);
+
+        if ($this->estimator === null) {
+            throw new InvalidOperationException('Pipeline without estimator can\'t use predict method');
+        }
 
         return $this->estimator->predict($samples);
     }
 
-    /**
-     * @param array $samples
-     */
-    private function fitTransformers(array &$samples)
+    public function fit(array $samples, ?array $targets = null): void
     {
         foreach ($this->transformers as $transformer) {
-            $transformer->fit($samples);
+            $transformer->fit($samples, $targets);
+            $transformer->transform($samples, $targets);
         }
     }
 
-    /**
-     * @param array $samples
-     */
-    private function transformSamples(array &$samples)
+    public function transform(array &$samples, ?array &$targets = null): void
     {
         foreach ($this->transformers as $transformer) {
-            $transformer->transform($samples);
+            $transformer->transform($samples, $targets);
         }
     }
 }

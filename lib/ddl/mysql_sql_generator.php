@@ -32,6 +32,8 @@ require_once($CFG->libdir.'/ddl/sql_generator.php');
  * It extends XMLDBgenerator so everything can be
  * overridden as needed to generate correct SQL.
  *
+ * @property mysqli_native_moodle_database $mdb
+ *
  * @package    core_ddl
  * @copyright  1999 onwards Martin Dougiamas     http://dougiamas.com
  *             2001-3001 Eloy Lafuente (stronk7) http://contiento.com
@@ -384,7 +386,6 @@ class mysql_sql_generator extends sql_generator {
         $sqlarr = parent::getDropTableSQL($xmldb_table);
         if ($this->temptables->is_temptable($xmldb_table->getName())) {
             $sqlarr = preg_replace('/^DROP TABLE/', "DROP TEMPORARY TABLE", $sqlarr);
-            $this->temptables->delete_temptable($xmldb_table->getName());
         }
         return $sqlarr;
     }
@@ -510,7 +511,7 @@ class mysql_sql_generator extends sql_generator {
         $fieldsql = $this->getFieldSQL($xmldb_table, $xmldb_field_clone);
 
         $sql = 'ALTER TABLE ' . $this->getTableName($xmldb_table) . ' CHANGE ' .
-               $xmldb_field->getName() . ' ' . $fieldsql;
+               $this->getEncQuoted($xmldb_field->getName()) . ' ' . $fieldsql;
 
         return array($sql);
     }

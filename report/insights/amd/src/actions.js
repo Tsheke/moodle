@@ -16,7 +16,6 @@
 /**
  * Module to manage report insights actions that are executed using AJAX.
  *
- * @package    report_insights
  * @copyright  2017 David Monllao {@link http://www.davidmonllao.com}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -26,46 +25,105 @@
  *
  * @module report_insights/actions
  */
-define(['jquery', 'core/ajax', 'core/notification'], function($, Ajax, Notification) {
 
-    return {
+import {get_string as getString} from 'core/str';
+import Ajax from 'core/ajax';
+import Notification from 'core/notification';
+import Url from 'core/url';
+import ModalEvents from 'core/modal_events';
+import ModalSaveCancel from 'core/modal_save_cancel';
 
-        /**
-         * Attach on click handlers to hide predictions.
-         *
-         * @param {Number} predictionId The prediction id.
-         * @access public
-         */
-        init: function(predictionId) {
 
-            // Select the prediction with the provided id ensuring that an external function is set as method name.
-            $('a[data-prediction-methodname][data-prediction-id=' + predictionId + ']').on('click', function(e) {
-                e.preventDefault();
-                var action = $(e.currentTarget);
-                var methodname = action.attr('data-prediction-methodname');
-                var predictionContainers = action.closest('tr');
+/**
+ * Executes the provided action.
+ *
+ * @param  {Array}  predictionids
+ * @param  {String} actionname
+ * @return {Promise}
+ */
+const markActionExecuted = (predictionids, actionname) => Ajax.call([
+    {
+        methodname: 'report_insights_action_executed',
+        args: {
+            actionname,
+            predictionids,
+        },
+    }
+])[0];
 
-                if (predictionContainers.length > 0) {
-                    var promise = Ajax.call([
-                        {
-                            methodname: methodname,
-                            args: {predictionid: predictionId}
-                        }
-                    ])[0];
-                    promise.done(function() {
-                        predictionContainers[0].remove();
-
-                        // Move back if no remaining predictions.
-                        if ($('.insights-list tr').length < 2) {
-                            if (document.referrer) {
-                                window.location.assign(document.referrer);
-                            } else {
-                                window.location.reload(true);
-                            }
-                        }
-                    }).fail(Notification.exception);
-                }
-            });
+const getPredictionTable = (predictionContainers) => {
+    for (const el of predictionContainers) {
+        if (el.closest('table')) {
+            return el.closest('table');
         }
-    };
-});
+    }
+
+    return null;
+};
+
+const executeAction = (predictionIds, predictionContainers, actionName) => {
+    markActionExecuted(predictionIds, actionName).then(() => {
+        // Remove the selected elements from the list.
+        const tableNode = getPredictionTable(predictionContainers);
+        predictionContainers.forEach((el) => el.remove());
+
+        if (!tableNode.querySelector('tbody > tr')) {
+            const params = {
+                contextid: tableNode.closest('div.insight-container').dataset.contextId,
+                modelid: tableNode.closest('div.insight-container').dataset.modelId,
+            };
+            window.location.assign(Url.relativeUrl("report/insights/insights.php", params, false));
+        }
+        return;
+    }).catch(Notification.exception);
+};
+
+/**
+ * Attach on click handlers for bulk actions.
+ *
+ * @param {String} rootNode
+ * @access public
+ */
+export const initBulk = (rootNode) => {
+    document.addEventListener('click', (e) => {
+        const action = e.target.closest(`${rootNode} [data-bulk-actionname]`);
+        if (!action) {
+            return;
+        }
+
+        e.preventDefault();
+        const actionName = action.dataset.bulkActionname;
+        const actionVisibleName = action.textContent.trim();
+
+        const predictionContainers = Array.from(document.querySelectorAll(
+            '.insights-list input[data-togglegroup^="insight-bulk-action-"][data-toggle="slave"]:checked',
+        )).map((checkbox) => checkbox.closest('tr[data-prediction-id]'));
+        const predictionIds = predictionContainers.map((el) => el.dataset.predictionId);
+
+        if (predictionIds.length === 0) {
+            // No items selected message.
+            return;
+        }
+
+        const stringParams = {
+            action: actionVisibleName,
+            nitems: predictionIds.length,
+        };
+
+        ModalSaveCancel.create({
+            title: actionVisibleName,
+            body: getString('confirmbulkaction', 'report_insights', stringParams),
+            buttons: {
+                save: getString('confirm'),
+            },
+            show: true,
+        }).then((modal) => {
+            modal.getRoot().on(ModalEvents.save, function() {
+                // The action is now confirmed, sending an action for it.
+                return executeAction(predictionIds, predictionContainers, actionName);
+            });
+
+            return modal;
+        }).catch(Notification.exception);
+    });
+};
