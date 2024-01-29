@@ -114,6 +114,12 @@ trait form_trait {
             }
         }
 
+        // Keep mnually completed status check box if people have completed.
+        $keepmanualdefault = intval(get_config('moodlecourse', 'keepmanuallycompleted'));
+        $mform->addElement('checkbox', 'keepmanuallycompleted', get_string('keepmanuallycompleted', 'completion'),
+                            get_string('keepmanuallycompleted_desc', 'completion'));
+        $mform->setDefault('keepmanuallycompleted', $keepmanualdefault);
+
         // Unlock button if people have completed it. The button will be removed later in definition_after_data if they haven't.
         // The unlock buttons don't need suffix because they are only displayed in the module settings page.
         $mform->addElement('submit', 'unlockcompletion', get_string('unlockcompletion', 'completion'));
@@ -439,6 +445,9 @@ trait form_trait {
                 // the option is changed, maybe someone has completed it now.
                 if ($mform->elementExists('completionunlocked')) {
                     $mform->getElement('completionunlocked')->setValue(1);
+                }
+                if ($mform->elementExists('keepmanuallycompleted')) {
+                    $mform->removeElement('keepmanuallycompleted');
                 }
             } else {
                 // Has the element been unlocked, either by the button being pressed in this request, or the field already

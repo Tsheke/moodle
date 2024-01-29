@@ -714,7 +714,8 @@ function update_moduleinfo($cm, $moduleinfo, $course, $mform = null) {
         course_modinfo::build_course_cache($course);
         // Fetch this course module's info.
         $cminfo = cm_info::create($cm);
-        $completion->reset_all_state($cminfo);
+        $keepmanuallycompleted = isset($moduleinfo->keepmanuallycompleted) ? $moduleinfo->keepmanuallycompleted : false;
+        $completion->reset_all_state($cminfo, $keepmanuallycompleted);
     }
     $cm->name = $moduleinfo->name;
     \core\event\course_module_updated::create_from_cm($cm, $modcontext)->trigger();

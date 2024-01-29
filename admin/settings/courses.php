@@ -242,6 +242,10 @@ if ($hassiteconfig or has_any_capability($capabilities, $systemcontext)) {
         ]
     ));
 
+    // Keep manually completed status when user unlock settings.
+    $temp->add(new admin_setting_configcheckbox('moodlecourse/keepmanuallycompleted',
+        get_string('keepmanuallycompleted', 'completion'), get_string('keepmanuallycompleted_desc', 'completion'), 0));
+
     // Groups.
     $temp->add(new admin_setting_heading('groups', new lang_string('groups', 'group'), ''));
     $choices = array();

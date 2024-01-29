@@ -910,12 +910,18 @@ class completion_info {
      * Intended for use only when the activity itself is deleted.
      *
      * @param stdClass|cm_info $cm Activity
+     * @param bool $keepmanuallycompleted whether to keep or not states that were completed manually
      */
-    public function delete_all_state($cm) {
+    public function delete_all_state($cm, $keepmanuallycompleted = false) {
         global $DB;
 
         // Delete from database
-        $DB->delete_records('course_modules_completion', array('coursemoduleid'=>$cm->id));
+        if ($keepmanuallycompleted) {
+            $DB->delete_records_select('course_modules_completion',
+                $DB->sql_isempty('course_modules_completion', 'overrideby', false, false));
+        } else {
+            $DB->delete_records('course_modules_completion', ['coursemoduleid' => $cm->id]);
+        }
 
         // Check if there is an associated course completion criteria
         $criteria = $this->get_criteria(COMPLETION_CRITERIA_TYPE_ACTIVITY);
@@ -950,12 +956,13 @@ class completion_info {
      * it.
      *
      * @param stcClass|cm_info $cm Activity
+     * @param bool $keepmanuallycompleted whether to keep or not states that were completed manually
      */
-    public function reset_all_state($cm) {
+    public function reset_all_state($cm, $keepmanuallycompleted = false) {
         global $DB;
 
         if ($cm->completion == COMPLETION_TRACKING_MANUAL) {
-            $this->delete_all_state($cm);
+            $this->delete_all_state($cm, $keepmanuallycompleted);
             return;
         }
         // Get current list of users with completion state
@@ -967,7 +974,7 @@ class completion_info {
         $rs->close();
 
         // Delete all existing state.
-        $this->delete_all_state($cm);
+        $this->delete_all_state($cm, $keepmanuallycompleted);
 
         // Merge this with list of planned users (according to roles)
         $trackedusers = $this->get_tracked_users();
