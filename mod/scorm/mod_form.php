@@ -92,6 +92,9 @@ class mod_scorm_mod_form extends moodleform_mod {
         $mform->addHelpButton('packagefile', 'package', 'scorm');
         $mform->hideIf('packagefile', 'scormtype', 'noteq', SCORM_TYPE_LOCAL);
 
+        // Package contenthash for which to bypass item identifier change check.
+        $mform->addElement('hidden', 'noidentifiercheck', '');
+
         // Update packages timing.
         $mform->addElement('select', 'updatefreq', get_string('updatefreq', 'scorm'), scorm_get_updatefreq_array());
         $mform->setType('updatefreq', PARAM_INT);
@@ -481,8 +484,72 @@ class mod_scorm_mod_form extends moodleform_mod {
         ) {
             $errors['completionscoregroup' . $this->get_suffix()] = get_string('minimumscoregreater', 'scorm');
         }
-
+        $errors = array_merge($errors, $this->check_scorm_items_identifiers($data, $files));
         return $errors;
+    }
+
+    /**
+     * Check for scorm item identifier change.
+     * @param array $data form data.
+     * @param files $files submited form.
+     * @return array returns error if any identifier changed.
+     */
+    private function check_scorm_items_identifiers($data, $files) {
+        global $CFG, $DB;
+        require_once($CFG->dirroot.'/mod/scorm/lib.php');
+        $checkedcontenthash = '';
+        $errors = [];
+
+        foreach ($files as $fileobj) {
+
+            $contenthash = $fileobj->get_contenthash();
+
+            if ($this->_form->elementExists('noidentifiercheck')) {
+                $checkedcontenthash = $this->_form->getElement('noidentifiercheck')->getValue();
+                $this->_form->getElement('noidentifiercheck')->setValue($contenthash);
+            }
+
+            if (!empty($checkedcontenthash) && ($checkedcontenthash == $contenthash)) { // After warning.
+                  continue;
+            }
+            if ($fileobj->is_external_file()) { // Get the file so we can check identifiers.
+                $fileobj->import_external_file_contents();
+            }
+            $packer = get_file_packer($fileobj->get_mimetype());
+
+            if ($tmpfile = $fileobj->copy_content_to_temp('scormtmp', 'tempupd_')) {
+
+                $tmpfiledir = "$tmpfile"."_dir";
+                $processedfiles = $fileobj->extract_to_pathname($packer, $tmpfiledir);
+                unlink($tmpfile);
+                if (array_key_exists('imsmanifest.xml', $processedfiles)) {
+                    $imsfile = "$tmpfiledir/imsmanifest.xml";
+                    $imscontent = file_get_contents($imsfile);
+
+                    preg_match_all('/[<]item[^<>]+(identifier="([^"]+)")/i', $imscontent, $identifiers);
+                    scorm_remove_temporary_directory($tmpfiledir);
+                    $scormidtocheck = $data['instance'];
+                    $conditions['scorm'] = $data['instance'];
+                    $conditions['scormtype'] = 'sco';
+                    $records = $DB->get_records_menu('scorm_scoes', $conditions, 'identifier ASC', 'id, identifier');
+
+                    if ($identifiers[2] && $records) {// Check if any identifier changed.
+                        $arrdiff = array_diff($records, $identifiers[2]);
+                        if ($arrdiff) {
+                            $moreinfo = new stdClass();
+                            $moreinfo->identifier = array_pop($arrdiff);
+                            $checkedcontenthash = $contenthash;
+                            $errors['packagefile'] = get_string('confirmloosetracks', 'scorm');
+                            $errors['packagefile'] .= '<br/>' .get_string('trackingloose', 'scorm');
+                            scorm_remove_temporary_directory($tmpfiledir);
+                            return( $errors);
+                        }
+                    }
+                }
+                scorm_remove_temporary_directory($tmpfiledir);
+            }
+        }
+        return($errors);
     }
 
     // Need to translate the "options" and "reference" field.

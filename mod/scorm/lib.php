@@ -1857,3 +1857,26 @@ function scorm_extend_settings_navigation(settings_navigation $settings, navigat
         $scormnode->add(get_string("reports", "scorm"), $url, navigation_node::TYPE_CUSTOM, null, 'scormreport');
     }
 }
+
+/**
+ * This function remove a directory and its content recursively.
+ * It is used to delete temporary directories created for form validation.
+ *
+ * @param string $dir  directory do delete recursively with its content
+ * @return void
+ */
+function scorm_remove_temporary_directory(string $dir): void {
+
+    if (file_exists($dir)) {
+        $it = new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS);
+        $dirfiles = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($dirfiles as $dirfile) {
+            if ($dirfile->isDir()) {
+                rmdir($dirfile->getPathname());
+            } else {
+                unlink($dirfile->getPathname());
+            }
+        }
+        rmdir($dir);
+    }
+}
