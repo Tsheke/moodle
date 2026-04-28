@@ -89,7 +89,7 @@ const templates = {
 
 module.exports = {
     opts: {
-        destination: "./jsdoc/",
+        destination: "./public/jsdoc/",
         template: "node_modules/docdash",
     },
     plugins,
@@ -114,7 +114,7 @@ module.exports = {
         ],
         "menu": {
             "Developer Docs": {
-                href: "https://docs.moodle.org/dev",
+                href: "https://moodledev.io",
                 target: "_blank",
                 "class": "menu-item",
                 id: "devdocs"
