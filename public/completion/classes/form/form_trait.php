@@ -452,8 +452,25 @@ trait form_trait {
                         get_string('completedunlockedtext', 'completion')
                     );
                     $mform->insertElementBefore($completedunlockedel, 'unlockcompletion');
-                    $mform->removeElement('unlockcompletion');
                     $mform->getElement('completionunlocked')->setValue(1);
+                    // MDL-80903.
+                    $keepmanuallycompletedel = $mform->createElement(
+                        'advcheckbox',
+                        'keepmanuallycompleted',
+                        get_string('keepmanuallycompleted', 'completion')
+                    );
+                    $mform->insertElementBefore($keepmanuallycompletedel, 'unlockcompletion');
+                    $mform->addHelpButton('keepmanuallycompleted', 'keepmanuallycompleted', 'completion');
+
+                    $keepoverridendefaultel = $mform->createElement(
+                        'advcheckbox',
+                        'keepoverriddencompletion',
+                        get_string('keepoverriddencompletion', 'completion')
+                    );
+                    $mform->insertElementBefore($keepoverridendefaultel, 'unlockcompletion');
+                    $mform->addHelpButton('keepoverriddencompletion', 'keepoverriddencompletion', 'completion');
+
+                    $mform->removeElement('unlockcompletion');
                 } else {
                     // No, add in the warning text with the count (now we know it) before the unlock button.
                     $completedwarningel = $mform->createElement(
