@@ -2399,6 +2399,213 @@ final class completionlib_test extends advanced_testcase {
 
         $this->assertCount(2, $criteria);
     }
+
+    /**
+     * Data provider for test_delete_all_state_keep_manual_states().
+     *
+     * @return array[]
+     */
+    public static function delete_all_state_keep_manual_states_provider(): array {
+        return [
+            [COMPLETION_TRACKING_MANUAL, 'never', 'delete_records', true, true],
+            [COMPLETION_TRACKING_MANUAL, 'never', 'delete_records_select', true, true],
+            [COMPLETION_TRACKING_MANUAL, 'once', 'delete_records_select', true, false],
+            [COMPLETION_TRACKING_MANUAL, 'once', 'delete_records_select', false, true],
+            [COMPLETION_TRACKING_MANUAL, 'once', 'delete_records', false, false],
+            [COMPLETION_TRACKING_AUTOMATIC, 'never', 'delete_records', true, true],
+            [COMPLETION_TRACKING_AUTOMATIC, 'once', 'delete_records_select', true, true],
+            [COMPLETION_TRACKING_AUTOMATIC, 'once', 'delete_records', true, false],
+            [COMPLETION_TRACKING_AUTOMATIC, 'once', 'delete_records_select', false, true],
+            [COMPLETION_TRACKING_AUTOMATIC, 'once', 'delete_records', false, false],
+        ];
+    }
+
+    /**
+     * Test for delete_all_state when keeping manual or overriden states.
+     *
+     * @dataProvider delete_all_state_keep_manual_states_provider
+     * @param int $completiontrack COMPLETION_TRACKING_MANUAL or COMPLETION_TRACKING_AUTOMATIC
+     * @param string $expect how many time the methode is expected
+     * @param string $method expected method name
+     * @param bool $keepmanual keep completion state marked manually
+     * @param bool $keepoverride keep overriden state
+     * @covers ::delete_all_state
+     */
+    public function test_delete_all_state_keep_manual_states(
+        int $completiontrack,
+        string $expect,
+        string $method,
+        bool $keepmanual,
+        bool $keepoverride
+    ): void {
+        global $DB, $CFG;
+        $this->resetAfterTest();
+        $CFG->enablecompletion = COMPLETION_ENABLED;
+
+        $studentrole = $DB->get_record('role', ['shortname' => 'student']);
+        $teacherrole = $DB->get_record('role', ['shortname' => 'editingteacher']);
+        // Create a course with enabled completion tracking.
+        $course1 = $this->getDataGenerator()->create_course([
+            'enablecompletion' => 1,
+            'shortname' => 'c1',
+            'fullname' => 'Course 1',
+            'visible' => 1,
+        ]);
+
+        $teacher1 = $this->getDataGenerator()->create_user([
+            'username' => 'teacher1',
+            'firstname' => 'Teacher',
+            'lastname' => 'Professor',
+            'email' => 'teacher1@example.com',
+        ]);
+
+        $student1 = $this->getDataGenerator()->create_user([
+            'username' => 'student1',
+            'firstname' => 'Student1',
+            'lastname' => 'Learner1',
+            'email' => 'student1@example.com',
+        ]);
+
+        $student2 = $this->getDataGenerator()->create_user([
+            'username' => 'student2',
+            'firstname' => 'Student2',
+            'lastname' => 'Learner2',
+            'email' => 'student2@example.com',
+        ]);
+
+        $this->assertTrue($this->getDataGenerator()->enrol_user($teacher1->id, $course1->id, $teacherrole->id));
+        $this->assertTrue($this->getDataGenerator()->enrol_user($student1->id, $course1->id, $studentrole->id));
+        $this->assertTrue($this->getDataGenerator()->enrol_user($student2->id, $course1->id, $studentrole->id));
+
+        if ($completiontrack == COMPLETION_TRACKING_MANUAL) {
+            $label1 = $this->getDataGenerator()->create_module('label', [
+                'name' => 'First label',
+                'course' => $course1->id,
+                'completion' => COMPLETION_TRACKING_MANUAL,
+                'idnumber' => 'a1',
+            ]);
+
+            $activitycm = cm_info::create(get_coursemodule_from_instance('label', $label1->id));
+        } else {
+            $quiz1 = $this->getDataGenerator()->create_module('quiz', [
+                'name' => 'Test quiz name',
+                'course' => $course1->id,
+                'idnumber' => 'quiz1',
+                'attempts' => 4,
+                'gradepass' => 5.00,
+                'completion' => COMPLETION_TRACKING_AUTOMATIC,
+                'completionusegrade' => 1,
+                'completionpassgrade' => 1,
+                'completionview' => 1,
+            ]);
+
+            $litecm = get_coursemodule_from_id('quiz', $quiz1->cmid);
+            $activitycm = cm_info::create($litecm);
+
+            // Create a question.
+            $questiongenerator = $this->getDataGenerator()->get_plugin_generator('core_question');
+            $cat = $questiongenerator->create_question_category(['name' => 'Test questions' ]);
+            $questionparams = [
+                'category' => $cat->id,
+                'name'  => 'First question',
+                'questiontext' => 'Answer the first question',
+            ];
+            $question = $questiongenerator->create_question('truefalse', null, $questionparams);
+            $page = 1;
+            quiz_add_quiz_question($question->id, $quiz1, $page);
+        }
+
+        $cmcactivity[] = (object)[
+                'coursemoduleid' => $activitycm->id,
+                'userid' => $student1->id,
+                'completionstate' => COMPLETION_COMPLETE,
+                'overrideby' => null,
+                'timemodified' => time(),
+            ];
+        $cmcactivity[] = (object)[
+                'coursemoduleid' => $activitycm->id,
+                'userid' => $student2->id,
+                'completionstate' => COMPLETION_COMPLETE,
+                'overrideby' => $teacher1->id,
+                'timemodified' => time(),
+            ];
+        $DB->insert_records('course_modules_completion', $cmcactivity);
+
+        $this->assertTrue($DB->record_exists(
+            'course_modules_completion',
+            [
+                'coursemoduleid' => $activitycm->id,
+                'completionstate' => COMPLETION_COMPLETE,
+                'userid' => $student1->id,
+                ]
+        ));
+
+        $this->assertTrue($DB->record_exists(
+            'course_modules_completion',
+            [
+                'coursemoduleid' => $activitycm->id,
+                'completionstate' => COMPLETION_COMPLETE,
+                'userid' => $student2->id,
+                'overrideby' => $teacher1->id,
+                ]
+        ));
+
+        $this->assertFalse($DB->record_exists(
+            'course_modules_completion',
+            [
+                'coursemoduleid' => $activitycm->id,
+                'completionstate' => COMPLETION_COMPLETE,
+                'userid' => $student1->id,
+                'overrideby' => $teacher1->id,
+                ]
+        ));
+
+        $dbmockbuilder = $this->getMockBuilder(get_class($DB));
+        $c = new completion_info($course1);
+        $course1->enablecompletion = COMPLETION_ENABLED;
+        $course1->showcompletionconditions = true;
+
+        $cminfokeep = (object)iterator_to_array($activitycm);
+        $cminfokeep->completion = $completiontrack;
+        $cminfokeep->keepmanuallycompleted = $keepmanual;
+        $cminfokeep->keepoverriddencompletion = $keepoverride;
+
+        $DB = $dbmockbuilder->getMock();
+        $CFG->enablecompletion = COMPLETION_ENABLED;
+
+        switch ($expect) {
+            case 'never':
+                $DB->expects($this->never())
+                    ->method($method);
+                break;
+            default:
+                switch ($method) {
+                    case 'delete_records':
+                        $DB->expects($this->once())
+                            ->method('delete_records')
+                            ->with(
+                                'course_modules_completion',
+                                ['coursemoduleid' => $cminfokeep->id]
+                            );
+                        break;
+
+                    default:
+                        $overrideparam = 'overrideby is NULL AND coursemoduleid=:coursemoduleid';
+                        if (!empty($keepmanual) && empty($keepoverride) && $completiontrack == COMPLETION_TRACKING_MANUAL) {
+                            $overrideparam = 'overrideby is NOT NULL AND coursemoduleid=:coursemoduleid';
+                        }
+                        $DB->expects($this->once())
+                            ->method('delete_records_select')
+                            ->with(
+                                'course_modules_completion',
+                                "$overrideparam",
+                                ['coursemoduleid' => $cminfokeep->id]
+                            );
+                }
+        }
+
+        $c->delete_all_state($cminfokeep);
+    }
 }
 
 class core_completionlib_fake_recordset implements Iterator {

@@ -913,9 +913,9 @@ class completion_info {
     }
 
     /**
-     * Deletes completion state related to an activity for all users.
+     * Deletes completion state related to an activity for all users based on any specified criteria.
      *
-     * Intended for use only when the activity itself is deleted.
+     * Intended for use when the activity itself is deleted or for resetting completion states.
      *
      * @param stdClass|cm_info $cm Activity
      */
@@ -923,8 +923,32 @@ class completion_info {
         global $DB;
 
         // Delete from database
-        $DB->delete_records('course_modules_completion', array('coursemoduleid'=>$cm->id));
 
+        if (
+            (empty($cm->keepmanuallycompleted) || ($cm->completion != COMPLETION_TRACKING_MANUAL)) &&
+            empty($cm->keepoverriddencompletion)
+        ) {
+            $DB->delete_records('course_modules_completion', ['coursemoduleid' => $cm->id]);
+        } else if (
+                  (empty($cm->keepmanuallycompleted) ||
+                  ($cm->completion != COMPLETION_TRACKING_MANUAL)) &&
+                  (!empty($cm->keepoverriddencompletion))
+        ) { // Keep overridden, delete non-overridden completion records.
+                    $DB->delete_records_select(
+                        'course_modules_completion',
+                        'overrideby is NULL AND coursemoduleid=:coursemoduleid',
+                        ['coursemoduleid' => $cm->id]
+                    );
+        } else if (
+                  !empty($cm->keepmanuallycompleted) && empty($cm->keepoverriddencompletion) &&
+                  ($cm->completion == COMPLETION_TRACKING_MANUAL)
+        ) { // Removes overridden records while preserving manually-set ones.
+                  $DB->delete_records_select(
+                      'course_modules_completion',
+                      'overrideby is NOT NULL AND coursemoduleid=:coursemoduleid',
+                      ['coursemoduleid' => $cm->id]
+                  );
+        } // Otherwise, do nothing.
         // Check if there is an associated course completion criteria
         $criteria = $this->get_criteria(COMPLETION_CRITERIA_TYPE_ACTIVITY);
         $acriteria = false;

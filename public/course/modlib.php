@@ -805,7 +805,10 @@ function update_moduleinfo($cm, $moduleinfo, $course, $mform = null) {
         course_modinfo::build_course_cache($course);
         // Fetch this course module's info.
         $cminfo = cm_info::create($cm);
-        $completion->reset_all_state($cminfo);
+        $cminfokm = (object)iterator_to_array($cminfo); // The stdClass for adding properties for method call.
+        $cminfokm->keepmanuallycompleted = !empty($moduleinfo->keepmanuallycompleted);
+        $cminfokm->keepoverriddencompletion = !empty($moduleinfo->keepoverriddencompletion);
+        $completion->reset_all_state($cminfokm);
     }
 
     if ($cm->name != $moduleinfo->name) {
